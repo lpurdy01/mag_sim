@@ -1,0 +1,16 @@
+{
+  "name": "MotorSim Dev",
+  "build": { "dockerfile": "Dockerfile" },
+  "features": {},
+  "postCreateCommand": "scripts/setup_env.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.remote-repositories"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}

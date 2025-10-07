@@ -1,0 +1,6 @@
+{
+  "C_Cpp.default.compilerPath": "/usr/bin/g++",
+  "C_Cpp.intelliSenseEngineFallback": "Disabled",
+  "cmake.generator": "Unix Makefiles",
+  "editor.formatOnSave": true
+}
