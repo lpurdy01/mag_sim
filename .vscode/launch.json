@@ -14,6 +14,43 @@
       "MIMode": "gdb",
       "miDebuggerPath": "/usr/bin/gdb",
       "preLaunchTask": "cmake-build"
+    },
+    {
+      "name": "(gdb) Debug analytic_wire_test",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/analytic_wire_test",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "cmake-build"
+    },
+    {
+      "name": "(gdb) Debug solver_benchmark",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/solver_benchmark",
+      "args": [
+        "--nx",
+        "129",
+        "--ny",
+        "129",
+        "--max-iters",
+        "5000",
+        "--tol",
+        "1e-6"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "cmake-build"
     }
   ]
 }
