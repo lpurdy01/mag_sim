@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cmake-configure",
+      "type": "shell",
+      "command": "cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "cmake-build",
+      "type": "shell",
+      "command": "cmake --build build -j",
+      "group": "build",
+      "dependsOn": "cmake-configure",
+      "problemMatcher": []
+    },
+    {
+      "label": "ctest",
+      "type": "shell",
+      "command": "cd build && ctest --output-on-failure",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}
