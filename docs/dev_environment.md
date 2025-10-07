@@ -97,7 +97,21 @@ When solver changes land, re-run the benchmark on representative grids (e.g.,
 Include the machine profile (Codespaces, local workstation, etc.) so future
 contributors can compare apples to apples.
 
-## 6. Other IDEs
+## 6. Visualisation helpers
+
+The regression test emits optional CSV artefacts under `outputs/` when it
+finishes. Two Python scripts consume them:
+
+* `python/visualize_wire.py` compares the centreline magnitude against the
+  analytic solution for a finite-radius wire. The dip to zero at the origin is a
+  physical consequence of the uniform current distribution inside the conductor.
+* `python/visualize_wire_field.py` renders a top-down map with quiver arrows so
+  you can verify the azimuthal direction of **B** around the wire.
+
+Both scripts require `numpy` and `matplotlib` and accept `--save` to archive the
+figures.
+
+## 7. Other IDEs
 
 CLion, Qt Creator, or bare-terminal workflows operate via the same CMake entry
 points. The only project-specific requirement is that headers under `include/`

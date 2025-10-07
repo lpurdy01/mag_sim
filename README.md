@@ -54,5 +54,9 @@ comparison. Practical rules of thumb and sample measurements are documented in
 * `docs/solver_performance.md` — complexity discussion and benchmark reference.
 
 Python helpers for plotting the analytic wire validation live under
-`python/`. Run `python/visualize_wire.py` after the regression test to generate
-a simple field plot from the optional CSV artefact.
+`python/`. Run `python/visualize_wire.py` after the regression test to compare
+the numerical centreline magnitude against the analytic profile for a finite
+radius wire (the drop to zero at the core is expected for a solid conductor).
+For a top-down view and to inspect the azimuthal direction of **B**, use
+`python/visualize_wire_field.py`, which overlays a quiver plot on the 2D field
+map emitted by the test.
