@@ -13,5 +13,7 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build -j
-      - name: Test
+      - name: Test (full suite)
         run: cd build && ctest --output-on-failure
+      - name: Analytic wire regression test
+        run: cd build && ctest --output-on-failure -R analytic_wire

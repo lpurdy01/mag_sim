@@ -1,3 +1,7 @@
+// filename: types.hpp
+// part of 2D Electromagnetic Motor Simulator
+// MIT License
+
 #pragma once
 
 namespace motorsim {
