@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -16,6 +18,33 @@ namespace motorsim {
 namespace {
 constexpr double kTiny = 1e-12;
 constexpr double kPi = 3.14159265358979323846;
+
+bool pointInPolygon(double x, double y, const ScenarioSpec::PolygonRegion& poly) {
+    const std::size_t count = poly.xs.size();
+    if (count == 0U) {
+        return false;
+    }
+
+    bool inside = false;
+    for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
+        const double xi = poly.xs[i];
+        const double yi = poly.ys[i];
+        const double xj = poly.xs[j];
+        const double yj = poly.ys[j];
+
+        const double denom = yj - yi;
+        if (std::abs(denom) < kTiny) {
+            continue;
+        }
+        const bool intersects = ((yi > y) != (yj > y)) &&
+                                (x < (xj - xi) * (y - yi) / denom + xi);
+        if (intersects) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
 
 double requirePositive(const std::string& field, double value) {
     if (!(value > 0.0)) {
@@ -53,9 +82,10 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     if (spec.version.empty()) {
         throw std::runtime_error("Scenario JSON missing required field: version");
     }
-    if (spec.version != "0.1") {
+    if (spec.version != "0.1" && spec.version != "0.2") {
         throw std::runtime_error("Unsupported scenario version: " + spec.version);
     }
+    const bool allowAdvancedRegions = (spec.version != "0.1");
 
     const std::string units = json.value("units", std::string{"SI"});
     if (units != "SI") {
@@ -78,6 +108,11 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         throw std::runtime_error("Scenario must define at least one material");
     }
 
+    spec.materials.clear();
+    spec.halfspaces.clear();
+    spec.polygons.clear();
+    spec.regionMasks.clear();
+
     std::unordered_map<std::string, double> muMap;
     for (const auto& material : materials) {
         const std::string name = material.at("name").get<std::string>();
@@ -86,6 +121,16 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         }
         const double mu_r = requirePositive("material.mu_r", material.at("mu_r").get<double>());
         muMap.emplace(name, mu_r);
+        ScenarioSpec::Material entry{};
+        entry.name = name;
+        entry.mu_r = mu_r;
+        spec.materials.push_back(entry);
+    }
+
+    if (!spec.materials.empty()) {
+        spec.mu_r_background = spec.materials.front().mu_r;
+    } else {
+        spec.mu_r_background = 1.0;
     }
 
     const auto& regions = json.at("regions");
@@ -96,23 +141,102 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     bool foundUniform = false;
     for (const auto& region : regions) {
         const std::string type = region.at("type").get<std::string>();
-        if (type != "uniform") {
+        if (type == "uniform") {
+            const std::string materialName = region.at("material").get<std::string>();
+            const auto it = muMap.find(materialName);
+            if (it == muMap.end()) {
+                throw std::runtime_error("Region references unknown material: " + materialName);
+            }
+            if (spec.version == "0.1" && foundUniform) {
+                throw std::runtime_error(
+                    "Multiple uniform regions defined; only one is supported in v0.1");
+            }
+            spec.mu_r_background = it->second;
+            foundUniform = true;
+        } else if (type == "halfspace") {
+            if (!allowAdvancedRegions) {
+                throw std::runtime_error("Region type 'halfspace' requires scenario version 0.2");
+            }
+            const std::string materialName = region.at("material").get<std::string>();
+            const auto it = muMap.find(materialName);
+            if (it == muMap.end()) {
+                throw std::runtime_error("Region references unknown material: " + materialName);
+            }
+            const auto& normal = region.at("normal");
+            if (!normal.is_array() || normal.size() != 2) {
+                throw std::runtime_error("halfspace region requires a 2-element 'normal' array");
+            }
+            double nx = normal.at(0).get<double>();
+            double ny = normal.at(1).get<double>();
+            const double length = std::hypot(nx, ny);
+            if (!(length > 0.0)) {
+                throw std::runtime_error("halfspace region normal vector must be non-zero");
+            }
+            const double invLength = 1.0 / length;
+            ScenarioSpec::HalfspaceRegion hs{};
+            hs.normal_x = nx * invLength;
+            hs.normal_y = ny * invLength;
+            hs.offset = region.at("offset").get<double>() * invLength;
+            hs.mu_r = it->second;
+            hs.inv_mu = 1.0 / (MU0 * hs.mu_r);
+            spec.halfspaces.push_back(hs);
+            ScenarioSpec::RegionMask mask{};
+            mask.kind = ScenarioSpec::RegionMask::Kind::Halfspace;
+            mask.index = spec.halfspaces.size() - 1;
+            spec.regionMasks.push_back(mask);
+        } else if (type == "polygon") {
+            if (!allowAdvancedRegions) {
+                throw std::runtime_error("Region type 'polygon' requires scenario version 0.2");
+            }
+            const std::string materialName = region.at("material").get<std::string>();
+            const auto it = muMap.find(materialName);
+            if (it == muMap.end()) {
+                throw std::runtime_error("Region references unknown material: " + materialName);
+            }
+            const auto& vertices = region.at("vertices");
+            if (!vertices.is_array() || vertices.size() < 3) {
+                throw std::runtime_error("polygon region requires an array of at least three vertices");
+            }
+            ScenarioSpec::PolygonRegion poly{};
+            poly.mu_r = it->second;
+            poly.inv_mu = 1.0 / (MU0 * poly.mu_r);
+            poly.xs.reserve(vertices.size());
+            poly.ys.reserve(vertices.size());
+            double minX = std::numeric_limits<double>::infinity();
+            double maxX = -std::numeric_limits<double>::infinity();
+            double minY = std::numeric_limits<double>::infinity();
+            double maxY = -std::numeric_limits<double>::infinity();
+            for (const auto& vertex : vertices) {
+                if (!vertex.is_array() || vertex.size() != 2) {
+                    throw std::runtime_error("polygon vertices must be [x, y] arrays");
+                }
+                const double vx = vertex.at(0).get<double>();
+                const double vy = vertex.at(1).get<double>();
+                poly.xs.push_back(vx);
+                poly.ys.push_back(vy);
+                minX = std::min(minX, vx);
+                maxX = std::max(maxX, vx);
+                minY = std::min(minY, vy);
+                maxY = std::max(maxY, vy);
+            }
+            poly.min_x = minX;
+            poly.max_x = maxX;
+            poly.min_y = minY;
+            poly.max_y = maxY;
+            spec.polygons.push_back(std::move(poly));
+            ScenarioSpec::RegionMask mask{};
+            mask.kind = ScenarioSpec::RegionMask::Kind::Polygon;
+            mask.index = spec.polygons.size() - 1;
+            spec.regionMasks.push_back(mask);
+        } else {
             throw std::runtime_error("Unsupported region type: " + type);
         }
-        const std::string materialName = region.at("material").get<std::string>();
-        const auto it = muMap.find(materialName);
-        if (it == muMap.end()) {
-            throw std::runtime_error("Region references unknown material: " + materialName);
-        }
-        if (foundUniform) {
-            throw std::runtime_error("Multiple uniform regions defined; only one is supported in v0.1");
-        }
-        spec.mu_r_background = it->second;
-        foundUniform = true;
     }
 
-    if (!foundUniform) {
-        throw std::runtime_error("Scenario must define a uniform region in v0.1");
+    if (spec.version == "0.1") {
+        if (!foundUniform) {
+            throw std::runtime_error("Scenario must define a uniform region in v0.1");
+        }
     }
 
     const auto& sources = json.at("sources");
@@ -215,11 +339,39 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
     grid.dy = spec.dy;
 
     const double invMuBackground = 1.0 / (MU0 * spec.mu_r_background);
-    std::fill(grid.invMu.begin(), grid.invMu.end(), invMuBackground);
     std::fill(grid.Jz.begin(), grid.Jz.end(), 0.0);
 
     const double x0 = spec.originX;
     const double y0 = spec.originY;
+
+    if (spec.regionMasks.empty()) {
+        std::fill(grid.invMu.begin(), grid.invMu.end(), invMuBackground);
+    } else {
+        for (std::size_t j = 0; j < grid.ny; ++j) {
+            const double y = y0 + static_cast<double>(j) * spec.dy;
+            for (std::size_t i = 0; i < grid.nx; ++i) {
+                const double x = x0 + static_cast<double>(i) * spec.dx;
+                double invMu = invMuBackground;
+                for (const auto& mask : spec.regionMasks) {
+                    if (mask.kind == ScenarioSpec::RegionMask::Kind::Halfspace) {
+                        const auto& hs = spec.halfspaces[mask.index];
+                        if (hs.normal_x * x + hs.normal_y * y + hs.offset < 0.0) {
+                            invMu = hs.inv_mu;
+                        }
+                    } else {
+                        const auto& poly = spec.polygons[mask.index];
+                        if (x < poly.min_x || x > poly.max_x || y < poly.min_y || y > poly.max_y) {
+                            continue;
+                        }
+                        if (pointInPolygon(x, y, poly)) {
+                            invMu = poly.inv_mu;
+                        }
+                    }
+                }
+                grid.invMu[grid.idx(i, j)] = invMu;
+            }
+        }
+    }
 
     for (const auto& wire : spec.wires) {
         const double area = kPi * wire.radius * wire.radius;

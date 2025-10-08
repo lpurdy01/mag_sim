@@ -60,3 +60,17 @@ radius wire (the drop to zero at the core is expected for a solid conductor).
 For a top-down view and to inspect the azimuthal direction of **B**, use
 `python/visualize_wire_field.py`, which overlays a quiver plot on the 2D field
 map emitted by the test.
+
+## Sample scenarios
+
+* `inputs/line_current_interface.json` — two-material validation that exercises
+  the planar permeability interface analytic case described in
+  `docs/math_and_solver.md`.
+* `inputs/iron_ring_demo.json` — heterogeneous permeability demo with a polygon
+  iron ring and six alternating-current wires in the bore. Solve it via
+  `./build/motor_sim --scenario inputs/iron_ring_demo.json --solve` and visualise
+  the resulting CSV using `python/visualize_scenario_field.py --scenario
+  inputs/iron_ring_demo.json --save outputs/iron_ring_topdown.png` for a quick
+  top-down plot. A pre-rendered example is shown below.
+
+![Iron ring demo field map](docs/images/iron_ring_topdown.png)

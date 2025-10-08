@@ -1,0 +1,67 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.30,
+    "Ly": 0.20,
+    "nx": 241,
+    "ny": 161
+  },
+  "materials": [
+    {
+      "name": "mu_left",
+      "mu_r": 1.0
+    },
+    {
+      "name": "mu_right",
+      "mu_r": 1000.0
+    }
+  ],
+  "regions": [
+    {
+      "type": "halfspace",
+      "normal": [1.0, 0.0],
+      "offset": 0.0,
+      "material": "mu_left"
+    },
+    {
+      "type": "halfspace",
+      "normal": [-1.0, 0.0],
+      "offset": 0.0,
+      "material": "mu_right"
+    }
+  ],
+  "sources": [
+    {
+      "type": "wire",
+      "x": -0.06,
+      "y": 0.0,
+      "radius": 0.003,
+      "I": 10.0
+    }
+  ],
+  "outputs": [
+    {
+      "type": "field_map",
+      "id": "interface_field",
+      "quantity": "B",
+      "path": "outputs/interface_field.csv"
+    },
+    {
+      "type": "line_probe",
+      "id": "left_midline",
+      "axis": "x",
+      "value": -0.04,
+      "quantity": "Bmag",
+      "path": "outputs/left_midline.csv"
+    },
+    {
+      "type": "line_probe",
+      "id": "right_midline",
+      "axis": "x",
+      "value": 0.04,
+      "quantity": "Bmag",
+      "path": "outputs/right_midline.csv"
+    }
+  ]
+}

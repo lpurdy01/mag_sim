@@ -18,7 +18,8 @@ namespace {
 
 void printUsage() {
     std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
-                 " [--list-outputs] [--outputs IDs]\n";
+                 " [--list-outputs] [--outputs IDs] [--max-iters N] [--tol VALUE]"
+                 " [--omega VALUE]\n";
 }
 
 std::vector<std::string> splitCommaSeparated(const std::string& text) {
@@ -51,6 +52,9 @@ int main(int argc, char** argv) {
     bool writeMidline = false;
     bool listOutputs = false;
     std::optional<std::string> outputsFilterArg;
+    std::optional<int> maxItersOverride;
+    std::optional<double> tolOverride;
+    std::optional<double> omegaOverride;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -74,6 +78,60 @@ int main(int argc, char** argv) {
                 return 1;
             }
             outputsFilterArg = std::string(argv[++i]);
+        } else if (arg == "--max-iters") {
+            if (i + 1 >= argc) {
+                std::cerr << "--max-iters requires an integer argument\n";
+                printUsage();
+                return 1;
+            }
+            int value = 0;
+            try {
+                value = std::stoi(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--max-iters requires a valid integer argument\n";
+                return 1;
+            }
+            if (value <= 0) {
+                std::cerr << "--max-iters must be positive\n";
+                return 1;
+            }
+            maxItersOverride = value;
+        } else if (arg == "--tol") {
+            if (i + 1 >= argc) {
+                std::cerr << "--tol requires a positive floating-point argument\n";
+                printUsage();
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--tol requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (!(value > 0.0)) {
+                std::cerr << "--tol must be positive\n";
+                return 1;
+            }
+            tolOverride = value;
+        } else if (arg == "--omega") {
+            if (i + 1 >= argc) {
+                std::cerr << "--omega requires a floating-point argument\n";
+                printUsage();
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--omega requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (!(value > 0.0)) {
+                std::cerr << "--omega must be positive\n";
+                return 1;
+            }
+            omegaOverride = value;
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             return 0;
@@ -166,9 +224,9 @@ int main(int argc, char** argv) {
     }
 
     SolveOptions options{};
-    options.maxIters = 5000;
-    options.tol = 1e-6;
-    options.omega = 1.7;
+    options.maxIters = maxItersOverride.value_or(20000);
+    options.tol = tolOverride.value_or(1e-6);
+    options.omega = omegaOverride.value_or(1.7);
 
     const SolveReport report = solveAz_GS_SOR(grid, options);
     if (!report.converged) {

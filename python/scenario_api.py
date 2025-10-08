@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 @dataclass
@@ -41,6 +41,22 @@ class UniformRegion:
 
     def to_dict(self) -> Dict[str, object]:
         return {"type": "uniform", "material": self.material}
+
+
+@dataclass
+class HalfspaceRegion:
+    normal_x: float
+    normal_y: float
+    offset: float
+    material: str
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "type": "halfspace",
+            "normal": [float(self.normal_x), float(self.normal_y)],
+            "offset": float(self.offset),
+            "material": self.material,
+        }
 
 
 @dataclass
@@ -131,21 +147,32 @@ class LineProbeOutput:
 
 
 ScenarioOutput = Union[FieldMapOutput, LineProbeOutput]
+@dataclass
+class PolygonRegion:
+    vertices: List[Tuple[float, float]]
+    material: str
+
+    def to_dict(self) -> Dict[str, object]:
+        serialized = [[float(x), float(y)] for x, y in self.vertices]
+        return {"type": "polygon", "vertices": serialized, "material": self.material}
+
+
+RegionSpec = Union[UniformRegion, HalfspaceRegion, PolygonRegion]
 
 
 @dataclass
 class Scenario:
     domain: Domain
     materials: List[Material] = field(default_factory=list)
-    regions: List[UniformRegion] = field(default_factory=list)
+    regions: List[RegionSpec] = field(default_factory=list)
     sources: List[Wire] = field(default_factory=list)
     outputs: List["ScenarioOutput"] = field(default_factory=list)
     units: str = "SI"
-    version: str = "0.1"
+    version: str = "0.2"
 
     def _validate(self) -> None:
-        if self.version != "0.1":
-            raise ValueError("Only scenario version '0.1' is supported")
+        if self.version not in {"0.1", "0.2"}:
+            raise ValueError("Scenario version must be '0.1' or '0.2'")
         if self.units != "SI":
             raise ValueError("Only SI units are currently supported")
         if not self.materials:
@@ -155,11 +182,30 @@ class Scenario:
             raise ValueError("Material names must be unique")
         if not self.regions:
             raise ValueError("At least one region must be provided")
+        allow_halfspace = self.version == "0.2"
+        uniform_seen = False
         for region in self.regions:
+            if not isinstance(region, (UniformRegion, HalfspaceRegion, PolygonRegion)):
+                raise ValueError(f"Unsupported region type: {type(region)}")
             if region.material not in names:
                 raise ValueError(f"Region references unknown material '{region.material}'")
-            if not isinstance(region, UniformRegion):
-                raise ValueError("Only UniformRegion is supported in v0.1")
+            if isinstance(region, UniformRegion):
+                uniform_seen = True
+            elif isinstance(region, HalfspaceRegion):
+                if not allow_halfspace:
+                    raise ValueError("HalfspaceRegion requires scenario version '0.2'")
+                if region.normal_x == 0.0 and region.normal_y == 0.0:
+                    raise ValueError("HalfspaceRegion normal must be non-zero")
+            elif isinstance(region, PolygonRegion):
+                if not allow_halfspace:
+                    raise ValueError("PolygonRegion requires scenario version '0.2'")
+                if len(region.vertices) < 3:
+                    raise ValueError("PolygonRegion requires at least three vertices")
+                for vertex in region.vertices:
+                    if len(vertex) != 2:
+                        raise ValueError("PolygonRegion vertices must be (x, y) pairs")
+        if self.version == "0.1" and not uniform_seen:
+            raise ValueError("Scenario v0.1 requires at least one UniformRegion")
         for wire in self.sources:
             if wire.radius <= 0.0:
                 raise ValueError("Wire radius must be positive")
@@ -201,6 +247,8 @@ __all__ = [
     "Domain",
     "Material",
     "UniformRegion",
+    "HalfspaceRegion",
+    "PolygonRegion",
     "Wire",
     "FieldMapOutput",
     "LineProbeOutput",

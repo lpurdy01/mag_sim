@@ -16,6 +16,37 @@ struct ScenarioSpec {
         double current{0.0};
     };
 
+    struct Material {
+        std::string name;
+        double mu_r{1.0};
+    };
+
+    struct HalfspaceRegion {
+        double normal_x{0.0};
+        double normal_y{0.0};
+        double offset{0.0};
+        double mu_r{1.0};
+        double inv_mu{0.0};
+    };
+
+    struct PolygonRegion {
+        std::vector<double> xs;
+        std::vector<double> ys;
+        double mu_r{1.0};
+        double inv_mu{0.0};
+        double min_x{0.0};
+        double max_x{0.0};
+        double min_y{0.0};
+        double max_y{0.0};
+    };
+
+    struct RegionMask {
+        enum class Kind { Halfspace, Polygon };
+
+        Kind kind{Kind::Halfspace};
+        std::size_t index{0};
+    };
+
     struct Outputs {
         struct FieldMap {
             std::string id;
@@ -47,6 +78,10 @@ struct ScenarioSpec {
     double dx{0.0};
     double dy{0.0};
     double mu_r_background{1.0};
+    std::vector<Material> materials;
+    std::vector<HalfspaceRegion> halfspaces;
+    std::vector<PolygonRegion> polygons;
+    std::vector<RegionMask> regionMasks;
     std::vector<Wire> wires;
     Outputs outputs;
 };

@@ -11,6 +11,13 @@ Start by reviewing the existing documentation before making changes:
 
 Check for additional nested `AGENTS.md` files in subdirectories when you work within them.
 
+## Scenario authoring quick tip
+- For heterogeneous permeability cases, build a two-halfspace scenario (left/right split)
+  using the new `halfspace` region type introduced in spec v0.2.
+- Complex cross-sections (e.g. iron rings with inner bores) can be described via
+  layered `polygon` regions—later entries override earlier materials, so an
+  outer iron polygon followed by an inner air polygon carves out a bore.
+
 ## Authoring a Scenario (v0.1)
 - Use `python/scenario_api.py` to build scenarios in Python and emit JSON. The
   helper mirrors the C++ `ScenarioSpec` structure and writes to `inputs/`.

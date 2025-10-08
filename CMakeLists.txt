@@ -40,6 +40,23 @@ target_include_directories(two_wire_cancel_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME two_wire_cancel COMMAND two_wire_cancel_test)
 
+add_executable(line_current_interface_test
+    tests/line_current_interface_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(line_current_interface_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME line_current_interface COMMAND line_current_interface_test)
+
+add_executable(polygon_region_test
+    tests/polygon_region_test.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(polygon_region_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME polygon_region COMMAND polygon_region_test)
+
 add_test(
     NAME scenario_python_emit
     COMMAND

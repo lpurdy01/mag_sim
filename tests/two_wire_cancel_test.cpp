@@ -12,7 +12,7 @@ int main() {
     using namespace motorsim;
 
     ScenarioSpec spec{};
-    spec.version = "0.1";
+    spec.version = "0.2";
     spec.Lx = 0.20;
     spec.Ly = 0.20;
     spec.nx = 201;
