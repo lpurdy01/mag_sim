@@ -4,7 +4,9 @@
 
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <numeric>
+#include <utility>
 
 int main() {
     using namespace motorsim;
@@ -44,58 +46,124 @@ int main() {
 
     computeB(grid);
 
+    constexpr double pi = 3.14159265358979323846;
+    const auto analyticField = [&](double x, double y) {
+        double bx = 0.0;
+        double by = 0.0;
+        for (const auto& wire : spec.wires) {
+            const double dx = x - wire.x;
+            const double dy = y - wire.y;
+            const double r2 = dx * dx + dy * dy;
+            if (r2 <= 0.0) {
+                return std::pair<double, double>{std::numeric_limits<double>::quiet_NaN(),
+                                                 std::numeric_limits<double>::quiet_NaN()};
+            }
+            const double coeff = motorsim::MU0 * wire.current / (2.0 * pi * r2);
+            bx += coeff * (-dy);
+            by += coeff * dx;
+        }
+        return std::pair<double, double>{bx, by};
+    };
+
+    const auto nearWire = [&](double x, double y) {
+        for (const auto& wire : spec.wires) {
+            const double r = std::hypot(x - wire.x, y - wire.y);
+            if (r <= 1.2 * wire.radius) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     const std::size_t iMid = spec.nx / 2;
-    const double sampleOffset = 0.026;  // 2.6 cm from the centre sits just outside each wire disk.
-    const std::size_t iLeft = static_cast<std::size_t>(
-        std::llround(((-sampleOffset) - spec.originX) / spec.dx));
-    const std::size_t iRight = static_cast<std::size_t>(
-        std::llround(((sampleOffset) - spec.originX) / spec.dx));
-
-    if (iMid == 0 || iMid >= spec.nx || iLeft == 0 || iRight + 1 >= spec.nx) {
-        std::cerr << "two_wire_cancel_test: invalid sampling indices\n";
-        return 1;
-    }
-
-    double midSumSq = 0.0;
-    double refSumSq = 0.0;
-    double antisymmetry = 0.0;
+    const std::size_t jMid = spec.ny / 2;
+    const double xMid = spec.originX + static_cast<double>(iMid) * spec.dx;
     const double cellArea = spec.dx * spec.dy;
 
+    double verticalRelErrSum = 0.0;
+    double verticalBxAbsSum = 0.0;
+    std::size_t verticalSamples = 0;
+
     for (std::size_t j = 1; j + 1 < spec.ny; ++j) {
-        const std::size_t midIdx = grid.idx(iMid, j);
-        const std::size_t leftIdx = grid.idx(iLeft, j);
-        const std::size_t rightIdx = grid.idx(iRight, j);
-        const double bxMid = grid.Bx[midIdx];
-        const double byMid = grid.By[midIdx];
-        const double bxLeft = grid.Bx[leftIdx];
-        const double byLeft = grid.By[leftIdx];
-        const double bxRight = grid.Bx[rightIdx];
-        const double byRight = grid.By[rightIdx];
-
-        midSumSq += bxMid * bxMid + byMid * byMid;
-        refSumSq += bxLeft * bxLeft + byLeft * byLeft;
-        refSumSq += bxRight * bxRight + byRight * byRight;
-
-        antisymmetry += std::abs(byLeft + byRight);
+        const double y = spec.originY + static_cast<double>(j) * spec.dy;
+        if (std::abs(y) > 0.05) {  // avoid boundary influence near y = ±0.1 m
+            continue;
+        }
+        if (nearWire(xMid, y)) {
+            continue;
+        }
+        const auto [bxAnalytic, byAnalytic] = analyticField(xMid, y);
+        if (!std::isfinite(bxAnalytic) || !std::isfinite(byAnalytic)) {
+            continue;
+        }
+        const std::size_t idx = grid.idx(iMid, j);
+        const double bxNum = grid.Bx[idx];
+        const double byNum = grid.By[idx];
+        const double analyticMag = std::hypot(bxAnalytic, byAnalytic);
+        if (analyticMag < 1e-9) {
+            continue;
+        }
+        const double diffMag = std::hypot(bxNum - bxAnalytic, byNum - byAnalytic);
+        verticalRelErrSum += diffMag / analyticMag;
+        verticalBxAbsSum += std::abs(bxNum);
+        ++verticalSamples;
     }
 
-    if (refSumSq <= 0.0) {
-        std::cerr << "two_wire_cancel_test: reference line magnitude is zero\n";
+    if (verticalSamples < spec.ny / 4) {
+        std::cerr << "two_wire_cancel_test: insufficient vertical samples (" << verticalSamples << ")\n";
         return 1;
     }
 
-    const double midRms = std::sqrt(midSumSq / static_cast<double>(spec.ny - 2));
-    const double refRms = std::sqrt(refSumSq / static_cast<double>(2 * (spec.ny - 2)));
-    const double ratio = midRms / refRms;
-    // Coarse grids and Dirichlet boundaries limit cancellation; require midline RMS to be at least half the off-axis RMS.
-    if (!(ratio < 0.5)) {
-        std::cerr << "two_wire_cancel_test: cancellation ratio too high (" << ratio << ")\n";
+    const double avgVerticalRelErr = verticalRelErrSum / static_cast<double>(verticalSamples);
+    if (!(avgVerticalRelErr < 0.25)) {
+        std::cerr << "two_wire_cancel_test: vertical relative error too high (" << avgVerticalRelErr
+                  << ")\n";
         return 1;
     }
 
-    const double avgAntisymmetry = antisymmetry / static_cast<double>(spec.ny - 2);
-    if (!(avgAntisymmetry < 1e-4)) {
-        std::cerr << "two_wire_cancel_test: By antisymmetry check failed (avg=" << avgAntisymmetry << ")\n";
+    const double avgBxMid = verticalBxAbsSum / static_cast<double>(verticalSamples);
+    if (!(avgBxMid < 2.0e-5)) {
+        std::cerr << "two_wire_cancel_test: Bx on vertical midline not near zero (avg |Bx|=" << avgBxMid << ")\n";
+        return 1;
+    }
+
+    double horizontalRelErrSum = 0.0;
+    std::size_t horizontalSamples = 0;
+
+    const double yRow = spec.originY + static_cast<double>(jMid) * spec.dy;
+    for (std::size_t i = 1; i + 1 < spec.nx; ++i) {
+        const double x = spec.originX + static_cast<double>(i) * spec.dx;
+        if (std::abs(x) > 0.05) {
+            continue;
+        }
+        if (nearWire(x, yRow)) {
+            continue;
+        }
+        const auto [bxAnalytic, byAnalytic] = analyticField(x, yRow);
+        if (!std::isfinite(bxAnalytic) || !std::isfinite(byAnalytic)) {
+            continue;
+        }
+        const std::size_t idx = grid.idx(i, jMid);
+        const double bxNum = grid.Bx[idx];
+        const double byNum = grid.By[idx];
+        const double analyticMag = std::hypot(bxAnalytic, byAnalytic);
+        if (analyticMag < 1e-9) {
+            continue;
+        }
+        const double diffMag = std::hypot(bxNum - bxAnalytic, byNum - byAnalytic);
+        horizontalRelErrSum += diffMag / analyticMag;
+        ++horizontalSamples;
+    }
+
+    if (horizontalSamples < spec.nx / 4) {
+        std::cerr << "two_wire_cancel_test: insufficient horizontal samples (" << horizontalSamples << ")\n";
+        return 1;
+    }
+
+    const double avgHorizontalRelErr = horizontalRelErrSum / static_cast<double>(horizontalSamples);
+    if (!(avgHorizontalRelErr < 0.22)) {
+        std::cerr << "two_wire_cancel_test: horizontal relative error too high (" << avgHorizontalRelErr
+                  << ")\n";
         return 1;
     }
 
@@ -119,6 +187,7 @@ int main() {
         }
     }
 
-    std::cout << "two_wire_cancel_test: ratio=" << ratio << ", iters=" << report.iters << "\n";
+    std::cout << "two_wire_cancel_test: verticalRelErr=" << avgVerticalRelErr
+              << ", horizontalRelErr=" << avgHorizontalRelErr << ", iters=" << report.iters << "\n";
     return 0;
 }

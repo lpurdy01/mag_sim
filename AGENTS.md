@@ -24,4 +24,6 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
 - Reserved fields such as `"timeline"` are ignored by the current ingestor, so
   you can sketch future extensions without breaking compatibility.
 - Use `python/visualize_scenario_field.py` to plot the exported field maps with
-  wire overlays (defaults to the bundled two-wire cancellation scenario).
+  wire overlays (defaults to the bundled two-wire cancellation scenario). Pass
+  `--color-scale log` for a logarithmic magnitude map when the dynamic range is
+  large.

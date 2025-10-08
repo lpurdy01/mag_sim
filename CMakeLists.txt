@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
 # Project include path
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -37,6 +39,32 @@ target_include_directories(two_wire_cancel_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME two_wire_cancel COMMAND two_wire_cancel_test)
+
+add_test(
+    NAME scenario_python_emit
+    COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/python/examples/two_wire_cancel.py
+        --output
+        ${CMAKE_BINARY_DIR}/two_wire_cancel_generated.json)
+
+add_test(
+    NAME scenario_json_diff
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_BINARY_DIR}/two_wire_cancel_generated.json
+            ${CMAKE_SOURCE_DIR}/inputs/two_wire_cancel.json)
+set_tests_properties(scenario_json_diff PROPERTIES DEPENDS scenario_python_emit)
+
+add_test(
+    NAME scenario_cli_solve
+    COMMAND
+        $<TARGET_FILE:motor_sim>
+        --scenario
+        ${CMAKE_BINARY_DIR}/two_wire_cancel_generated.json
+        --solve
+        --outputs
+        none)
+set_tests_properties(scenario_cli_solve PROPERTIES DEPENDS scenario_json_diff)
 
 add_executable(solver_benchmark
     tools/solver_benchmark.cpp

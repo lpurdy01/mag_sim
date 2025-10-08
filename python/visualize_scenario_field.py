@@ -10,7 +10,14 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.colors import LogNorm
+
+try:
+    import numpy as np
+except ImportError as exc:  # pragma: no cover - optional dependency guard
+    raise SystemExit(
+        "numpy is required for visualization. Install it via 'pip install numpy'."
+    ) from exc
 
 
 @dataclass
@@ -112,11 +119,35 @@ def reshape_field(xs: np.ndarray, ys: np.ndarray, values: Tuple[np.ndarray, ...]
     return grid_x, grid_y, tuple(reshaped)
 
 
-def plot_field(grid_x: np.ndarray, grid_y: np.ndarray, bx: np.ndarray, by: np.ndarray, bmag: np.ndarray,
-               wires: List[Wire], quiver_skip: int, save: pathlib.Path | None, title: str) -> None:
+def plot_field(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    bx: np.ndarray,
+    by: np.ndarray,
+    bmag: np.ndarray,
+    wires: List[Wire],
+    quiver_skip: int,
+    save: pathlib.Path | None,
+    title: str,
+    color_scale: str,
+    log_floor: float,
+) -> None:
     fig, ax = plt.subplots(figsize=(7, 6))
-    pcm = ax.pcolormesh(grid_x, grid_y, bmag, shading="auto", cmap="viridis")
-    fig.colorbar(pcm, ax=ax, label="|B| [T]")
+    display_mag = bmag
+    norm = None
+    if color_scale == "log":
+        if log_floor <= 0.0:
+            raise SystemExit("--log-floor must be positive when using log colour scale")
+        positive = bmag[np.isfinite(bmag) & (bmag > 0.0)]
+        if positive.size == 0:
+            raise SystemExit("Cannot apply log scale because |B| has no positive samples")
+        vmin = max(float(positive.min()), log_floor)
+        vmax = float(positive.max())
+        norm = LogNorm(vmin=vmin, vmax=vmax)
+        display_mag = np.maximum(bmag, vmin)
+    pcm = ax.pcolormesh(grid_x, grid_y, display_mag, shading="auto", cmap="viridis", norm=norm)
+    cbar_label = "|B| [T]" if color_scale == "linear" else "|B| [T] (log scale)"
+    fig.colorbar(pcm, ax=ax, label=cbar_label)
 
     skip = max(1, quiver_skip)
     ax.quiver(
@@ -186,6 +217,18 @@ def main() -> None:
         help="Plot every Nth vector in the quiver plot for readability.",
     )
     parser.add_argument(
+        "--color-scale",
+        choices=("linear", "log"),
+        default="linear",
+        help="Colour mapping for |B|. Use 'log' to enhance dynamic range.",
+    )
+    parser.add_argument(
+        "--log-floor",
+        type=float,
+        default=1e-7,
+        help="Minimum |B| value when --color-scale=log to avoid taking log of zero.",
+    )
+    parser.add_argument(
         "--save",
         type=pathlib.Path,
         default=None,
@@ -207,7 +250,19 @@ def main() -> None:
     grid_x, grid_y, (bx, by, bmag) = reshape_field(xs, ys, (bxs, bys, bmags))
 
     title = f"Field map: {args.scenario.name}"
-    plot_field(grid_x, grid_y, bx, by, bmag, wires, args.quiver_skip, args.save, title)
+    plot_field(
+        grid_x,
+        grid_y,
+        bx,
+        by,
+        bmag,
+        wires,
+        args.quiver_skip,
+        args.save,
+        title,
+        args.color_scale,
+        args.log_floor,
+    )
 
 
 if __name__ == "__main__":

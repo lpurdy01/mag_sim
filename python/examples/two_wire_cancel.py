@@ -1,11 +1,14 @@
-"""Generate the two-wire cancellation scenario JSON.
+"""Generate the two-wire scenario JSON used by regression tests.
 
-Run this script from anywhere; it writes to ``inputs/two_wire_cancel.json``
-relative to the repository root and prints the path for convenience.
+Run this script from anywhere. By default it overwrites
+``inputs/two_wire_cancel.json`` relative to the repository root and prints the
+resolved path. Pass ``--output`` to write to an alternate location, which is
+handy for CI smoke tests that should not touch the checked-in fixture.
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -25,7 +28,23 @@ from scenario_api import (
 )
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=REPO_ROOT / "inputs" / "two_wire_cancel.json",
+        help=(
+            "Destination JSON file. Defaults to the repository fixture "
+            "(inputs/two_wire_cancel.json)."
+        ),
+    )
+    return parser
+
+
 def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
     dom = Domain(Lx=0.20, Ly=0.20, nx=201, ny=201)
     air = Material(name="air", mu_r=1.0)
     regions = [UniformRegion(material="air")]
@@ -47,8 +66,7 @@ def main() -> None:
         outputs=outputs,
     )
 
-    output_path = REPO_ROOT / "inputs" / "two_wire_cancel.json"
-    scenario.save_json(output_path)
+    output_path = scenario.save_json(args.output)
     print(f"Wrote scenario to {output_path}")
 
 

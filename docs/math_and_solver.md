@@ -169,3 +169,31 @@ Python authors can build these records via
 `scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as
 `python/visualize_scenario_field.py` consumes the emitted CSV to produce quick
 look plots for scenario debugging.
+
+### 9.2 Analytic reference: counter-wound wires
+
+The canonical regression scenario positions two parallel conductors at
+`(-a, 0)` and `(+a, 0)` with equal and opposite currents (`I` and `-I`) along the
+`+z` axis. Treating the wires as infinitely long, the magnetic field at any point
+`(x, y)` in the plane is obtained by superposing the Biot–Savart contribution of
+each wire:
+
+```
+Bx(x, y) = Σ_k μ0 I_k / (2π r_k²) * -(y - y_k)
+By(x, y) = Σ_k μ0 I_k / (2π r_k²) *  (x - x_k)
+```
+
+where `r_k² = (x - x_k)² + (y - y_k)²`. Along the vertical midline (`x = 0`) the
+horizontal component cancels (`Bx = 0`), but the vertical component reinforces to
+
+```
+By(0, y) = μ0 I a / (π (a² + y²)).
+```
+
+This explains why the simulated field map shows finite magnitude between the
+counter-wound pair: only co-directional currents annihilate the field on the
+midline. The regression test `tests/two_wire_cancel_test.cpp` samples both the
+vertical midline and the horizontal centreline, comparing the numerical `B`
+vector against the analytic expression above and reporting the average relative
+error. The same test still integrates `J_z` over each source disk to guard the
+current rasteriser.
