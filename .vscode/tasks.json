@@ -67,6 +67,20 @@
       "group": "test",
       "dependsOn": "cmake-build",
       "problemMatcher": []
+    },
+    {
+      "label": "run-two-wire-scenario",
+      "type": "shell",
+      "command": "${workspaceFolder}/build/motor_sim",
+      "args": [
+        "--scenario",
+        "${workspaceFolder}/inputs/two_wire_cancel.json",
+        "--solve",
+        "--write-midline"
+      ],
+      "group": "test",
+      "dependsOn": "cmake-build",
+      "problemMatcher": []
     }
   ]
 }

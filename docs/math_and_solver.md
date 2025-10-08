@@ -101,3 +101,48 @@ This reference captures the mathematical foundations and numerical choices embed
 
 For runtime and scaling heuristics, consult `docs/solver_performance.md`, which summarises
 benchmark data from the bundled tooling.
+
+## 9. Scenario Spec v0.1
+
+The solver now ingests simulation descriptions authored as JSON documents. The
+schema is intentionally small to keep the C++ dependency surface minimal while
+leaving room for future extensions (materials with geometry, time timelines,
+etc.). A valid document contains the following top-level members:
+
+| Field       | Type   | Notes |
+| ----------- | ------ | ----- |
+| `version`   | string | Must be `"0.1"` for the current ingestor. |
+| `units`     | string | `"SI"` only; currents in amperes, lengths in metres. |
+| `domain`    | object | `{Lx, Ly, nx, ny}` define the rectangular grid centred on the origin; `dx = Lx / (nx-1)` and likewise for `dy`. |
+| `materials` | array  | Each entry defines `{name, mu_r}`; v0.1 uses a single uniform material. |
+| `regions`   | array  | Uniform background assignments: `{ "type": "uniform", "material": "air" }`. |
+| `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
+
+The C++ helper `loadScenarioFromJson` performs structural validation and
+produces a `ScenarioSpec`. `rasterizeScenarioToGrid` then deposits current
+density and background permeability directly onto a `Grid2D`. The default `main`
+executable wires these steps together:
+
+```text
+JSON spec → ScenarioSpec → rasterise to Grid2D → solve A_z → compute B
+```
+
+Two helper layers keep authoring ergonomic:
+
+1. `python/scenario_api.py` exposes dataclasses mirroring the schema and a
+   `Scenario.save_json()` convenience. Agents can write scenarios in Python,
+   validate them, and emit the JSON artefact in one go.
+2. `motor_sim --scenario path/to.json --solve [--write-midline]` loads the spec,
+   solves the magnetostatic system, and optionally exports a midline CSV to
+   `outputs/twowire_midline.csv` for quick inspection in plotting tools.
+
+The `sources` list supports multiple wire entries. Each is rasterised as a disk
+with constant current density `J_z = I / (π r²)` applied to cells whose centres
+fall inside the radius. `tests/two_wire_cancel_test.cpp` integrates these cells
+to confirm that the deposited current matches the requested value to within
+15%, providing a regression guard on the rasteriser.
+
+Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
+introduced without breaking the base schema because the parser ignores unknown
+members. Geometry primitives beyond uniform regions should extend the `regions`
+array with new `type` variants when the solver grows material heterogeneity.

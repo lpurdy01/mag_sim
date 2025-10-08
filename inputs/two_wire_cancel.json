@@ -1,0 +1,38 @@
+{
+  "version": "0.1",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.2,
+    "Ly": 0.2,
+    "nx": 201,
+    "ny": 201
+  },
+  "materials": [
+    {
+      "name": "air",
+      "mu_r": 1.0
+    }
+  ],
+  "regions": [
+    {
+      "type": "uniform",
+      "material": "air"
+    }
+  ],
+  "sources": [
+    {
+      "type": "wire",
+      "x": -0.03,
+      "y": 0.0,
+      "radius": 0.003,
+      "I": 10.0
+    },
+    {
+      "type": "wire",
+      "x": 0.03,
+      "y": 0.0,
+      "radius": 0.003,
+      "I": -10.0
+    }
+  ]
+}

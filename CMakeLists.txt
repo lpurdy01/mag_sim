@@ -15,6 +15,7 @@ file(GLOB SRC_FILES CONFIGURE_DEPENDS
      "${CMAKE_SOURCE_DIR}/src/motorsim/*.cpp")
 
 add_executable(motor_sim ${SRC_FILES})
+target_include_directories(motor_sim PRIVATE ${CMAKE_SOURCE_DIR}/external)
 
 # Basic test target (placeholder)
 enable_testing()
@@ -27,6 +28,15 @@ add_executable(analytic_wire_test
     src/motorsim/io_csv.cpp)
 target_include_directories(analytic_wire_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 add_test(NAME analytic_wire COMMAND analytic_wire_test)
+
+add_executable(two_wire_cancel_test
+    tests/two_wire_cancel_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(two_wire_cancel_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME two_wire_cancel COMMAND two_wire_cancel_test)
 
 add_executable(solver_benchmark
     tools/solver_benchmark.cpp

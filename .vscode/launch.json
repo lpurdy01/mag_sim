@@ -51,6 +51,25 @@
       "MIMode": "gdb",
       "miDebuggerPath": "/usr/bin/gdb",
       "preLaunchTask": "cmake-build"
+    },
+    {
+      "name": "(gdb) Run two-wire scenario",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/motor_sim",
+      "args": [
+        "--scenario",
+        "${workspaceFolder}/inputs/two_wire_cancel.json",
+        "--solve",
+        "--write-midline"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "cmake-build"
     }
   ]
 }
