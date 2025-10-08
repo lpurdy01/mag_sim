@@ -3,17 +3,42 @@
 #include "motorsim/solver.hpp"
 #include "motorsim/types.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <sstream>
+#include <system_error>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace {
 
 void printUsage() {
-    std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]\n";
+    std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
+                 " [--list-outputs] [--outputs IDs]\n";
+}
+
+std::vector<std::string> splitCommaSeparated(const std::string& text) {
+    std::vector<std::string> items;
+    std::stringstream ss(text);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        if (!item.empty()) {
+            items.push_back(item);
+        }
+    }
+    return items;
+}
+
+void ensureParentDirectory(const std::filesystem::path& path) {
+    const std::filesystem::path parent = path.parent_path();
+    if (!parent.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+    }
 }
 
 }  // namespace
@@ -24,6 +49,8 @@ int main(int argc, char** argv) {
     std::optional<std::string> scenarioPath;
     bool runSolve = false;
     bool writeMidline = false;
+    bool listOutputs = false;
+    std::optional<std::string> outputsFilterArg;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -38,6 +65,15 @@ int main(int argc, char** argv) {
             runSolve = true;
         } else if (arg == "--write-midline") {
             writeMidline = true;
+        } else if (arg == "--list-outputs") {
+            listOutputs = true;
+        } else if (arg == "--outputs") {
+            if (i + 1 >= argc) {
+                std::cerr << "--outputs requires a comma-separated list or 'all'/'none'\n";
+                printUsage();
+                return 1;
+            }
+            outputsFilterArg = std::string(argv[++i]);
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             return 0;
@@ -59,6 +95,61 @@ int main(int argc, char** argv) {
     } catch (const std::exception& ex) {
         std::cerr << "Failed to load scenario: " << ex.what() << "\n";
         return 1;
+    }
+
+    std::unordered_set<std::string> availableOutputIds;
+    availableOutputIds.reserve(spec.outputs.fieldMaps.size() + spec.outputs.lineProbes.size());
+    for (const auto& request : spec.outputs.fieldMaps) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.lineProbes) {
+        availableOutputIds.insert(request.id);
+    }
+
+    if (listOutputs) {
+        std::cout << "Scenario outputs (" << availableOutputIds.size() << "):\n";
+        for (const auto& request : spec.outputs.fieldMaps) {
+            std::cout << "  - [field_map] id=" << request.id << ", quantity=" << request.quantity
+                      << ", format=" << request.format << ", path=" << request.path << "\n";
+        }
+        for (const auto& request : spec.outputs.lineProbes) {
+            std::cout << "  - [line_probe] id=" << request.id << ", axis=" << request.axis
+                      << ", value=" << request.value << ", quantity=" << request.quantity
+                      << ", format=" << request.format << ", path=" << request.path << "\n";
+        }
+    }
+
+    std::unordered_set<std::string> requestedOutputIds;
+    bool restrictOutputs = false;
+    bool skipOutputs = false;
+    if (outputsFilterArg) {
+        if (outputsFilterArg->empty()) {
+            std::cerr << "--outputs argument must not be empty\n";
+            return 1;
+        }
+        if (*outputsFilterArg == "all") {
+            restrictOutputs = false;
+        } else if (*outputsFilterArg == "none") {
+            skipOutputs = true;
+        } else {
+            if (availableOutputIds.empty()) {
+                std::cerr << "Scenario defines no outputs but --outputs was specified\n";
+                return 1;
+            }
+            const auto ids = splitCommaSeparated(*outputsFilterArg);
+            if (ids.empty()) {
+                std::cerr << "--outputs requires a comma-separated list of ids or 'all'/'none'\n";
+                return 1;
+            }
+            restrictOutputs = true;
+            for (const auto& id : ids) {
+                if (availableOutputIds.find(id) == availableOutputIds.end()) {
+                    std::cerr << "Requested output id not found in scenario: " << id << "\n";
+                    return 1;
+                }
+                requestedOutputIds.insert(id);
+            }
+        }
     }
 
     Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
@@ -88,10 +179,161 @@ int main(int argc, char** argv) {
     computeB(grid);
     std::cout << "Solve complete. iters=" << report.iters << ", relResidual=" << report.relResidual << "\n";
 
+    const bool scenarioHasOutputs = !spec.outputs.fieldMaps.empty() || !spec.outputs.lineProbes.empty();
+    const auto shouldEmit = [&](const std::string& id) {
+        if (skipOutputs) {
+            return false;
+        }
+        if (!restrictOutputs) {
+            return true;
+        }
+        return requestedOutputIds.find(id) != requestedOutputIds.end();
+    };
+
+    bool outputError = false;
+    if (scenarioHasOutputs && !skipOutputs) {
+        std::vector<double> gridXs;
+        std::vector<double> gridYs;
+        std::vector<double> gridBx;
+        std::vector<double> gridBy;
+        std::vector<double> gridBmag;
+        bool fieldPrepared = false;
+        const auto prepareFieldVectors = [&]() {
+            if (fieldPrepared) {
+                return;
+            }
+            const std::size_t total = spec.nx * spec.ny;
+            gridXs.resize(total);
+            gridYs.resize(total);
+            gridBx.resize(total);
+            gridBy.resize(total);
+            gridBmag.resize(total);
+            std::size_t idx = 0;
+            for (std::size_t j = 0; j < spec.ny; ++j) {
+                const double y = spec.originY + static_cast<double>(j) * spec.dy;
+                for (std::size_t i = 0; i < spec.nx; ++i) {
+                    const double x = spec.originX + static_cast<double>(i) * spec.dx;
+                    const std::size_t gridIdx = grid.idx(i, j);
+                    gridXs[idx] = x;
+                    gridYs[idx] = y;
+                    gridBx[idx] = grid.Bx[gridIdx];
+                    gridBy[idx] = grid.By[gridIdx];
+                    gridBmag[idx] = std::hypot(grid.Bx[gridIdx], grid.By[gridIdx]);
+                    ++idx;
+                }
+            }
+            fieldPrepared = true;
+        };
+
+        for (const auto& request : spec.outputs.fieldMaps) {
+            if (!shouldEmit(request.id)) {
+                continue;
+            }
+            prepareFieldVectors();
+            const std::filesystem::path outPath{request.path};
+            ensureParentDirectory(outPath);
+            try {
+                write_csv_field_map(outPath.string(), gridXs, gridYs, gridBx, gridBy, gridBmag);
+                std::cout << "Wrote field_map output '" << request.id << "' to " << outPath << "\n";
+            } catch (const std::exception& ex) {
+                std::cerr << "Failed to write field_map output '" << request.id << "': " << ex.what()
+                          << "\n";
+                outputError = true;
+            }
+        }
+
+        for (const auto& request : spec.outputs.lineProbes) {
+            if (!shouldEmit(request.id)) {
+                continue;
+            }
+
+            std::vector<double> xs;
+            std::vector<double> ys;
+            std::vector<double> values;
+
+            if (request.axis == "x") {
+                const double coord = (request.value - spec.originX) / spec.dx;
+                const auto idx = static_cast<long long>(std::llround(coord));
+                if (idx < 0 || idx >= static_cast<long long>(spec.nx)) {
+                    std::cerr << "line_probe '" << request.id << "' is outside the domain (x="
+                              << request.value << ")\n";
+                    outputError = true;
+                    continue;
+                }
+                const double actual = spec.originX + static_cast<double>(idx) * spec.dx;
+                if (std::abs(actual - request.value) > 0.5 * spec.dx + 1e-9) {
+                    std::cerr << "line_probe '" << request.id
+                              << "' does not align with grid column (requested x=" << request.value
+                              << ", snapped to " << actual << ")\n";
+                    outputError = true;
+                    continue;
+                }
+
+                xs.resize(spec.ny, actual);
+                ys.resize(spec.ny);
+                values.resize(spec.ny);
+                for (std::size_t j = 0; j < spec.ny; ++j) {
+                    const double y = spec.originY + static_cast<double>(j) * spec.dy;
+                    const std::size_t gridIdx = grid.idx(static_cast<std::size_t>(idx), j);
+                    ys[j] = y;
+                    if (request.quantity == "Bx") {
+                        values[j] = grid.Bx[gridIdx];
+                    } else if (request.quantity == "By") {
+                        values[j] = grid.By[gridIdx];
+                    } else {  // Bmag
+                        values[j] = std::hypot(grid.Bx[gridIdx], grid.By[gridIdx]);
+                    }
+                }
+            } else if (request.axis == "y") {
+                const double coord = (request.value - spec.originY) / spec.dy;
+                const auto idx = static_cast<long long>(std::llround(coord));
+                if (idx < 0 || idx >= static_cast<long long>(spec.ny)) {
+                    std::cerr << "line_probe '" << request.id << "' is outside the domain (y="
+                              << request.value << ")\n";
+                    outputError = true;
+                    continue;
+                }
+                const double actual = spec.originY + static_cast<double>(idx) * spec.dy;
+                if (std::abs(actual - request.value) > 0.5 * spec.dy + 1e-9) {
+                    std::cerr << "line_probe '" << request.id
+                              << "' does not align with grid row (requested y=" << request.value
+                              << ", snapped to " << actual << ")\n";
+                    outputError = true;
+                    continue;
+                }
+
+                xs.resize(spec.nx);
+                ys.resize(spec.nx, actual);
+                values.resize(spec.nx);
+                for (std::size_t i = 0; i < spec.nx; ++i) {
+                    const double x = spec.originX + static_cast<double>(i) * spec.dx;
+                    const std::size_t gridIdx = grid.idx(i, static_cast<std::size_t>(idx));
+                    xs[i] = x;
+                    if (request.quantity == "Bx") {
+                        values[i] = grid.Bx[gridIdx];
+                    } else if (request.quantity == "By") {
+                        values[i] = grid.By[gridIdx];
+                    } else {  // Bmag
+                        values[i] = std::hypot(grid.Bx[gridIdx], grid.By[gridIdx]);
+                    }
+                }
+            }
+
+            const std::filesystem::path outPath{request.path};
+            ensureParentDirectory(outPath);
+            try {
+                write_csv_line_profile(outPath.string(), xs, ys, values);
+                std::cout << "Wrote line_probe output '" << request.id << "' to " << outPath << "\n";
+            } catch (const std::exception& ex) {
+                std::cerr << "Failed to write line_probe output '" << request.id << "': " << ex.what()
+                          << "\n";
+                outputError = true;
+            }
+        }
+    }
+
     if (writeMidline) {
         const std::filesystem::path outDir{"outputs"};
-        std::error_code ec;
-        std::filesystem::create_directories(outDir, ec);
 
         const std::size_t iMid = spec.nx / 2;
         std::vector<double> xs;
@@ -110,6 +352,7 @@ int main(int argc, char** argv) {
         }
 
         const std::filesystem::path csvPath = outDir / "twowire_midline.csv";
+        ensureParentDirectory(csvPath);
         try {
             write_csv_line_profile(csvPath.string(), xs, ys, bmag);
             std::cout << "Wrote midline profile to " << csvPath << "\n";
@@ -118,5 +361,5 @@ int main(int argc, char** argv) {
         }
     }
 
-    return 0;
+    return outputError ? 1 : 0;
 }

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Set, Union
 
 
 @dataclass
@@ -61,11 +61,85 @@ class Wire:
 
 
 @dataclass
+class FieldMapOutput:
+    """Request to write the full-field map to disk."""
+
+    id: str
+    path: Optional[str] = None
+    quantity: str = "B"
+    format: str = "csv"
+
+    def validate(self) -> None:
+        if not self.id:
+            raise ValueError("FieldMapOutput id must be non-empty")
+        if self.quantity != "B":
+            raise ValueError("FieldMapOutput currently only supports quantity 'B'")
+        if self.format != "csv":
+            raise ValueError("FieldMapOutput currently only supports CSV format")
+        if self.path is not None and not self.path:
+            raise ValueError("FieldMapOutput path must be a non-empty string when provided")
+
+    def to_dict(self) -> Dict[str, object]:
+        data: Dict[str, object] = {
+            "type": "field_map",
+            "id": self.id,
+            "quantity": self.quantity,
+        }
+        if self.path:
+            data["path"] = self.path
+        if self.format != "csv":
+            data["format"] = self.format
+        return data
+
+
+@dataclass
+class LineProbeOutput:
+    """Sample the field along a horizontal or vertical line."""
+
+    id: str
+    axis: str
+    value: float
+    path: Optional[str] = None
+    quantity: str = "Bmag"
+    format: str = "csv"
+
+    def validate(self) -> None:
+        if not self.id:
+            raise ValueError("LineProbeOutput id must be non-empty")
+        if self.axis not in {"x", "y"}:
+            raise ValueError("LineProbeOutput axis must be 'x' or 'y'")
+        if self.quantity not in {"Bmag", "Bx", "By"}:
+            raise ValueError("LineProbeOutput quantity must be 'Bmag', 'Bx', or 'By'")
+        if self.format != "csv":
+            raise ValueError("LineProbeOutput currently only supports CSV format")
+        if self.path is not None and not self.path:
+            raise ValueError("LineProbeOutput path must be a non-empty string when provided")
+
+    def to_dict(self) -> Dict[str, object]:
+        data: Dict[str, object] = {
+            "type": "line_probe",
+            "id": self.id,
+            "axis": self.axis,
+            "value": float(self.value),
+            "quantity": self.quantity,
+        }
+        if self.path:
+            data["path"] = self.path
+        if self.format != "csv":
+            data["format"] = self.format
+        return data
+
+
+ScenarioOutput = Union[FieldMapOutput, LineProbeOutput]
+
+
+@dataclass
 class Scenario:
     domain: Domain
     materials: List[Material] = field(default_factory=list)
     regions: List[UniformRegion] = field(default_factory=list)
     sources: List[Wire] = field(default_factory=list)
+    outputs: List["ScenarioOutput"] = field(default_factory=list)
     units: str = "SI"
     version: str = "0.1"
 
@@ -89,10 +163,18 @@ class Scenario:
         for wire in self.sources:
             if wire.radius <= 0.0:
                 raise ValueError("Wire radius must be positive")
+        seen_ids: Set[str] = set()
+        for output in self.outputs:
+            if not isinstance(output, (FieldMapOutput, LineProbeOutput)):
+                raise ValueError(f"Unsupported output type: {type(output)}")
+            output.validate()
+            if output.id in seen_ids:
+                raise ValueError(f"Duplicate output id '{output.id}'")
+            seen_ids.add(output.id)
 
     def to_dict(self) -> Dict[str, object]:
         self._validate()
-        return {
+        data: Dict[str, object] = {
             "version": self.version,
             "units": self.units,
             "domain": self.domain.to_dict(),
@@ -100,6 +182,9 @@ class Scenario:
             "regions": [region.to_dict() for region in self.regions],
             "sources": [wire.to_dict() for wire in self.sources],
         }
+        if self.outputs:
+            data["outputs"] = [output.to_dict() for output in self.outputs]
+        return data
 
     def to_json(self, *, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent) + "\n"
@@ -117,5 +202,7 @@ __all__ = [
     "Material",
     "UniformRegion",
     "Wire",
+    "FieldMapOutput",
+    "LineProbeOutput",
     "Scenario",
 ]

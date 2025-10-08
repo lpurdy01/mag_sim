@@ -34,5 +34,21 @@
       "radius": 0.003,
       "I": -10.0
     }
+  ],
+  "outputs": [
+    {
+      "type": "field_map",
+      "id": "domain_field",
+      "quantity": "B",
+      "path": "outputs/two_wire_field_map.csv"
+    },
+    {
+      "type": "line_probe",
+      "id": "midline",
+      "axis": "x",
+      "value": 0.0,
+      "quantity": "Bmag",
+      "path": "outputs/two_wire_midline.csv"
+    }
   ]
 }

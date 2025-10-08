@@ -117,6 +117,7 @@ etc.). A valid document contains the following top-level members:
 | `materials` | array  | Each entry defines `{name, mu_r}`; v0.1 uses a single uniform material. |
 | `regions`   | array  | Uniform background assignments: `{ "type": "uniform", "material": "air" }`. |
 | `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
+| `outputs`   | array  | Optional list of export requests. v0.1 supports `field_map` and `line_probe` records with stable `id`s, formats (CSV), and target paths. |
 
 The C++ helper `loadScenarioFromJson` performs structural validation and
 produces a `ScenarioSpec`. `rasterizeScenarioToGrid` then deposits current
@@ -132,9 +133,12 @@ Two helper layers keep authoring ergonomic:
 1. `python/scenario_api.py` exposes dataclasses mirroring the schema and a
    `Scenario.save_json()` convenience. Agents can write scenarios in Python,
    validate them, and emit the JSON artefact in one go.
-2. `motor_sim --scenario path/to.json --solve [--write-midline]` loads the spec,
-   solves the magnetostatic system, and optionally exports a midline CSV to
-   `outputs/twowire_midline.csv` for quick inspection in plotting tools.
+2. `motor_sim --scenario path/to.json --solve [--list-outputs] [--outputs ids]`
+   loads the spec, solves the magnetostatic system, and emits any outputs
+   declared in the JSON. Use `--list-outputs` to inspect available IDs and
+   `--outputs id1,id2` or `--outputs none` to control which requests are
+   fulfilled at runtime. The legacy `--write-midline` flag remains available for
+   ad-hoc dumps.
 
 The `sources` list supports multiple wire entries. Each is rasterised as a disk
 with constant current density `J_z = I / (π r²)` applied to cells whose centres
@@ -146,3 +150,22 @@ Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
 introduced without breaking the base schema because the parser ignores unknown
 members. Geometry primitives beyond uniform regions should extend the `regions`
 array with new `type` variants when the solver grows material heterogeneity.
+
+### 9.1 Output requests
+
+Output definitions live alongside the physical description so scenarios are
+self-documenting and reproducible. Two request flavours are implemented in v0.1:
+
+* **Field maps** (`{"type":"field_map", "id":"domain_field", "quantity":"B", "path":"outputs/two_wire_field_map.csv"}`)
+  dump the full `B` field over the grid. The CSV contains `x,y,Bx,By,Bmag`, and
+  the path defaults to `outputs/<id>.csv` when omitted.
+* **Line probes** (`{"type":"line_probe", "axis":"x", "value":0.0, "quantity":"Bmag"}`)
+  sample a horizontal or vertical line aligned with the grid. Specify `axis`
+  (`"x"` or `"y"`), the coordinate to lock, the field component (`Bx`, `By`, or
+  `Bmag`), and an output path. The ingestor validates that the requested line
+  lands on an existing grid column/row.
+
+Python authors can build these records via
+`scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as
+`python/visualize_scenario_field.py` consumes the emitted CSV to produce quick
+look plots for scenario debugging.

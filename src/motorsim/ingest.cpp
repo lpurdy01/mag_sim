@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
@@ -26,6 +27,13 @@ double requirePositive(const std::string& field, double value) {
 std::size_t requireGridSize(const std::string& field, std::size_t value) {
     if (value < 2) {
         throw std::runtime_error(field + " must be at least 2");
+    }
+    return value;
+}
+
+std::string requireNonEmpty(const std::string& field, const std::string& value) {
+    if (value.empty()) {
+        throw std::runtime_error(field + " must be a non-empty string");
     }
     return value;
 }
@@ -125,6 +133,74 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         wire.radius = requirePositive("wire.radius", source.at("radius").get<double>());
         wire.current = source.at("I").get<double>();
         spec.wires.push_back(wire);
+    }
+
+    spec.outputs = ScenarioSpec::Outputs{};
+    if (json.contains("outputs")) {
+        const auto& outputs = json.at("outputs");
+        if (!outputs.is_array()) {
+            throw std::runtime_error("Scenario outputs must be an array");
+        }
+
+        std::unordered_set<std::string> ids;
+        ids.reserve(outputs.size());
+        for (const auto& output : outputs) {
+            const std::string type = output.at("type").get<std::string>();
+            const std::string id = requireNonEmpty("outputs.id", output.at("id").get<std::string>());
+            if (!ids.insert(id).second) {
+                throw std::runtime_error("Duplicate output id: " + id);
+            }
+
+            if (type == "field_map") {
+                ScenarioSpec::Outputs::FieldMap request{};
+                request.id = id;
+                request.quantity = output.value("quantity", std::string{"B"});
+                if (request.quantity != "B") {
+                    throw std::runtime_error(
+                        "Unsupported field_map quantity for output '" + id + "': " + request.quantity);
+                }
+                request.format = output.value("format", std::string{"csv"});
+                if (request.format != "csv") {
+                    throw std::runtime_error(
+                        "Unsupported field_map format for output '" + id + "': " + request.format);
+                }
+                if (output.contains("path")) {
+                    request.path =
+                        requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + ".csv";
+                }
+                spec.outputs.fieldMaps.push_back(std::move(request));
+            } else if (type == "line_probe") {
+                ScenarioSpec::Outputs::LineProbe request{};
+                request.id = id;
+                request.quantity = output.value("quantity", std::string{"Bmag"});
+                if (request.quantity != "Bmag" && request.quantity != "Bx" && request.quantity != "By") {
+                    throw std::runtime_error(
+                        "Unsupported line_probe quantity for output '" + id + "': " + request.quantity);
+                }
+                request.axis = requireNonEmpty("outputs.axis", output.value("axis", std::string{}));
+                if (request.axis != "x" && request.axis != "y") {
+                    throw std::runtime_error(
+                        "line_probe axis must be 'x' or 'y' for output '" + id + "'");
+                }
+                request.value = output.at("value").get<double>();
+                request.format = output.value("format", std::string{"csv"});
+                if (request.format != "csv") {
+                    throw std::runtime_error(
+                        "Unsupported line_probe format for output '" + id + "': " + request.format);
+                }
+                if (output.contains("path")) {
+                    request.path =
+                        requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + ".csv";
+                }
+                spec.outputs.lineProbes.push_back(std::move(request));
+            } else {
+                throw std::runtime_error("Unsupported output type: " + type);
+            }
+        }
     }
 
     return spec;

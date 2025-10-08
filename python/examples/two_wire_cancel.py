@@ -14,7 +14,15 @@ PYTHON_DIR = REPO_ROOT / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-from scenario_api import Domain, Material, Scenario, UniformRegion, Wire
+from scenario_api import (
+    Domain,
+    FieldMapOutput,
+    LineProbeOutput,
+    Material,
+    Scenario,
+    UniformRegion,
+    Wire,
+)
 
 
 def main() -> None:
@@ -26,7 +34,18 @@ def main() -> None:
         Wire(x=0.03, y=0.0, radius=0.003, I=-10.0),
     ]
 
-    scenario = Scenario(domain=dom, materials=[air], regions=regions, sources=wires)
+    outputs = [
+        FieldMapOutput(id="domain_field", path="outputs/two_wire_field_map.csv"),
+        LineProbeOutput(id="midline", axis="x", value=0.0, path="outputs/two_wire_midline.csv"),
+    ]
+
+    scenario = Scenario(
+        domain=dom,
+        materials=[air],
+        regions=regions,
+        sources=wires,
+        outputs=outputs,
+    )
 
     output_path = REPO_ROOT / "inputs" / "two_wire_cancel.json"
     scenario.save_json(output_path)

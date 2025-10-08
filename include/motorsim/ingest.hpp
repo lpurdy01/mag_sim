@@ -16,6 +16,27 @@ struct ScenarioSpec {
         double current{0.0};
     };
 
+    struct Outputs {
+        struct FieldMap {
+            std::string id;
+            std::string path;
+            std::string quantity;  // e.g., "B"
+            std::string format;    // e.g., "csv"
+        };
+
+        struct LineProbe {
+            std::string id;
+            std::string path;
+            std::string axis;      // "x" or "y"
+            double value{0.0};     // coordinate along the fixed axis
+            std::string quantity;  // e.g., "Bmag", "Bx", "By"
+            std::string format;    // e.g., "csv"
+        };
+
+        std::vector<FieldMap> fieldMaps;
+        std::vector<LineProbe> lineProbes;
+    };
+
     std::string version;
     double Lx{0.0};
     double Ly{0.0};
@@ -27,6 +48,7 @@ struct ScenarioSpec {
     double dy{0.0};
     double mu_r_background{1.0};
     std::vector<Wire> wires;
+    Outputs outputs;
 };
 
 ScenarioSpec loadScenarioFromJson(const std::string& path);
