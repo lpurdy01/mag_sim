@@ -27,13 +27,14 @@ extensions.
 Use `Terminal → Run Task` (or the command palette) to access the predefined
 tasks:
 
-| Task label              | Purpose                                                                  |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `cmake-configure`       | Configure the out-of-source build directory in Debug mode.               |
-| `cmake-build`           | Build all targets; depends on configuration.                             |
-| `ctest`                 | Run the full test suite with verbose failure output.                     |
-| `run-analytic-wire-test`| Compile + launch the analytic validation binary in place.                |
-| `run-solver-benchmark`  | Compile + execute the benchmark helper with a lean 129×129 grid preset. |
+| Task label               | Purpose                                                                  |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `cmake-configure`        | Configure the out-of-source build directory in Debug mode.               |
+| `cmake-build`            | Build all targets; depends on configuration.                             |
+| `ctest`                  | Run the full test suite with verbose failure output.                     |
+| `run-analytic-wire-test` | Compile + launch the analytic validation binary in place.                |
+| `run-solver-benchmark`   | Compile + execute the benchmark helper with a lean 129×129 grid preset. |
+| `run-two-wire-scenario`  | Build + execute `motor_sim` against the bundled JSON scenario.           |
 
 These tasks chain automatically (for example, running the benchmark will trigger
 a build if required). Feel free to duplicate them locally for custom grids or
@@ -41,11 +42,12 @@ release builds.
 
 ### 2.2 Debugging
 
-The `Run and Debug` panel exposes launch configurations for three executables:
+The `Run and Debug` panel exposes launch configurations for four executables:
 
-1. **motor_sim** — the placeholder main application.
-2. **analytic_wire_test** — deterministic regression for the single-wire case.
-3. **solver_benchmark** — convenience harness for measuring throughput.
+1. **motor_sim** — loads JSON scenarios; defaults to printing usage when no args are supplied.
+2. **Run two-wire scenario** — launches `motor_sim` with the bundled cancellation case and writes the midline CSV.
+3. **analytic_wire_test** — deterministic regression for the single-wire case.
+4. **solver_benchmark** — convenience harness for measuring throughput.
 
 All launchers invoke the `cmake-build` task beforehand to guarantee the binary is
 up to date. Adjust command-line arguments via the `args` array in
@@ -99,17 +101,17 @@ contributors can compare apples to apples.
 
 ## 6. Visualisation helpers
 
-The regression test emits optional CSV artefacts under `outputs/` when it
-finishes. Two Python scripts consume them:
+The regression test and scenario runner emit optional CSV artefacts under
+`outputs/` when they finish. Three Python scripts consume them:
 
 * `python/visualize_wire.py` compares the centreline magnitude against the
   analytic solution for a finite-radius wire. The dip to zero at the origin is a
   physical consequence of the uniform current distribution inside the conductor.
 * `python/visualize_wire_field.py` renders a top-down map with quiver arrows so
   you can verify the azimuthal direction of **B** around the wire.
-
-Both scripts require `numpy` and `matplotlib` and accept `--save` to archive the
-figures.
+* `python/examples/two_wire_cancel.py` writes `inputs/two_wire_cancel.json` using
+  the lightweight scenario DSL. Regenerate it if you tweak parameters during
+  debugging.
 
 ## 7. Other IDEs
 

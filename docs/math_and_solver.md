@@ -101,3 +101,99 @@ This reference captures the mathematical foundations and numerical choices embed
 
 For runtime and scaling heuristics, consult `docs/solver_performance.md`, which summarises
 benchmark data from the bundled tooling.
+
+## 9. Scenario Spec v0.1
+
+The solver now ingests simulation descriptions authored as JSON documents. The
+schema is intentionally small to keep the C++ dependency surface minimal while
+leaving room for future extensions (materials with geometry, time timelines,
+etc.). A valid document contains the following top-level members:
+
+| Field       | Type   | Notes |
+| ----------- | ------ | ----- |
+| `version`   | string | Must be `"0.1"` for the current ingestor. |
+| `units`     | string | `"SI"` only; currents in amperes, lengths in metres. |
+| `domain`    | object | `{Lx, Ly, nx, ny}` define the rectangular grid centred on the origin; `dx = Lx / (nx-1)` and likewise for `dy`. |
+| `materials` | array  | Each entry defines `{name, mu_r}`; v0.1 uses a single uniform material. |
+| `regions`   | array  | Uniform background assignments: `{ "type": "uniform", "material": "air" }`. |
+| `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
+| `outputs`   | array  | Optional list of export requests. v0.1 supports `field_map` and `line_probe` records with stable `id`s, formats (CSV), and target paths. |
+
+The C++ helper `loadScenarioFromJson` performs structural validation and
+produces a `ScenarioSpec`. `rasterizeScenarioToGrid` then deposits current
+density and background permeability directly onto a `Grid2D`. The default `main`
+executable wires these steps together:
+
+```text
+JSON spec → ScenarioSpec → rasterise to Grid2D → solve A_z → compute B
+```
+
+Two helper layers keep authoring ergonomic:
+
+1. `python/scenario_api.py` exposes dataclasses mirroring the schema and a
+   `Scenario.save_json()` convenience. Agents can write scenarios in Python,
+   validate them, and emit the JSON artefact in one go.
+2. `motor_sim --scenario path/to.json --solve [--list-outputs] [--outputs ids]`
+   loads the spec, solves the magnetostatic system, and emits any outputs
+   declared in the JSON. Use `--list-outputs` to inspect available IDs and
+   `--outputs id1,id2` or `--outputs none` to control which requests are
+   fulfilled at runtime. The legacy `--write-midline` flag remains available for
+   ad-hoc dumps.
+
+The `sources` list supports multiple wire entries. Each is rasterised as a disk
+with constant current density `J_z = I / (π r²)` applied to cells whose centres
+fall inside the radius. `tests/two_wire_cancel_test.cpp` integrates these cells
+to confirm that the deposited current matches the requested value to within
+15%, providing a regression guard on the rasteriser.
+
+Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
+introduced without breaking the base schema because the parser ignores unknown
+members. Geometry primitives beyond uniform regions should extend the `regions`
+array with new `type` variants when the solver grows material heterogeneity.
+
+### 9.1 Output requests
+
+Output definitions live alongside the physical description so scenarios are
+self-documenting and reproducible. Two request flavours are implemented in v0.1:
+
+* **Field maps** (`{"type":"field_map", "id":"domain_field", "quantity":"B", "path":"outputs/two_wire_field_map.csv"}`)
+  dump the full `B` field over the grid. The CSV contains `x,y,Bx,By,Bmag`, and
+  the path defaults to `outputs/<id>.csv` when omitted.
+* **Line probes** (`{"type":"line_probe", "axis":"x", "value":0.0, "quantity":"Bmag"}`)
+  sample a horizontal or vertical line aligned with the grid. Specify `axis`
+  (`"x"` or `"y"`), the coordinate to lock, the field component (`Bx`, `By`, or
+  `Bmag`), and an output path. The ingestor validates that the requested line
+  lands on an existing grid column/row.
+
+Python authors can build these records via
+`scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as
+`python/visualize_scenario_field.py` consumes the emitted CSV to produce quick
+look plots for scenario debugging.
+
+### 9.2 Analytic reference: counter-wound wires
+
+The canonical regression scenario positions two parallel conductors at
+`(-a, 0)` and `(+a, 0)` with equal and opposite currents (`I` and `-I`) along the
+`+z` axis. Treating the wires as infinitely long, the magnetic field at any point
+`(x, y)` in the plane is obtained by superposing the Biot–Savart contribution of
+each wire:
+
+```
+Bx(x, y) = Σ_k μ0 I_k / (2π r_k²) * -(y - y_k)
+By(x, y) = Σ_k μ0 I_k / (2π r_k²) *  (x - x_k)
+```
+
+where `r_k² = (x - x_k)² + (y - y_k)²`. Along the vertical midline (`x = 0`) the
+horizontal component cancels (`Bx = 0`), but the vertical component reinforces to
+
+```
+By(0, y) = μ0 I a / (π (a² + y²)).
+```
+
+This explains why the simulated field map shows finite magnitude between the
+counter-wound pair: only co-directional currents annihilate the field on the
+midline. The regression test `tests/two_wire_cancel_test.cpp` samples both the
+vertical midline and the horizontal centreline, comparing the numerical `B`
+vector against the analytic expression above and reporting the average relative
+error. The same test still integrates `J_z` over each source disk to guard the
+current rasteriser.
