@@ -13,8 +13,11 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-`build/motor_sim` is a placeholder executable. The automated regression lives
-in `analytic_wire_test` and mirrors the analytic \(\mu_0 I / (2\pi r)\) wire case.
+`build/motor_sim` loads JSON scenarios that describe regions, currents, and
+optional permanent magnets. The automated regression suite lives in the
+`tests/` directory and includes the analytic \(\mu_0 I / (2\pi r)\) wire case,
+the planar permeability interface comparison, a magnet strip scenario, and a
+two-wire cancellation sanity check.
 
 ## VS Code & Codespaces quickstart
 
@@ -52,14 +55,17 @@ comparison. Practical rules of thumb and sample measurements are documented in
 * `docs/math_and_solver.md` — physics background, discretisation, and test plan.
 * `docs/dev_environment.md` — IDE setup, VS Code workflow, and debugging tips.
 * `docs/solver_performance.md` — complexity discussion and benchmark reference.
+* `CONTRIBUTING.md` — development workflow expectations, including the
+  `scripts/run_ci_checks.sh` harness that mirrors GitHub Actions locally.
 
 Python helpers for plotting the analytic wire validation live under
 `python/`. Run `python/visualize_wire.py` after the regression test to compare
 the numerical centreline magnitude against the analytic profile for a finite
 radius wire (the drop to zero at the core is expected for a solid conductor).
-For a top-down view and to inspect the azimuthal direction of **B**, use
-`python/visualize_wire_field.py`, which overlays a quiver plot on the 2D field
-map emitted by the test.
+For a top-down view or to inspect heterogeneous regions, use
+`python/visualize_scenario_field.py`. The script accepts the scenario JSON and a
+field-map CSV (`--field-map`) and provides switches such as `--draw-boundaries`,
+`--streamlines`, and `--color-scale log` for CI-friendly renders.
 
 ## Sample scenarios
 
@@ -68,9 +74,8 @@ map emitted by the test.
   `docs/math_and_solver.md`.
 * `inputs/iron_ring_demo.json` — heterogeneous permeability demo with a polygon
   iron ring and six alternating-current wires in the bore. Solve it via
-  `./build/motor_sim --scenario inputs/iron_ring_demo.json --solve` and visualise
-  the resulting CSV using `python/visualize_scenario_field.py --scenario
-  inputs/iron_ring_demo.json --save outputs/iron_ring_topdown.png` for a quick
-  top-down plot. A pre-rendered example is shown below.
-
-![Iron ring demo field map](docs/images/iron_ring_topdown.png)
+  `./build/motor_sim --scenario inputs/iron_ring_demo.json --solve` and render a
+  PNG with `python/visualize_scenario_field.py --scenario inputs/iron_ring_demo.json \
+  --field-map outputs/iron_ring_field.csv --save outputs/iron_ring_field.png`.
+  (CI runs capture the same render as an artifact, so the repository stays free
+  of committed binaries.)
