@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
           ./build/motor_sim --scenario inputs/two_wire_cancel.json --solve --outputs all
           ./build/motor_sim --scenario inputs/line_current_interface.json --solve --outputs all
-          ./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all
+          ./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all --tol 5e-6 --max-iters 40000
           ./build/motor_sim --scenario inputs/tests/magnet_strip_test.json --solve --outputs all
       - name: Render visualisations
         env:

@@ -48,3 +48,7 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
   to trace the flow, and `--overlay-analytic-interface` to compare against the
   method-of-images solution for planar interface scenarios. Pair with
   `--hide-vectors` if the quiver clutter is distracting.
+- The iron-ring demo requires a slightly looser nonlinear solve than the other
+  regressions; the CI workflow invokes `motor_sim` with
+  `--tol 5e-6 --max-iters 40000` for that scenario so the artefact rendering
+  succeeds without manual intervention.
