@@ -201,6 +201,9 @@ These can be visual or numerical comparisons to analytical expectations.
   * Enforce compilation warnings
   * Validate presence of `README.md` and licensing headers
 
+* Use `scripts/run_ci_checks.sh` locally before pushing CI-affecting changes to
+  replicate the workflow's build, regression, and artefact rendering steps.
+
 ---
 
 ## 10. Environment Setup & Reproducibility

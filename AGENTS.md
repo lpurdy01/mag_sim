@@ -43,6 +43,10 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
   and magnet-strip scenarios, the analytic wire line plot, all exported CSVs,
   and a `test_accuracy_report.txt` summary captured from the regression
   executables.
+- Before pushing CI-affecting changes, run `scripts/run_ci_checks.sh` to mirror
+  the workflow locally; it exercises the same solves, visualisations, and
+  artifact collection steps so argument regressions (e.g. flag typos) are
+  caught early.
 - The field visualiser exposes extra switches to aid debugging: use
   `--draw-boundaries` to overlay material and magnet outlines, `--streamlines`
   to trace the flow, and `--overlay-analytic-interface` to compare against the

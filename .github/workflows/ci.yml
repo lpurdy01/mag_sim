@@ -76,14 +76,14 @@ jobs:
             --save ci_artifacts/iron_ring_field.png \
             --draw-boundaries \
             --streamlines \
-            --log-scale
+            --color-scale log
           python3 python/visualize_scenario_field.py \
             --scenario inputs/tests/magnet_strip_test.json \
             --field-map outputs/magnet_strip_field.csv \
             --save ci_artifacts/magnet_strip_field.png \
             --draw-boundaries \
             --streamlines \
-            --log-scale
+            --color-scale log
           python3 python/visualize_wire.py \
             --csv outputs/validation_wire_line.csv \
             --save ci_artifacts/analytic_wire_line.png \
