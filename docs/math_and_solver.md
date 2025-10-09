@@ -133,11 +133,11 @@ To validate heterogeneous permeability handling we leverage the method of images
 
 The magnetic field in region 1 is the superposition of the real wire and an image wire located at \(\mathbf{r}_0' = (+a, 0)\) with current magnitude scaled by
 \[
-I' = \rho I, \qquad \rho = \frac{\mu_1 - \mu_2}{\mu_1 + \mu_2}.
+I' = \rho I, \qquad \rho = \frac{\mu_2 - \mu_1}{\mu_1 + \mu_2}.
 \]
 Region 2 sees the field of a "transmitted" wire that sits at the real location but carries current
 \[
-I_t = \tau I, \qquad \tau = \frac{2\mu_2}{\mu_1 + \mu_2}.
+I_t = \tau I, \qquad \tau = \frac{2\mu_1}{\mu_1 + \mu_2}.
 \]
 For a single infinite wire placed at \((x_s, y_s)\) inside a homogeneous medium with permeability \(\mu\), the Biot–Savart expression simplifies in 2D to
 \[
@@ -148,7 +148,7 @@ Therefore the validation procedure assembles
 - Region 1 field: \(\mathbf{B}_1 = \mathbf{B}_{\mu_1}(I, \mathbf{r}_0) + \mathbf{B}_{\mu_1}(I', \mathbf{r}_0')\).
 - Region 2 field: \(\mathbf{B}_2 = \mathbf{B}_{\mu_2}(I_t, \mathbf{r}_0)\).
 
-Sanity limits include \(\rho \to 0\) and \(\tau \to 1\) when \(\mu_1 = \mu_2\), and \(\rho \to -1\), \(\tau \to 2\) when \(\mu_2 \to \infty\), i.e. a perfect magnetic conductor on the right.
+Sanity limits include \(\rho \to 0\) and \(\tau \to 1\) when \(\mu_1 = \mu_2\), \(\rho \to 1\), \(\tau \to 0\) when \(\mu_2 \to \infty\), and \(\rho \to -1\), \(\tau \to 2\) as \(\mu_2 \to 0\).
 
 Simulated and analytic \(|\mathbf{B}|\) profiles along vertical probe lines in each half-space provide a sensitive regression on permeability contrast handling.
 The automated regression focuses on the air-side probe, where the relative error

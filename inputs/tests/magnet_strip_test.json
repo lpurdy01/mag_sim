@@ -1,0 +1,25 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.30,
+    "Ly": 0.20,
+    "nx": 241,
+    "ny": 201
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "magnet_regions": [
+    {
+      "type": "polygon",
+      "vertices": [[-0.02, -0.04], [-0.02, 0.04], [0.02, 0.04], [0.02, -0.04]],
+      "magnetization": {"Mx": 0.0, "My": 600000.0}
+    }
+  ],
+  "sources": [],
+  "outputs": []
+}

@@ -1,0 +1,22 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.1,
+    "Ly": 0.1,
+    "nx": 4,
+    "ny": 4
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "sources": [],
+  "outputs": [
+    {"type": "field_map", "id": "combined", "quantity": "BH"},
+    {"type": "field_map", "id": "energy", "quantity": "energy_density"},
+    {"type": "line_probe", "id": "probe_h", "axis": "x", "value": 0.0, "quantity": "Hmag"}
+  ]
+}

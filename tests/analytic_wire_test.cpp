@@ -3,6 +3,7 @@
 // MIT License
 
 #include "motorsim/grid.hpp"
+#include "motorsim/ingest.hpp"
 #include "motorsim/io_csv.hpp"
 #include "motorsim/solver.hpp"
 #include "motorsim/types.hpp"
@@ -17,37 +18,24 @@
 int main() {
     using namespace motorsim;
 
-    const double L = 0.2;
-    const std::size_t nx = 201;
-    const std::size_t ny = 201;
-    const double dx = L / static_cast<double>(nx - 1);
-    const double dy = L / static_cast<double>(ny - 1);
+    namespace fs = std::filesystem;
+    const fs::path scenarioPath =
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/analytic_wire_test.json").lexically_normal();
+    ScenarioSpec spec = loadScenarioFromJson(scenarioPath.string());
 
-    Grid2D grid(nx, ny, dx, dy);
-    const double invMu0 = 1.0 / MU0;
-    std::fill(grid.invMu.begin(), grid.invMu.end(), invMu0);
-
-    const double x0 = -0.5 * L;
-    const double y0 = -0.5 * L;
-    const double xc = 0.0;
-    const double yc = 0.0;
-
-    const double current = 10.0;
-    // Slightly enlarge the source disk (3 cells) to reduce discretization error
-    // from approximating the singular wire current with a uniform patch.
-    const double rc = 3.0 * dx;
-    const double jzCore = current / (M_PI * rc * rc);
-
-    for (std::size_t j = 0; j < ny; ++j) {
-        for (std::size_t i = 0; i < nx; ++i) {
-            const double x = x0 + static_cast<double>(i) * dx;
-            const double y = y0 + static_cast<double>(j) * dy;
-            const double r = std::hypot(x - xc, y - yc);
-            if (r <= rc) {
-                grid.Jz[grid.idx(i, j)] = jzCore;
-            }
-        }
+    if (spec.wires.size() != 1) {
+        std::cerr << "analytic_wire_test: scenario must contain exactly one wire\n";
+        return 1;
     }
+
+    Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
+    rasterizeScenarioToGrid(spec, grid);
+
+    const double x0 = spec.originX;
+    const double y0 = spec.originY;
+    const double xc = spec.wires.front().x;
+    const double yc = spec.wires.front().y;
+    const double current = spec.wires.front().current;
 
     SolveOptions options{};
     options.maxIters = 5000;
@@ -69,13 +57,13 @@ int main() {
 
     const double rsample = 0.05;
     std::vector<double> sampleMagnitudes;
-    sampleMagnitudes.reserve(nx);
-    for (std::size_t j = 0; j < ny; ++j) {
-        for (std::size_t i = 0; i < nx; ++i) {
-            const double x = x0 + static_cast<double>(i) * dx;
-            const double y = y0 + static_cast<double>(j) * dy;
+    sampleMagnitudes.reserve(spec.nx);
+    for (std::size_t j = 0; j < spec.ny; ++j) {
+        for (std::size_t i = 0; i < spec.nx; ++i) {
+            const double x = x0 + static_cast<double>(i) * spec.dx;
+            const double y = y0 + static_cast<double>(j) * spec.dy;
             const double r = std::hypot(x - xc, y - yc);
-            if (std::abs(r - rsample) <= 0.5 * dx) {
+            if (std::abs(r - rsample) <= 0.5 * spec.dx) {
                 const std::size_t idx = grid.idx(i, j);
                 const double bx = grid.Bx[idx];
                 const double by = grid.By[idx];
@@ -99,16 +87,16 @@ int main() {
         return 1;
     }
 
-    const std::size_t midJ = ny / 2;
+    const std::size_t midJ = spec.ny / 2;
     std::vector<double> xs;
     std::vector<double> ys;
     std::vector<double> bmag;
-    xs.reserve(nx);
-    ys.reserve(nx);
-    bmag.reserve(nx);
+    xs.reserve(spec.nx);
+    ys.reserve(spec.nx);
+    bmag.reserve(spec.nx);
 
-    for (std::size_t i = 0; i < nx; ++i) {
-        const double x = x0 + static_cast<double>(i) * dx;
+    for (std::size_t i = 0; i < spec.nx; ++i) {
+        const double x = x0 + static_cast<double>(i) * spec.dx;
         xs.push_back(x);
         ys.push_back(0.0);
         const std::size_t idx = grid.idx(i, midJ);
@@ -127,16 +115,16 @@ int main() {
         std::vector<double> gridBx;
         std::vector<double> gridBy;
         std::vector<double> gridBmag;
-        gridXs.reserve(nx * ny);
-        gridYs.reserve(nx * ny);
-        gridBx.reserve(nx * ny);
-        gridBy.reserve(nx * ny);
-        gridBmag.reserve(nx * ny);
+        gridXs.reserve(spec.nx * spec.ny);
+        gridYs.reserve(spec.nx * spec.ny);
+        gridBx.reserve(spec.nx * spec.ny);
+        gridBy.reserve(spec.nx * spec.ny);
+        gridBmag.reserve(spec.nx * spec.ny);
 
-        for (std::size_t j = 0; j < ny; ++j) {
-            for (std::size_t i = 0; i < nx; ++i) {
-                const double x = x0 + static_cast<double>(i) * dx;
-                const double y = y0 + static_cast<double>(j) * dy;
+        for (std::size_t j = 0; j < spec.ny; ++j) {
+            for (std::size_t i = 0; i < spec.nx; ++i) {
+                const double x = x0 + static_cast<double>(i) * spec.dx;
+                const double y = y0 + static_cast<double>(j) * spec.dy;
                 const std::size_t idx = grid.idx(i, j);
                 const double bx = grid.Bx[idx];
                 const double by = grid.By[idx];

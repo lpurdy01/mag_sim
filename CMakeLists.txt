@@ -27,8 +27,11 @@ add_test(NAME smoke_run COMMAND smoke_test)
 add_executable(analytic_wire_test
     tests/analytic_wire_test.cpp
     src/motorsim/solver.cpp
-    src/motorsim/io_csv.cpp)
-target_include_directories(analytic_wire_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    src/motorsim/io_csv.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(analytic_wire_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME analytic_wire COMMAND analytic_wire_test)
 
 add_executable(two_wire_cancel_test

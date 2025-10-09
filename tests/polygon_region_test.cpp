@@ -8,64 +8,21 @@
 
 #include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <string>
 
 int main() {
     using namespace motorsim;
 
-    const std::string scenarioJson = R"JSON(
-{
-  "version": "0.2",
-  "units": "SI",
-  "domain": {"Lx": 0.10, "Ly": 0.10, "nx": 101, "ny": 101},
-  "materials": [
-    {"name": "air", "mu_r": 1.0},
-    {"name": "iron", "mu_r": 1500.0}
-  ],
-  "regions": [
-    {"type": "uniform", "material": "air"},
-    {
-      "type": "polygon",
-      "material": "iron",
-      "vertices": [
-        [-0.030, -0.030],
-        [ 0.030, -0.030],
-        [ 0.030,  0.030],
-        [-0.030,  0.030]
-      ]
-    },
-    {
-      "type": "polygon",
-      "material": "air",
-      "vertices": [
-        [-0.010, -0.010],
-        [ 0.010, -0.010],
-        [ 0.010,  0.010],
-        [-0.010,  0.010]
-      ]
-    }
-  ],
-  "sources": [],
-  "outputs": []
-}
-)JSON";
-
-    const std::filesystem::path tmpPath =
-        std::filesystem::temp_directory_path() / "mag_sim_polygon_region.json";
-    {
-        std::ofstream out(tmpPath);
-        out << scenarioJson;
-    }
+    namespace fs = std::filesystem;
+    const fs::path scenarioPath =
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/polygon_region_test.json").lexically_normal();
 
     ScenarioSpec spec;
     try {
-        spec = loadScenarioFromJson(tmpPath.string());
+        spec = loadScenarioFromJson(scenarioPath.string());
     } catch (const std::exception& ex) {
         std::cerr << "Failed to parse polygon scenario: " << ex.what() << "\n";
-        std::filesystem::remove(tmpPath);
         return 1;
     }
 
@@ -74,11 +31,8 @@ int main() {
         rasterizeScenarioToGrid(spec, grid);
     } catch (const std::exception& ex) {
         std::cerr << "Rasterisation failed: " << ex.what() << "\n";
-        std::filesystem::remove(tmpPath);
         return 1;
     }
-
-    std::filesystem::remove(tmpPath);
 
     const double invMuAir = 1.0 / (MU0 * 1.0);
     const double invMuIron = 1.0 / (MU0 * 1500.0);

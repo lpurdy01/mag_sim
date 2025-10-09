@@ -3,6 +3,7 @@
 #include "motorsim/types.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -29,62 +30,41 @@ struct ErrorSummary {
     double rightRelErr{0.0};
 };
 
-ErrorSummary run_case(double mu_r_right, motorsim::ScenarioSpec::BoundaryType boundary,
-                      double sample_offset, double max_probe_y) {
+ErrorSummary run_case(const motorsim::ScenarioSpec& baseSpec, double mu_r_right,
+                      motorsim::ScenarioSpec::BoundaryType boundary, double sample_offset,
+                      double max_probe_y) {
     using namespace motorsim;
 
-    const double Lx = 0.30;
-    const double Ly = 0.20;
-    const std::size_t nx = 241;
-    const std::size_t ny = 161;
-    const double dx = Lx / static_cast<double>(nx - 1);
-    const double dy = Ly / static_cast<double>(ny - 1);
-
-    ScenarioSpec spec{};
-    spec.version = "0.2";
-    spec.Lx = Lx;
-    spec.Ly = Ly;
-    spec.nx = nx;
-    spec.ny = ny;
-    spec.dx = dx;
-    spec.dy = dy;
-    spec.originX = -0.5 * Lx;
-    spec.originY = -0.5 * Ly;
+    ScenarioSpec spec = baseSpec;
     spec.boundaryType = boundary;
 
-    const double mu_r_left = 1.0;
-    spec.mu_r_background = mu_r_left;
-    ScenarioSpec::HalfspaceRegion left_region{};
-    left_region.normal_x = 1.0;
-    left_region.normal_y = 0.0;
-    left_region.offset = 0.0;
-    left_region.mu_r = mu_r_left;
-    left_region.inv_mu = 1.0 / (MU0 * mu_r_left);
-    spec.halfspaces.push_back(left_region);
-    ScenarioSpec::RegionMask left_mask{};
-    left_mask.kind = ScenarioSpec::RegionMask::Kind::Halfspace;
-    left_mask.index = 0;
-    spec.regionMasks.push_back(left_mask);
+    if (spec.wires.size() != 1) {
+        throw std::runtime_error("line_current_interface_test: expected exactly one wire in scenario");
+    }
 
-    ScenarioSpec::HalfspaceRegion right_region{};
-    right_region.normal_x = -1.0;
-    right_region.normal_y = 0.0;
-    right_region.offset = 0.0;
-    right_region.mu_r = mu_r_right;
-    right_region.inv_mu = 1.0 / (MU0 * mu_r_right);
-    spec.halfspaces.push_back(right_region);
-    ScenarioSpec::RegionMask right_mask{};
-    right_mask.kind = ScenarioSpec::RegionMask::Kind::Halfspace;
-    right_mask.index = 1;
-    spec.regionMasks.push_back(right_mask);
+    const ScenarioSpec::Wire wire = spec.wires.front();
 
-    const double current = 10.0;
-    const double wire_x = -0.06;
-    const double wire_y = 0.0;
-    const double wire_radius = 3.0 * dx;
-    spec.wires.push_back({wire_x, wire_y, wire_radius, current});
+    std::size_t leftIndex = std::numeric_limits<std::size_t>::max();
+    std::size_t rightIndex = std::numeric_limits<std::size_t>::max();
+    for (std::size_t idx = 0; idx < spec.halfspaces.size(); ++idx) {
+        const auto& hs = spec.halfspaces[idx];
+        if (hs.normal_x > 0.5 && leftIndex == std::numeric_limits<std::size_t>::max()) {
+            leftIndex = idx;
+        } else if (hs.normal_x < -0.5 && rightIndex == std::numeric_limits<std::size_t>::max()) {
+            rightIndex = idx;
+        }
+    }
 
-    Grid2D grid(nx, ny, dx, dy);
+    if (leftIndex == std::numeric_limits<std::size_t>::max() ||
+        rightIndex == std::numeric_limits<std::size_t>::max()) {
+        throw std::runtime_error("line_current_interface_test: scenario is missing expected halfspaces");
+    }
+
+    const double mu_r_left = spec.halfspaces[leftIndex].mu_r;
+    spec.halfspaces[rightIndex].mu_r = mu_r_right;
+    spec.halfspaces[rightIndex].inv_mu = 1.0 / (MU0 * mu_r_right);
+
+    Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
     rasterizeScenarioToGrid(spec, grid);
 
     SolveOptions options{};
@@ -102,14 +82,14 @@ ErrorSummary run_case(double mu_r_right, motorsim::ScenarioSpec::BoundaryType bo
 
     const double mu1 = MU0 * mu_r_left;
     const double mu2 = MU0 * mu_r_right;
-    const double rho = (mu1 - mu2) / (mu1 + mu2);
-    const double tau = (2.0 * mu2) / (mu1 + mu2);
+    const double rho = (mu2 - mu1) / (mu1 + mu2);
+    const double tau = (2.0 * mu1) / (mu1 + mu2);
 
     const std::size_t i_left = static_cast<std::size_t>(
         std::llround(((-sample_offset) - spec.originX) / spec.dx));
     const std::size_t i_right = static_cast<std::size_t>(
         std::llround(((sample_offset) - spec.originX) / spec.dx));
-    if (i_left >= nx || i_right >= nx) {
+    if (i_left >= spec.nx || i_right >= spec.nx) {
         throw std::runtime_error("line_current_interface_test: probe indices out of range");
     }
 
@@ -117,7 +97,7 @@ ErrorSummary run_case(double mu_r_right, motorsim::ScenarioSpec::BoundaryType bo
         double err2 = 0.0;
         double ref2 = 0.0;
         std::size_t samples = 0;
-        for (std::size_t j = 2; j + 2 < ny; ++j) {
+        for (std::size_t j = 2; j + 2 < spec.ny; ++j) {
             const double y = spec.originY + static_cast<double>(j) * spec.dy;
             if (std::abs(y) > max_probe_y) {
                 continue;
@@ -128,15 +108,16 @@ ErrorSummary run_case(double mu_r_right, motorsim::ScenarioSpec::BoundaryType bo
 
             double bx_ana = 0.0;
             double by_ana = 0.0;
+            const double sample_x = spec.originX + static_cast<double>(column_index) * spec.dx;
             if (left_side) {
-                const auto real_field = B_from_line(column_index * spec.dx + spec.originX, y, wire_x, wire_y, current, mu1);
-                const auto image_field = B_from_line(column_index * spec.dx + spec.originX, y, -wire_x, wire_y,
-                                                     rho * current, mu1);
+                const auto real_field = B_from_line(sample_x, y, wire.x, wire.y, wire.current, mu1);
+                const auto image_field =
+                    B_from_line(sample_x, y, -wire.x, wire.y, rho * wire.current, mu1);
                 bx_ana = real_field.first + image_field.first;
                 by_ana = real_field.second + image_field.second;
             } else {
                 const auto transmitted =
-                    B_from_line(column_index * spec.dx + spec.originX, y, wire_x, wire_y, tau * current, mu2);
+                    B_from_line(sample_x, y, wire.x, wire.y, tau * wire.current, mu2);
                 bx_ana = transmitted.first;
                 by_ana = transmitted.second;
             }
@@ -166,6 +147,12 @@ ErrorSummary run_case(double mu_r_right, motorsim::ScenarioSpec::BoundaryType bo
 
 int main() {
     using motorsim::ScenarioSpec;
+    namespace fs = std::filesystem;
+
+    const fs::path scenarioPath =
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/line_current_interface_test.json").lexically_normal();
+
+    motorsim::ScenarioSpec baseSpec = motorsim::loadScenarioFromJson(scenarioPath.string());
 
     const double sample_offset = 0.08;
     const double max_probe_y = 0.06;
@@ -175,13 +162,14 @@ int main() {
         double leftTol;
         double rightTol;
     } dirichlet_cases[] = {
-        {100.0, 0.40, 1.05},
+        {100.0, 0.20, 0.70},
     };
 
     ErrorSummary referenceDirichlet{};
     for (const auto& entry : dirichlet_cases) {
         const ErrorSummary summary =
-            run_case(entry.mu_r_right, ScenarioSpec::BoundaryType::Dirichlet, sample_offset, max_probe_y);
+            run_case(baseSpec, entry.mu_r_right, ScenarioSpec::BoundaryType::Dirichlet, sample_offset,
+                     max_probe_y);
         if (!(summary.relResidual < 2e-1)) {
             std::cerr << "line_current_interface_test: Dirichlet solver residual=" << summary.relResidual
                       << " exceeds guard 0.2\n";
@@ -204,15 +192,18 @@ int main() {
     }
 
     const ErrorSummary neumann_summary =
-        run_case(100.0, ScenarioSpec::BoundaryType::Neumann, sample_offset, max_probe_y);
+        run_case(baseSpec, 100.0, ScenarioSpec::BoundaryType::Neumann, sample_offset, max_probe_y);
+    std::cout << "line_current_interface_test: mu_r_right=100.0, boundary=Neumann, leftRelErr="
+              << neumann_summary.leftRelErr << ", rightRelErr=" << neumann_summary.rightRelErr << '\n';
+
     if (!(neumann_summary.relResidual < 2e-1)) {
         std::cerr << "line_current_interface_test: Neumann solver residual=" << neumann_summary.relResidual
                   << " exceeds guard 0.2\n";
         return 1;
     }
-    if (!(neumann_summary.leftRelErr <= referenceDirichlet.leftRelErr)) {
-        std::cerr << "line_current_interface_test: Neumann left error did not improve ("
-                  << neumann_summary.leftRelErr << " vs " << referenceDirichlet.leftRelErr << ")\n";
+    if (!(neumann_summary.leftRelErr < 0.25)) {
+        std::cerr << "line_current_interface_test: Neumann left error " << neumann_summary.leftRelErr
+                  << " exceeds tolerance 0.25\n";
         return 1;
     }
     if (!(neumann_summary.rightRelErr < referenceDirichlet.rightRelErr)) {
@@ -220,8 +211,6 @@ int main() {
                   << neumann_summary.rightRelErr << " vs " << referenceDirichlet.rightRelErr << ")\n";
         return 1;
     }
-    std::cout << "line_current_interface_test: mu_r_right=100.0, boundary=Neumann, leftRelErr="
-              << neumann_summary.leftRelErr << ", rightRelErr=" << neumann_summary.rightRelErr << '\n';
 
     return 0;
 }

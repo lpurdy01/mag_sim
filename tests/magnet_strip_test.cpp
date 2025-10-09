@@ -3,6 +3,7 @@
 #include "motorsim/types.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -42,38 +43,18 @@ std::pair<double, double> reference_field(double x, double y, double magnetMinX,
 int main() {
     using namespace motorsim;
 
-    const double Lx = 0.30;
-    const double Ly = 0.20;
-    const std::size_t nx = 241;
-    const std::size_t ny = 201;
-    const double dx = Lx / static_cast<double>(nx - 1);
-    const double dy = Ly / static_cast<double>(ny - 1);
+    namespace fs = std::filesystem;
+    const fs::path scenarioPath =
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/magnet_strip_test.json").lexically_normal();
+    ScenarioSpec spec = loadScenarioFromJson(scenarioPath.string());
 
-    ScenarioSpec spec{};
-    spec.version = "0.2";
-    spec.Lx = Lx;
-    spec.Ly = Ly;
-    spec.nx = nx;
-    spec.ny = ny;
-    spec.dx = dx;
-    spec.dy = dy;
-    spec.originX = -0.5 * Lx;
-    spec.originY = -0.5 * Ly;
-    spec.mu_r_background = 1.0;
+    if (spec.magnetRegions.size() != 1) {
+        std::cerr << "magnet_strip_test: scenario must contain exactly one magnet region\n";
+        return 1;
+    }
+    const ScenarioSpec::MagnetRegion magnet = spec.magnetRegions.front();
 
-    ScenarioSpec::MagnetRegion magnet{};
-    magnet.shape = ScenarioSpec::MagnetRegion::Shape::Polygon;
-    magnet.Mx = 0.0;
-    magnet.My = 6.0e5;
-    magnet.xs = {-0.02, -0.02, 0.02, 0.02};
-    magnet.ys = {-0.04, 0.04, 0.04, -0.04};
-    magnet.min_x = -0.02;
-    magnet.max_x = 0.02;
-    magnet.min_y = -0.04;
-    magnet.max_y = 0.04;
-    spec.magnetRegions.push_back(magnet);
-
-    Grid2D grid(nx, ny, dx, dy);
+    Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
     rasterizeScenarioToGrid(spec, grid);
 
     SolveOptions options{};
@@ -92,8 +73,9 @@ int main() {
 
     const double sampleY = 0.0;
     const std::vector<double> sampleX = {-0.08, -0.06, -0.04, 0.0, 0.04, 0.06, 0.08};
-    const std::size_t j_center = static_cast<std::size_t>(std::llround((sampleY - spec.originY) / spec.dy));
-    if (j_center >= ny) {
+    const std::size_t j_center =
+        static_cast<std::size_t>(std::llround((sampleY - spec.originY) / spec.dy));
+    if (j_center >= spec.ny) {
         std::cerr << "magnet_strip_test: sample row out of range\n";
         return 1;
     }
@@ -102,7 +84,7 @@ int main() {
     double ref2 = 0.0;
     for (double x : sampleX) {
         const std::size_t i = static_cast<std::size_t>(std::llround((x - spec.originX) / spec.dx));
-        if (i >= nx) {
+        if (i >= spec.nx) {
             std::cerr << "magnet_strip_test: sample column out of range\n";
             return 1;
         }

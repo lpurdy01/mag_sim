@@ -17,27 +17,8 @@ int main() {
     std::error_code ec;
     fs::create_directories(tempDir, ec);
 
-    const fs::path scenarioPath = tempDir / "scenario.json";
-    {
-        std::ofstream ofs(scenarioPath);
-        if (!ofs.is_open()) {
-            std::cerr << "Failed to open temporary scenario file\n";
-            return 1;
-        }
-        ofs << R"({
-  "version": "0.2",
-  "units": "SI",
-  "domain": {"Lx": 0.1, "Ly": 0.1, "nx": 4, "ny": 4},
-  "materials": [{"name": "air", "mu_r": 1.0}],
-  "regions": [{"type": "uniform", "material": "air"}],
-  "sources": [],
-  "outputs": [
-    {"type": "field_map", "id": "combined", "quantity": "BH"},
-    {"type": "field_map", "id": "energy", "quantity": "energy_density"},
-    {"type": "line_probe", "id": "probe_h", "axis": "x", "value": 0.0, "quantity": "Hmag"}
-  ]
-})";
-    }
+    const fs::path scenarioPath =
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/output_quantity_test.json").lexically_normal();
 
     ScenarioSpec spec = loadScenarioFromJson(scenarioPath.string());
     if (spec.outputs.fieldMaps.size() != 2 || spec.outputs.lineProbes.size() != 1) {
