@@ -15,7 +15,8 @@ The script requires ``numpy`` and ``matplotlib``. Usage::
     python python/visualize_wire.py
 
 The plot is displayed on screen and optionally saved as PNG when ``--save`` is
-provided.
+provided. Pass ``--no-show`` when running in a headless environment such as CI
+to skip creating a window.
 """
 
 from __future__ import annotations
@@ -69,6 +70,8 @@ def plot_profile(
     current: float,
     rc: float,
     save: pathlib.Path | None,
+    *,
+    show: bool = True,
 ) -> None:
     """Display the B-field magnitude profile and optionally save to disk."""
 
@@ -89,7 +92,10 @@ def plot_profile(
         fig.savefig(save, dpi=200, bbox_inches="tight")
         print(f"Saved figure to {save}")
 
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def main() -> None:
@@ -124,6 +130,11 @@ def main() -> None:
         default=None,
         help="Optional output path to save the plot as PNG.",
     )
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="Skip displaying the plot window (useful for headless CI runs).",
+    )
     args = parser.parse_args()
 
     if not args.csv.exists():
@@ -134,7 +145,7 @@ def main() -> None:
     dx = np.min(np.abs(np.diff(xs))) if xs.size > 1 else 0.0
     rc = args.core_radius if args.core_radius is not None else 3.0 * dx
 
-    plot_profile(xs, vals, args.mu0, args.current, rc, args.save)
+    plot_profile(xs, vals, args.mu0, args.current, rc, args.save, show=not args.no_show)
 
 
 if __name__ == "__main__":

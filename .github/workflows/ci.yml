@@ -19,23 +19,84 @@ jobs:
         run: cd build && ctest --output-on-failure -R analytic_wire
       - name: Install visualization dependencies
         run: python3 -m pip install --user numpy matplotlib
-      - name: Generate demo outputs
-        run: ./build/motor_sim --scenario inputs/two_wire_cancel.json --solve --outputs domain_field
-      - name: Render field visualisation
+      - name: Prepare artifact directories
+        run: |
+          rm -rf outputs ci_artifacts
+          mkdir -p outputs ci_artifacts
+      - name: Collect regression accuracy reports
+        run: |
+          set -euo pipefail
+          ./build/analytic_wire_test 2>&1 | tee ci_artifacts/analytic_wire_test.txt
+          ./build/two_wire_cancel_test 2>&1 | tee ci_artifacts/two_wire_cancel_test.txt
+          ./build/line_current_interface_test 2>&1 | tee ci_artifacts/line_current_interface_test.txt
+          ./build/magnet_strip_test 2>&1 | tee ci_artifacts/magnet_strip_test.txt
+          {
+            echo "# Regression accuracy summary"
+            echo
+            for report in \
+              ci_artifacts/analytic_wire_test.txt \
+              ci_artifacts/two_wire_cancel_test.txt \
+              ci_artifacts/line_current_interface_test.txt \
+              ci_artifacts/magnet_strip_test.txt; do
+              name=$(basename "${report%.txt}")
+              echo "## ${name}"
+              cat "$report"
+              echo
+            done
+          } > ci_artifacts/test_accuracy_report.txt
+      - name: Solve scenarios for field maps
+        run: |
+          set -euo pipefail
+          ./build/motor_sim --scenario inputs/two_wire_cancel.json --solve --outputs all
+          ./build/motor_sim --scenario inputs/line_current_interface.json --solve --outputs all
+          ./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all
+          ./build/motor_sim --scenario inputs/tests/magnet_strip_test.json --solve --outputs all
+      - name: Render visualisations
         env:
           MPLBACKEND: Agg
         run: |
-          mkdir -p ci_artifacts
+          set -euo pipefail
           python3 python/visualize_scenario_field.py \
             --scenario inputs/two_wire_cancel.json \
             --field-map outputs/two_wire_field_map.csv \
             --save ci_artifacts/two_wire_field.png \
             --draw-boundaries \
+            --streamlines
+          python3 python/visualize_scenario_field.py \
+            --scenario inputs/line_current_interface.json \
+            --field-map outputs/interface_field.csv \
+            --save ci_artifacts/line_current_interface_field.png \
+            --draw-boundaries \
             --streamlines \
             --overlay-analytic-interface \
             --analytic-contours 10
-      - name: Upload visualisation artifacts
+          python3 python/visualize_scenario_field.py \
+            --scenario inputs/iron_ring_demo.json \
+            --field-map outputs/iron_ring_field.csv \
+            --save ci_artifacts/iron_ring_field.png \
+            --draw-boundaries \
+            --streamlines \
+            --log-scale
+          python3 python/visualize_scenario_field.py \
+            --scenario inputs/tests/magnet_strip_test.json \
+            --field-map outputs/magnet_strip_field.csv \
+            --save ci_artifacts/magnet_strip_field.png \
+            --draw-boundaries \
+            --streamlines \
+            --log-scale
+          python3 python/visualize_wire.py \
+            --csv outputs/validation_wire_line.csv \
+            --save ci_artifacts/analytic_wire_line.png \
+            --no-show
+      - name: Collect CSV artifacts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for csv in outputs/*.csv; do
+            cp "$csv" ci_artifacts/
+          done
+      - name: Upload simulation artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: solver-visualizations
+          name: solver-artifacts
           path: ci_artifacts/

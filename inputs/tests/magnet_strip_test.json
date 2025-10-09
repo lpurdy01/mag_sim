@@ -21,5 +21,26 @@
     }
   ],
   "sources": [],
-  "outputs": []
+  "outputs": [
+    {
+      "type": "field_map",
+      "id": "magnet_strip_field",
+      "quantity": "B",
+      "path": "outputs/magnet_strip_field.csv"
+    },
+    {
+      "type": "field_map",
+      "id": "magnet_strip_hfield",
+      "quantity": "H",
+      "path": "outputs/magnet_strip_h_field.csv"
+    },
+    {
+      "type": "line_probe",
+      "id": "magnet_midline",
+      "axis": "x",
+      "value": 0.0,
+      "quantity": "Bmag",
+      "path": "outputs/magnet_strip_midline.csv"
+    }
+  ]
 }

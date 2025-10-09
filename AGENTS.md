@@ -38,7 +38,11 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
 ## Visualisation and CI artefacts
 - Do not commit binary artefacts (PNGs, etc.) to the repository. The CI
   workflow renders figures at runtime and uploads them as GitHub Action
-  artefacts via `actions/upload-artifact`.
+  artefacts via `actions/upload-artifact`. Expect the `solver-artifacts`
+  bundle to contain field-map renders for the two-wire, interface, iron-ring,
+  and magnet-strip scenarios, the analytic wire line plot, all exported CSVs,
+  and a `test_accuracy_report.txt` summary captured from the regression
+  executables.
 - The field visualiser exposes extra switches to aid debugging: use
   `--draw-boundaries` to overlay material and magnet outlines, `--streamlines`
   to trace the flow, and `--overlay-analytic-interface` to compare against the
