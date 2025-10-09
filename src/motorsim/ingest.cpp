@@ -19,18 +19,19 @@ namespace {
 constexpr double kTiny = 1e-12;
 constexpr double kPi = 3.14159265358979323846;
 
-bool pointInPolygon(double x, double y, const ScenarioSpec::PolygonRegion& poly) {
-    const std::size_t count = poly.xs.size();
+bool pointInPolygonCoords(double x, double y, const std::vector<double>& xs,
+                          const std::vector<double>& ys) {
+    const std::size_t count = xs.size();
     if (count == 0U) {
         return false;
     }
 
     bool inside = false;
     for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
-        const double xi = poly.xs[i];
-        const double yi = poly.ys[i];
-        const double xj = poly.xs[j];
-        const double yj = poly.ys[j];
+        const double xi = xs[i];
+        const double yi = ys[i];
+        const double xj = xs[j];
+        const double yj = ys[j];
 
         const double denom = yj - yi;
         if (std::abs(denom) < kTiny) {
@@ -44,6 +45,24 @@ bool pointInPolygon(double x, double y, const ScenarioSpec::PolygonRegion& poly)
     }
 
     return inside;
+}
+
+bool pointInPolygon(double x, double y, const ScenarioSpec::PolygonRegion& poly) {
+    return pointInPolygonCoords(x, y, poly.xs, poly.ys);
+}
+
+bool pointInRect(double x, double y, double minX, double maxX, double minY, double maxY) {
+    return x >= minX && x <= maxX && y >= minY && y <= maxY;
+}
+
+ScenarioSpec::BoundaryType parseBoundaryType(const std::string& value) {
+    if (value == "dirichlet") {
+        return ScenarioSpec::BoundaryType::Dirichlet;
+    }
+    if (value == "neumann") {
+        return ScenarioSpec::BoundaryType::Neumann;
+    }
+    throw std::runtime_error("Unsupported boundary type: " + value);
 }
 
 double requirePositive(const std::string& field, double value) {
@@ -102,6 +121,13 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     spec.dy = spec.Ly / static_cast<double>(spec.ny - 1);
     spec.originX = -0.5 * spec.Lx;
     spec.originY = -0.5 * spec.Ly;
+
+    spec.boundaryType = ScenarioSpec::BoundaryType::Dirichlet;
+    if (json.contains("boundary")) {
+        const auto& boundary = json.at("boundary");
+        const std::string type = boundary.value("type", std::string{"dirichlet"});
+        spec.boundaryType = parseBoundaryType(type);
+    }
 
     const auto& materials = json.at("materials");
     if (!materials.is_array() || materials.empty()) {
@@ -259,6 +285,85 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         spec.wires.push_back(wire);
     }
 
+    spec.magnetRegions.clear();
+    if (json.contains("magnet_regions")) {
+        const auto& magnets = json.at("magnet_regions");
+        if (!magnets.is_array()) {
+            throw std::runtime_error("magnet_regions must be an array");
+        }
+        for (const auto& magnet : magnets) {
+            ScenarioSpec::MagnetRegion region{};
+            const std::string shape = magnet.at("type").get<std::string>();
+
+            const auto& magnetisation = magnet.at("magnetization");
+            if (magnetisation.is_array()) {
+                if (magnetisation.size() != 2) {
+                    throw std::runtime_error("magnetization array must contain exactly two elements");
+                }
+                region.Mx = magnetisation.at(0).get<double>();
+                region.My = magnetisation.at(1).get<double>();
+            } else if (magnetisation.is_object()) {
+                region.Mx = magnetisation.value("Mx", 0.0);
+                region.My = magnetisation.value("My", 0.0);
+            } else {
+                throw std::runtime_error("magnetization must be an array [Mx, My] or object with Mx/My");
+            }
+
+            if (shape == "polygon") {
+                region.shape = ScenarioSpec::MagnetRegion::Shape::Polygon;
+                const auto& vertices = magnet.at("vertices");
+                if (!vertices.is_array() || vertices.size() < 3) {
+                    throw std::runtime_error(
+                        "magnet polygon region requires an array of at least three vertices");
+                }
+                double minX = std::numeric_limits<double>::infinity();
+                double maxX = -std::numeric_limits<double>::infinity();
+                double minY = std::numeric_limits<double>::infinity();
+                double maxY = -std::numeric_limits<double>::infinity();
+                region.xs.reserve(vertices.size());
+                region.ys.reserve(vertices.size());
+                for (const auto& vertex : vertices) {
+                    if (!vertex.is_array() || vertex.size() != 2) {
+                        throw std::runtime_error("magnet polygon vertices must be [x, y] arrays");
+                    }
+                    const double vx = vertex.at(0).get<double>();
+                    const double vy = vertex.at(1).get<double>();
+                    region.xs.push_back(vx);
+                    region.ys.push_back(vy);
+                    minX = std::min(minX, vx);
+                    maxX = std::max(maxX, vx);
+                    minY = std::min(minY, vy);
+                    maxY = std::max(maxY, vy);
+                }
+                region.min_x = minX;
+                region.max_x = maxX;
+                region.min_y = minY;
+                region.max_y = maxY;
+            } else if (shape == "rect") {
+                region.shape = ScenarioSpec::MagnetRegion::Shape::Rect;
+                const auto& xrange = magnet.at("x_range");
+                const auto& yrange = magnet.at("y_range");
+                if (!xrange.is_array() || xrange.size() != 2) {
+                    throw std::runtime_error("rect magnet region requires x_range [xmin, xmax]");
+                }
+                if (!yrange.is_array() || yrange.size() != 2) {
+                    throw std::runtime_error("rect magnet region requires y_range [ymin, ymax]");
+                }
+                region.min_x = xrange.at(0).get<double>();
+                region.max_x = xrange.at(1).get<double>();
+                region.min_y = yrange.at(0).get<double>();
+                region.max_y = yrange.at(1).get<double>();
+                if (!(region.min_x < region.max_x) || !(region.min_y < region.max_y)) {
+                    throw std::runtime_error("rect magnet region requires min < max in both ranges");
+                }
+            } else {
+                throw std::runtime_error("Unsupported magnet region type: " + shape);
+            }
+
+            spec.magnetRegions.push_back(std::move(region));
+        }
+    }
+
     spec.outputs = ScenarioSpec::Outputs{};
     if (json.contains("outputs")) {
         const auto& outputs = json.at("outputs");
@@ -279,7 +384,8 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 ScenarioSpec::Outputs::FieldMap request{};
                 request.id = id;
                 request.quantity = output.value("quantity", std::string{"B"});
-                if (request.quantity != "B") {
+                if (request.quantity != "B" && request.quantity != "H" &&
+                    request.quantity != "BH" && request.quantity != "energy_density") {
                     throw std::runtime_error(
                         "Unsupported field_map quantity for output '" + id + "': " + request.quantity);
                 }
@@ -299,7 +405,10 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 ScenarioSpec::Outputs::LineProbe request{};
                 request.id = id;
                 request.quantity = output.value("quantity", std::string{"Bmag"});
-                if (request.quantity != "Bmag" && request.quantity != "Bx" && request.quantity != "By") {
+                if (request.quantity != "Bmag" && request.quantity != "Bx" &&
+                    request.quantity != "By" && request.quantity != "Hx" &&
+                    request.quantity != "Hy" && request.quantity != "Hmag" &&
+                    request.quantity != "energy_density") {
                     throw std::runtime_error(
                         "Unsupported line_probe quantity for output '" + id + "': " + request.quantity);
                 }
@@ -337,9 +446,25 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
 
     grid.dx = spec.dx;
     grid.dy = spec.dy;
+    grid.boundaryCondition = (spec.boundaryType == ScenarioSpec::BoundaryType::Dirichlet)
+                                 ? Grid2D::BoundaryKind::Dirichlet
+                                 : Grid2D::BoundaryKind::Neumann;
 
     const double invMuBackground = 1.0 / (MU0 * spec.mu_r_background);
     std::fill(grid.Jz.begin(), grid.Jz.end(), 0.0);
+    const std::size_t cellCount = grid.nx * grid.ny;
+    if (grid.Mx.size() != cellCount) {
+        grid.Mx.assign(cellCount, 0.0);
+    } else {
+        std::fill(grid.Mx.begin(), grid.Mx.end(), 0.0);
+    }
+    if (grid.My.size() != cellCount) {
+        grid.My.assign(cellCount, 0.0);
+    } else {
+        std::fill(grid.My.begin(), grid.My.end(), 0.0);
+    }
+    grid.Hx.clear();
+    grid.Hy.clear();
 
     const double x0 = spec.originX;
     const double y0 = spec.originY;
@@ -373,6 +498,33 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
         }
     }
 
+    if (!spec.magnetRegions.empty()) {
+        for (std::size_t j = 0; j < grid.ny; ++j) {
+            const double y = y0 + static_cast<double>(j) * spec.dy;
+            for (std::size_t i = 0; i < grid.nx; ++i) {
+                const double x = x0 + static_cast<double>(i) * spec.dx;
+                const std::size_t idx = grid.idx(i, j);
+                for (const auto& region : spec.magnetRegions) {
+                    if (region.shape == ScenarioSpec::MagnetRegion::Shape::Polygon) {
+                        if (x < region.min_x || x > region.max_x || y < region.min_y || y > region.max_y) {
+                            continue;
+                        }
+                        if (pointInRect(x, y, region.min_x, region.max_x, region.min_y, region.max_y) &&
+                            pointInPolygonCoords(x, y, region.xs, region.ys)) {
+                            grid.Mx[idx] += region.Mx;
+                            grid.My[idx] += region.My;
+                        }
+                    } else {
+                        if (pointInRect(x, y, region.min_x, region.max_x, region.min_y, region.max_y)) {
+                            grid.Mx[idx] += region.Mx;
+                            grid.My[idx] += region.My;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for (const auto& wire : spec.wires) {
         const double area = kPi * wire.radius * wire.radius;
         if (area <= kTiny) {
@@ -387,6 +539,42 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                 if (r <= wire.radius) {
                     grid.Jz[grid.idx(i, j)] += jzDeposit;
                 }
+            }
+        }
+    }
+
+    if (!spec.magnetRegions.empty()) {
+        const double invDx = (grid.nx > 1) ? 1.0 / grid.dx : 0.0;
+        const double invDy = (grid.ny > 1) ? 1.0 / grid.dy : 0.0;
+        const double inv2Dx = (grid.nx > 2) ? 0.5 * invDx : invDx;
+        const double inv2Dy = (grid.ny > 2) ? 0.5 * invDy : invDy;
+        for (std::size_t j = 0; j < grid.ny; ++j) {
+            for (std::size_t i = 0; i < grid.nx; ++i) {
+                const std::size_t idx = grid.idx(i, j);
+
+                double dMy_dx = 0.0;
+                if (grid.nx > 1) {
+                    if (i == 0) {
+                        dMy_dx = (grid.My[grid.idx(i + 1, j)] - grid.My[idx]) * invDx;
+                    } else if (i + 1 == grid.nx) {
+                        dMy_dx = (grid.My[idx] - grid.My[grid.idx(i - 1, j)]) * invDx;
+                    } else {
+                        dMy_dx = (grid.My[grid.idx(i + 1, j)] - grid.My[grid.idx(i - 1, j)]) * inv2Dx;
+                    }
+                }
+
+                double dMx_dy = 0.0;
+                if (grid.ny > 1) {
+                    if (j == 0) {
+                        dMx_dy = (grid.Mx[grid.idx(i, j + 1)] - grid.Mx[idx]) * invDy;
+                    } else if (j + 1 == grid.ny) {
+                        dMx_dy = (grid.Mx[idx] - grid.Mx[grid.idx(i, j - 1)]) * invDy;
+                    } else {
+                        dMx_dy = (grid.Mx[grid.idx(i, j + 1)] - grid.Mx[grid.idx(i, j - 1)]) * inv2Dy;
+                    }
+                }
+
+                grid.Jz[idx] += dMy_dx - dMx_dy;
             }
         }
     }

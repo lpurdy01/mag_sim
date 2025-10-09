@@ -17,3 +17,25 @@ jobs:
         run: cd build && ctest --output-on-failure
       - name: Analytic wire regression test
         run: cd build && ctest --output-on-failure -R analytic_wire
+      - name: Install visualization dependencies
+        run: python3 -m pip install --user numpy matplotlib
+      - name: Generate demo outputs
+        run: ./build/motor_sim --scenario inputs/two_wire_cancel.json --solve --outputs domain_field
+      - name: Render field visualisation
+        env:
+          MPLBACKEND: Agg
+        run: |
+          mkdir -p ci_artifacts
+          python3 python/visualize_scenario_field.py \
+            --scenario inputs/two_wire_cancel.json \
+            --field-map outputs/two_wire_field_map.csv \
+            --save ci_artifacts/two_wire_field.png \
+            --draw-boundaries \
+            --streamlines \
+            --overlay-analytic-interface \
+            --analytic-contours 10
+      - name: Upload visualisation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: solver-visualizations
+          path: ci_artifacts/

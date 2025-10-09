@@ -4,6 +4,8 @@
 
 #include "motorsim/solver.hpp"
 
+#include "motorsim/types.hpp"
+
 #include <cmath>
 #include <cstddef>
 #include <iostream>
@@ -67,6 +69,21 @@ SolveReport solveAz_GS_SOR(Grid2D& grid, const SolveOptions& options) {
                 const double updated = (1.0 - options.omega) * grid.Az[p] + options.omega * candidate;
                 grid.Az[p] = updated;
 
+                if (grid.boundaryCondition == Grid2D::BoundaryKind::Neumann) {
+                    if (i == 1) {
+                        grid.Az[w] = updated;
+                    }
+                    if (i + 2 == grid.nx) {
+                        grid.Az[e] = updated;
+                    }
+                    if (j == 1) {
+                        grid.Az[s] = updated;
+                    }
+                    if (j + 2 == grid.ny) {
+                        grid.Az[n] = updated;
+                    }
+                }
+
                 // Residual: divergence(nu grad A) + J should approach zero
                 const double flux = (nuE * (grid.Az[e] - updated) - nuW * (updated - grid.Az[w])) * invDx2 +
                                     (nuN * (grid.Az[n] - updated) - nuS * (updated - grid.Az[s])) * invDy2;
@@ -127,6 +144,34 @@ void computeB(Grid2D& grid) {
             grid.Bx[p] = bx;
             grid.By[p] = by;
         }
+    }
+}
+
+void computeH(Grid2D& grid) {
+    const std::size_t count = grid.nx * grid.ny;
+    if (grid.Hx.size() != count) {
+        grid.Hx.assign(count, 0.0);
+    }
+    if (grid.Hy.size() != count) {
+        grid.Hy.assign(count, 0.0);
+    }
+
+    for (std::size_t idx = 0; idx < count; ++idx) {
+        double hx = grid.invMu[idx] * grid.Bx[idx];
+        double hy = grid.invMu[idx] * grid.By[idx];
+        if (grid.Mx.size() == count && grid.My.size() == count) {
+            const double invMuCell = grid.invMu[idx];
+            if (invMuCell > 0.0) {
+                const double mu_r = 1.0 / (MU0 * invMuCell);
+                hx -= grid.Mx[idx] / mu_r;
+                hy -= grid.My[idx] / mu_r;
+            } else {
+                hx -= grid.Mx[idx];
+                hy -= grid.My[idx];
+            }
+        }
+        grid.Hx[idx] = hx;
+        grid.Hy[idx] = hy;
     }
 }
 

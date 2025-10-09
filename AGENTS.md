@@ -34,3 +34,13 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
   wire overlays (defaults to the bundled two-wire cancellation scenario). Pass
   `--color-scale log` for a logarithmic magnitude map when the dynamic range is
   large.
+
+## Visualisation and CI artefacts
+- Do not commit binary artefacts (PNGs, etc.) to the repository. The CI
+  workflow renders figures at runtime and uploads them as GitHub Action
+  artefacts via `actions/upload-artifact`.
+- The field visualiser exposes extra switches to aid debugging: use
+  `--draw-boundaries` to overlay material and magnet outlines, `--streamlines`
+  to trace the flow, and `--overlay-analytic-interface` to compare against the
+  method-of-images solution for planar interface scenarios. Pair with
+  `--hide-vectors` if the quiver clutter is distracting.

@@ -71,7 +71,7 @@ The continuous PDE is satisfied when \(R_{i,j} = 0\) everywhere.
 
 ## 4. Boundary conditions
 
-The current implementation applies Dirichlet conditions \(A_z = 0\) on the outer rectangular boundary, representing a truncated far field. Neumann conditions (zero normal flux) are deferred for future work but noted as a natural extension.
+The solver supports both Dirichlet and homogeneous Neumann boundary conditions on the outer rectangular boundary. Dirichlet fixes \(A_z = 0\), emulating a bounding conductor. Neumann enforces \(\partial_n A_z = 0\) so flux can exit without forcing a return through the box. In the Gauss–Seidel sweep the Neumann option mirrors the adjacent interior value into the boundary cell, making the forward difference for the normal derivative vanish.
 
 ## 5. Iterative solvers
 
@@ -102,7 +102,32 @@ B_y \approx -\frac{A_{i+1,j} - A_{i-1,j}}{2\Delta x}.
 \]
 One-sided differences are applied on the domain boundary where neighbours are unavailable.
 
-## 8. Analytic reference: planar permeability interface
+## 8. Permanent magnets and magnetisation
+
+Permanent magnets introduce a prescribed magnetisation \(\mathbf{M}(x, y)\) in addition to impressed current density. In the
+\(A_z\) formulation, magnetisation appears as an effective bound current density \(J_{m,z} = \partial_x M_y - \partial_y M_x\).
+The rasteriser stores uniform magnetisation vectors per cell and applies finite-difference curls to deposit this contribution
+into \(J_z\). The magnetisation field is also retained so that the magnetic field intensity can be reconstructed after the solve.
+
+Given the flux density components, the solver supplies \(\mathbf{H}\) via
+\[
+\mathbf{H} = \nu \mathbf{B} - \frac{1}{\mu_r} \mathbf{M}, \qquad \nu = \frac{1}{\mu_0 \mu_r}.
+\]
+In non-magnetised regions this reduces to the familiar \(\mathbf{H} = \nu \mathbf{B}\). Inside permanent magnets the subtraction
+cancels the remanent contribution, yielding nearly zero \(\mathbf{H}\) for an isolated uniformly magnetised body when \(\mu_r \approx 1\).
+
+The `magnet_strip_test` regression models a rectangular magnet magnetised along \(+y\). The analytic reference treats the magnet
+as two opposing surface currents and integrates the Biot–Savart kernel along the strip edges. Numerical and analytic \(B_y\) agree
+to within 15%, and the recovered \(H_y\) inside the magnet is checked to remain near zero, validating both the bound current
+deposition and the post-processing of \(\mathbf{H}\).
+
+With \(\mathbf{B}\) and \(\mathbf{H}\) reconstructed, the solver additionally evaluates the magnetostatic energy density
+\[
+w = \tfrac{1}{2} \mathbf{B} \cdot \mathbf{H} = \tfrac{1}{2} (B_x H_x + B_y H_y).
+\]
+This scalar is emitted on request and supports energy-based force calculations or quick checks for material saturation.
+
+## 9. Analytic reference: planar permeability interface
 
 To validate heterogeneous permeability handling we leverage the method of images for a line current next to a planar interface. Two media with permeabilities \(\mu_1\) (left, \(x < 0\)) and \(\mu_2\) (right, \(x > 0\)) meet along the \(y\)-axis. A real infinite wire of current \(I\) sits at \(\mathbf{r}_0 = (-a, 0)\) inside region 1.
 
@@ -129,7 +154,7 @@ Simulated and analytic \(|\mathbf{B}|\) profiles along vertical probe lines in e
 The automated regression focuses on the air-side probe, where the relative error
 stays below 40% despite the coarse grid and Dirichlet boundary at the outer box.
 
-## 9. Validation with an infinite straight wire
+## 10. Validation with an infinite straight wire
 
 To validate the solver, we model an infinite straight wire carrying current \(I\). The analytic magnetic field magnitude is
 \[
@@ -148,7 +173,7 @@ This reference captures the mathematical foundations and numerical choices embed
 For runtime and scaling heuristics, consult `docs/solver_performance.md`, which summarises
 benchmark data from the bundled tooling.
 
-## 10. Scenario Spec v0.2
+## 11. Scenario Spec v0.2
 
 The solver ingests simulation descriptions authored as JSON documents. Version
 `0.2` extends the original schema with heterogeneous material regions while
@@ -160,10 +185,12 @@ following top-level members:
 | `version`   | string | `"0.2"` preferred; `"0.1"` is still recognised for uniform-material scenarios. |
 | `units`     | string | `"SI"` only; currents in amperes, lengths in metres. |
 | `domain`    | object | `{Lx, Ly, nx, ny}` define the rectangular grid centred on the origin; `dx = Lx / (nx-1)` and likewise for `dy`. |
+| `boundary`  | object | Optional boundary condition override, e.g. `{ "type": "neumann" }`; defaults to Dirichlet when omitted. |
 | `materials` | array  | Each entry defines `{name, mu_r}` with unique names. |
 | `regions`   | array  | Evaluated in authoring order. Entries may be `{"type": "uniform", "material": ...}` to set the background, `{"type": "halfspace", "normal": [nx, ny], "offset": c, "material": ...}` for planar masks, and `{"type": "polygon", "vertices": [[x1, y1], …], "material": ...}` to paint arbitrary simple polygons. |
 | `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
-| `outputs`   | array  | Optional list of export requests. `field_map` and `line_probe` records are emitted as CSV. |
+| `magnet_regions` | array | Optional list of magnetised shapes with uniform magnetisation vectors, e.g. polygon loops or axis-aligned rectangles. |
+| `outputs`   | array  | Optional list of export requests. `field_map` records support `quantity` values `"B"`, `"H"`, `"BH"`, or `"energy_density"`; `line_probe` records accept `"Bmag"`, `"Bx"`, `"By"`, `"Hx"`, `"Hy"`, `"Hmag"`, or `"energy_density"`. All outputs are emitted as CSV. |
 
 `loadScenarioFromJson` validates the structure, normalises half-space normals,
 and stores the resulting material masks. `rasterizeScenarioToGrid` then deposits
@@ -196,7 +223,12 @@ The `sources` list supports multiple wire entries. Each is rasterised as a disk
 with constant current density `J_z = I / (π r²)` applied to cells whose centres
 fall inside the radius. `tests/two_wire_cancel_test.cpp` integrates these cells
 to confirm that the deposited current matches the requested value to within
-15%, providing a regression guard on the rasteriser.
+15%, providing a regression guard on the rasteriser. Magnetised regions live in
+`magnet_regions`; each entry supplies a shape (`polygon` with vertices or
+`rect` with `x_range`/`y_range`) plus a magnetisation vector `magnetization`
+given either as `[Mx, My]` or `{ "Mx": ..., "My": ... }`. Overlapping entries
+add their vectors. Bound currents are generated from the resulting discrete
+curl, so partial coverage and composite magnets are supported.
 
 Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
 introduced without breaking the base schema because the parser ignores unknown
@@ -208,14 +240,17 @@ new `type` variants as needed.
 Output definitions live alongside the physical description so scenarios are
 self-documenting and reproducible. Two request flavours remain available:
 
-* **Field maps** (`{"type":"field_map", "id":"domain_field", "quantity":"B", "path":"outputs/two_wire_field_map.csv"}`)
-  dump the full `B` field over the grid. The CSV contains `x,y,Bx,By,Bmag`, and
-  the path defaults to `outputs/<id>.csv` when omitted.
-* **Line probes** (`{"type":"line_probe", "axis":"x", "value":0.0, "quantity":"Bmag"}`)
+* **Field maps** (`{"type":"field_map", "id":"domain_field", "quantity":"BH", "path":"outputs/domain_bh.csv"}`)
+  dump full-grid data. The CSV always starts with `x,y` and then includes
+  whichever columns match the requested quantity: `B` (`Bx,By,Bmag`), `H`
+  (`Hx,Hy,Hmag`), `BH` (both sets), or `energy_density` (both sets plus
+  `EnergyDensity`). Paths default to `outputs/<id>.csv` when omitted.
+* **Line probes** (`{"type":"line_probe", "axis":"x", "value":0.0, "quantity":"energy_density"}`)
   sample a horizontal or vertical line aligned with the grid. Specify `axis`
-  (`"x"` or `"y"`), the coordinate to lock, the field component (`Bx`, `By`, or
-  `Bmag`), and an output path. The ingestor validates that the requested line
-  lands on an existing grid column/row.
+  (`"x"` or `"y"`), the coordinate to lock, the field component (`Bx`, `By`,
+  `Bmag`, `Hx`, `Hy`, `Hmag`, or `energy_density`), and an output path. The
+  ingestor validates that the requested line lands on an existing grid column or
+  row.
 
 Python authors can build these records via
 `scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as

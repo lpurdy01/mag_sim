@@ -14,11 +14,14 @@ void write_csv_line_profile(const std::string& path,
                             const std::vector<double>& y,
                             const std::vector<double>& v);
 
+struct FieldColumnView {
+    std::string header;
+    const std::vector<double>* values{nullptr};
+};
+
 void write_csv_field_map(const std::string& path,
                          const std::vector<double>& x,
                          const std::vector<double>& y,
-                         const std::vector<double>& bx,
-                         const std::vector<double>& by,
-                         const std::vector<double>& bmag);
+                         const std::vector<FieldColumnView>& columns);
 
 }  // namespace motorsim

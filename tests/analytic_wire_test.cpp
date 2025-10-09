@@ -150,7 +150,8 @@ int main() {
         }
 
         const std::filesystem::path fieldCsvPath = outDir / "validation_wire_field.csv";
-        write_csv_field_map(fieldCsvPath.string(), gridXs, gridYs, gridBx, gridBy, gridBmag);
+        write_csv_field_map(fieldCsvPath.string(), gridXs, gridYs,
+                            {{"Bx", &gridBx}, {"By", &gridBy}, {"Bmag", &gridBmag}});
     } catch (const std::exception& ex) {
         std::cerr << "Warning: failed to write CSV artifacts: " << ex.what() << "\n";
     }

@@ -36,6 +36,13 @@ SolveReport solveAz_GS_SOR(Grid2D& grid, const SolveOptions& options);
 void computeB(Grid2D& grid);
 
 /**
+ * @brief Compute magnetic field intensity components using the stored flux density
+ *        and magnetisation.
+ * @param grid Grid with populated Bx/By and magnetisation vectors.
+ */
+void computeH(Grid2D& grid);
+
+/**
  * @brief Placeholder for a future conjugate gradient solver.
  * @note Currently unimplemented; returns a non-converged report.
  */

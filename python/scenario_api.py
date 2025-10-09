@@ -88,8 +88,10 @@ class FieldMapOutput:
     def validate(self) -> None:
         if not self.id:
             raise ValueError("FieldMapOutput id must be non-empty")
-        if self.quantity != "B":
-            raise ValueError("FieldMapOutput currently only supports quantity 'B'")
+        if self.quantity not in {"B", "H", "BH", "energy_density"}:
+            raise ValueError(
+                "FieldMapOutput quantity must be 'B', 'H', 'BH', or 'energy_density'"
+            )
         if self.format != "csv":
             raise ValueError("FieldMapOutput currently only supports CSV format")
         if self.path is not None and not self.path:
@@ -124,8 +126,10 @@ class LineProbeOutput:
             raise ValueError("LineProbeOutput id must be non-empty")
         if self.axis not in {"x", "y"}:
             raise ValueError("LineProbeOutput axis must be 'x' or 'y'")
-        if self.quantity not in {"Bmag", "Bx", "By"}:
-            raise ValueError("LineProbeOutput quantity must be 'Bmag', 'Bx', or 'By'")
+        if self.quantity not in {"Bmag", "Bx", "By", "Hx", "Hy", "Hmag", "energy_density"}:
+            raise ValueError(
+                "LineProbeOutput quantity must be one of 'Bmag', 'Bx', 'By', 'Hx', 'Hy', 'Hmag', or 'energy_density'"
+            )
         if self.format != "csv":
             raise ValueError("LineProbeOutput currently only supports CSV format")
         if self.path is not None and not self.path:

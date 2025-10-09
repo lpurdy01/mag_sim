@@ -49,6 +49,15 @@ target_include_directories(line_current_interface_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME line_current_interface COMMAND line_current_interface_test)
 
+add_executable(magnet_strip_test
+    tests/magnet_strip_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(magnet_strip_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME magnet_strip COMMAND magnet_strip_test)
+
 add_executable(polygon_region_test
     tests/polygon_region_test.cpp
     src/motorsim/ingest.cpp)
@@ -56,6 +65,15 @@ target_include_directories(polygon_region_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME polygon_region COMMAND polygon_region_test)
+
+add_executable(output_quantity_test
+    tests/output_quantity_test.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp)
+target_include_directories(output_quantity_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME output_quantity COMMAND output_quantity_test)
 
 add_test(
     NAME scenario_python_emit
