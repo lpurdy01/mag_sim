@@ -30,6 +30,10 @@ jobs:
           ./build/two_wire_cancel_test 2>&1 | tee ci_artifacts/two_wire_cancel_test.txt
           ./build/line_current_interface_test 2>&1 | tee ci_artifacts/line_current_interface_test.txt
           ./build/magnet_strip_test 2>&1 | tee ci_artifacts/magnet_strip_test.txt
+          ./build/probe_output_test 2>&1 | tee ci_artifacts/probe_output_test.txt
+          ./build/torque_validation_test 2>&1 | tee ci_artifacts/torque_validation_test.txt
+          ./build/back_emf_probe_test 2>&1 | tee ci_artifacts/back_emf_probe_test.txt
+          ./build/rotor_ripple_test 2>&1 | tee ci_artifacts/rotor_ripple_test.txt
           {
             echo "# Regression accuracy summary"
             echo
@@ -37,7 +41,11 @@ jobs:
               ci_artifacts/analytic_wire_test.txt \
               ci_artifacts/two_wire_cancel_test.txt \
               ci_artifacts/line_current_interface_test.txt \
-              ci_artifacts/magnet_strip_test.txt; do
+              ci_artifacts/magnet_strip_test.txt \
+              ci_artifacts/probe_output_test.txt \
+              ci_artifacts/torque_validation_test.txt \
+              ci_artifacts/back_emf_probe_test.txt \
+              ci_artifacts/rotor_ripple_test.txt; do
               name=$(basename "${report%.txt}")
               echo "## ${name}"
               cat "$report"
@@ -111,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for file in outputs/*.csv outputs/*.vti; do
+          for file in outputs/*.csv outputs/*.vti outputs/*_outlines.vtp; do
             cp "$file" ci_artifacts/
           done
       - name: Upload simulation artifacts

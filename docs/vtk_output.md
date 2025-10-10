@@ -22,15 +22,26 @@ provided the ingestor writes to `outputs/<id>.vti`.
 }
 ```
 
-Each VTK file stores cell-centred datasets named `Bx`, `By`, `|B|`, `Hx`, `Hy`,
-`|H|`, and `energy_density`. Values are computed by averaging the four
+Each VTK file stores cell-centred datasets named `B`, `Bx`, `By`, `|B|`, `H`,
+`Hx`, `Hy`, `|H|`, and `energy_density`. The `B` and `H` arrays are true vector
+fields (three components with a zero Z entry) so ParaView can render streamlines
+or glyphs without manual component selection. Scalar components are still
+available for quick inspection. Values are computed by averaging the four
 surrounding nodes before evaluating magnitudes and the energy density
 (\(\tfrac{1}{2}\,\mathbf{B}\cdot\mathbf{H}\)).
+
+Alongside each `.vti` export the solver writes a
+`*_outlines.vtp` PolyData companion that contains the domain rectangle, material
+polygons, magnet outlines, and wire circles as closed polylines. ParaView can
+load the outline file as a second source and overlay it on the field map using a
+`Glyph`/`Tube` filter or simple line rendering. Cell data include a `kind`
+integer (`0=domain`, `1=material`, `2=magnet`, `3=wire`) and a descriptive
+string `label` so specific features can be coloured or hidden.
 
 ## Verifying the output
 
 Use the helper script to confirm ParaView-readable structure and non-empty
-arrays:
+arrays (including the combined vector fields):
 
 ```bash
 python python/verify_vtk.py outputs/field_frame_000.vti

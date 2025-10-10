@@ -118,5 +118,9 @@ int main() {
         return 1;
     }
 
+    std::cout << "RotorRipple: torque_deg0=" << torques[0] << " torque_deg60=" << torques[1]
+              << " torque_deg120=" << torques[2] << " torque_deg180=" << torques[3]
+              << " peak_to_peak=" << peakToPeak << '\n';
+
     return 0;
 }

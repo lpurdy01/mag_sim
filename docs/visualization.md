@@ -43,3 +43,12 @@ scenarios so GitHub Actions artifacts include the enhanced renders. The iron rin
 and magnet strip plots use `--color-scale log` together with
 `--vector-mode log` to improve readability when the dynamic range spans several
 orders of magnitude.
+
+## ParaView overlays
+
+When loading solver outputs directly in ParaView, open both the `.vti` field
+map and its `*_outlines.vtp` companion. The outline file carries labelled
+polylines for the domain boundary, material inserts, magnets, and wires so you
+can colour or filter geometry independently of the field. Select the `B` or `H`
+vector arrays for glyphs or streamlines—the data are already packaged as
+three-component vectors, so no calculator filters are required.

@@ -187,5 +187,9 @@ int main() {
         return 1;
     }
 
+    std::cout << "TorqueValidation: mst=" << mstTorque << " dipole=" << dipoleTorque
+              << " relDiffDipole=" << relDiffDipole << " virtual=" << virtualTorque
+              << " relDiffVirtual=" << relDiffVirtual << '\n';
+
     return 0;
 }

@@ -44,6 +44,10 @@ declare -a regression_bins=(
   two_wire_cancel_test
   line_current_interface_test
   magnet_strip_test
+  probe_output_test
+  torque_validation_test
+  back_emf_probe_test
+  rotor_ripple_test
 )
 
 for bin in "${regression_bins[@]}"; do
@@ -128,7 +132,7 @@ python3 python/visualize_wire.py \
 
 echo "[ci-check] Collecting CSV artifacts"
 shopt -s nullglob
-for file in outputs/*.csv outputs/*.vti; do
+for file in outputs/*.csv outputs/*.vti outputs/*_outlines.vtp; do
   cp "$file" ci_artifacts/
 done
 

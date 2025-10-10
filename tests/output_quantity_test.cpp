@@ -115,7 +115,9 @@ int main() {
     }
 
     const std::string contents((std::istreambuf_iterator<char>(vti)), std::istreambuf_iterator<char>());
-    if (contents.find("Name=\"Bx\"") == std::string::npos ||
+    if (contents.find("Name=\"B\"") == std::string::npos ||
+        contents.find("Name=\"Bx\"") == std::string::npos ||
+        contents.find("Name=\"H\"") == std::string::npos ||
         contents.find("Name=\"|B|\"") == std::string::npos ||
         contents.find("Name=\"energy_density\"") == std::string::npos) {
         std::cerr << "VTK header missing expected arrays\n";
@@ -133,7 +135,7 @@ int main() {
     }
     const char* cursor = contents.data() + underscorePos + 1;
     std::size_t remaining = contents.size() - (underscorePos + 1);
-    const auto readBlock = [&](std::size_t expectedCount) {
+    const auto readBlock = [&](std::size_t expectedCount, std::size_t components) {
         if (remaining < sizeof(std::uint64_t)) {
             throw std::runtime_error("Unexpected end of VTK payload header");
         }
@@ -141,11 +143,11 @@ int main() {
         std::memcpy(&byteCount, cursor, sizeof(byteCount));
         cursor += sizeof(byteCount);
         remaining -= sizeof(byteCount);
-        const std::size_t expectedBytes = expectedCount * sizeof(double);
+        const std::size_t expectedBytes = expectedCount * components * sizeof(double);
         if (byteCount != expectedBytes || remaining < byteCount) {
             throw std::runtime_error("VTK payload size mismatch");
         }
-        std::vector<double> values(expectedCount);
+        std::vector<double> values(expectedCount * components);
         std::memcpy(values.data(), cursor, expectedBytes);
         cursor += expectedBytes;
         remaining -= expectedBytes;
@@ -154,17 +156,23 @@ int main() {
 
     const std::size_t cellCount = (gridNx - 1) * (gridNy - 1);
     try {
-        const auto bxCells = readBlock(cellCount);
-        const auto byCells = readBlock(cellCount);
-        const auto bmagCells = readBlock(cellCount);
-        const auto hxCells = readBlock(cellCount);
-        const auto hyCells = readBlock(cellCount);
-        const auto hmagCells = readBlock(cellCount);
-        const auto energyCells = readBlock(cellCount);
+        const auto bVecCells = readBlock(cellCount, 3);
+        const auto bxCells = readBlock(cellCount, 1);
+        const auto byCells = readBlock(cellCount, 1);
+        const auto bmagCells = readBlock(cellCount, 1);
+        const auto hVecCells = readBlock(cellCount, 3);
+        const auto hxCells = readBlock(cellCount, 1);
+        const auto hyCells = readBlock(cellCount, 1);
+        const auto hmagCells = readBlock(cellCount, 1);
+        const auto energyCells = readBlock(cellCount, 1);
 
         for (std::size_t i = 0; i < cellCount; ++i) {
-            if (!approxEqual(bxCells[i], 1.0) || !approxEqual(byCells[i], 0.0) ||
-                !approxEqual(bmagCells[i], 1.0) || !approxEqual(hxCells[i], 0.5) ||
+            const std::size_t vecIdx = i * 3;
+            if (!approxEqual(bVecCells[vecIdx + 0], 1.0) || !approxEqual(bVecCells[vecIdx + 1], 0.0) ||
+                !approxEqual(bVecCells[vecIdx + 2], 0.0) || !approxEqual(bxCells[i], 1.0) ||
+                !approxEqual(byCells[i], 0.0) || !approxEqual(bmagCells[i], 1.0) ||
+                !approxEqual(hVecCells[vecIdx + 0], 0.5) || !approxEqual(hVecCells[vecIdx + 1], 0.0) ||
+                !approxEqual(hVecCells[vecIdx + 2], 0.0) || !approxEqual(hxCells[i], 0.5) ||
                 !approxEqual(hyCells[i], 0.0) || !approxEqual(hmagCells[i], 0.5) ||
                 !approxEqual(energyCells[i], 0.25)) {
                 std::cerr << "Unexpected cell values in VTK payload\n";

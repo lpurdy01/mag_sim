@@ -96,5 +96,8 @@ int main() {
         return 1;
     }
 
+    std::cout << "ProbeOutput: Fx=" << result.forceX << " Fy=" << result.forceY
+              << " Tz=" << result.torqueZ << '\n';
+
     return 0;
 }

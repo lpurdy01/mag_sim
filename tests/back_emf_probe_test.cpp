@@ -110,5 +110,8 @@ int main() {
         return 1;
     }
 
+    std::cout << "BackEmfTest: polygon_flux=" << polygonFlux << " rect_flux=" << rectFlux
+              << " emf=" << sample.emf << '\n';
+
     return 0;
 }

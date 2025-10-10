@@ -6,6 +6,20 @@
 
 namespace motorsim {
 
+struct VtkOutlineLoop {
+    enum class Kind : int {
+        Domain = 0,
+        Material = 1,
+        Magnet = 2,
+        Wire = 3,
+    };
+
+    Kind kind{Kind::Domain};
+    std::string label;
+    std::vector<double> xs;
+    std::vector<double> ys;
+};
+
 // Writes a VTK ImageData (.vti) field map using cell-centred values.
 // nodeBx/nodeBy should contain nx * ny samples laid out in row-major order.
 // nodeHx/nodeHy may be null when H data is not required.
@@ -22,6 +36,12 @@ void write_vti_field_map(const std::string& path,
                          const std::vector<double>* nodeHy,
                          bool includeH,
                          bool includeEnergyDensity);
+
+// Emits a VTK PolyData (.vtp) file containing closed polyline outlines that
+// represent scenario geometry (domain boundary, material polygons, magnets,
+// wires, etc.). Each loop is tagged with a categorical `kind` and a `label`
+// string stored as cell data for convenient filtering in ParaView.
+void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoop>& loops);
 
 }  // namespace motorsim
 

@@ -78,6 +78,85 @@ std::filesystem::path makeFramePath(const std::string& basePath, bool timelineAc
     return dir / (stem.str() + extension);
 }
 
+motorsim::VtkOutlineLoop makeRectangleLoop(motorsim::VtkOutlineLoop::Kind kind,
+                                           std::string label,
+                                           double minX,
+                                           double maxX,
+                                           double minY,
+                                           double maxY) {
+    motorsim::VtkOutlineLoop loop;
+    loop.kind = kind;
+    loop.label = std::move(label);
+    loop.xs = {minX, maxX, maxX, minX};
+    loop.ys = {minY, minY, maxY, maxY};
+    return loop;
+}
+
+std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::ScenarioSpec& spec) {
+    using motorsim::VtkOutlineLoop;
+    std::vector<VtkOutlineLoop> loops;
+
+    const double minX = spec.originX;
+    const double maxX = spec.originX + static_cast<double>(spec.nx - 1) * spec.dx;
+    const double minY = spec.originY;
+    const double maxY = spec.originY + static_cast<double>(spec.ny - 1) * spec.dy;
+
+    loops.push_back(makeRectangleLoop(VtkOutlineLoop::Kind::Domain, "domain", minX, maxX, minY, maxY));
+
+    for (std::size_t i = 0; i < spec.polygons.size(); ++i) {
+        const auto& poly = spec.polygons[i];
+        if (poly.xs.size() != poly.ys.size() || poly.xs.size() < 3) {
+            continue;
+        }
+        VtkOutlineLoop loop;
+        loop.kind = VtkOutlineLoop::Kind::Material;
+        loop.label = "material_polygon_" + std::to_string(i);
+        loop.xs = poly.xs;
+        loop.ys = poly.ys;
+        loops.push_back(std::move(loop));
+    }
+
+    for (std::size_t i = 0; i < spec.magnetRegions.size(); ++i) {
+        const auto& magnet = spec.magnetRegions[i];
+        VtkOutlineLoop loop;
+        loop.kind = VtkOutlineLoop::Kind::Magnet;
+        loop.label = "magnet_" + std::to_string(i);
+        if (magnet.shape == motorsim::ScenarioSpec::MagnetRegion::Shape::Rect) {
+            loops.push_back(makeRectangleLoop(loop.kind, loop.label, magnet.min_x, magnet.max_x, magnet.min_y,
+                                              magnet.max_y));
+        } else {
+            if (magnet.xs.size() == magnet.ys.size() && magnet.xs.size() >= 3) {
+                loop.xs = magnet.xs;
+                loop.ys = magnet.ys;
+                loops.push_back(std::move(loop));
+            }
+        }
+    }
+
+    const double twoPi = 6.28318530717958647692;
+
+    for (std::size_t i = 0; i < spec.wires.size(); ++i) {
+        const auto& wire = spec.wires[i];
+        if (!(wire.radius > 0.0)) {
+            continue;
+        }
+        VtkOutlineLoop loop;
+        loop.kind = VtkOutlineLoop::Kind::Wire;
+        loop.label = "wire_" + std::to_string(i);
+        constexpr std::size_t segments = 64;
+        loop.xs.reserve(segments);
+        loop.ys.reserve(segments);
+        for (std::size_t s = 0; s < segments; ++s) {
+            const double theta = (twoPi * static_cast<double>(s)) / static_cast<double>(segments);
+            loop.xs.push_back(wire.x + wire.radius * std::cos(theta));
+            loop.ys.push_back(wire.y + wire.radius * std::sin(theta));
+        }
+        loops.push_back(std::move(loop));
+    }
+
+    return loops;
+}
+
 FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::SolveOptions& options,
                           const OutputFilter& filter, bool timelineActive, std::size_t frameDigits,
                           bool writeMidline) {
@@ -126,6 +205,17 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     bool fieldMapNeedsEnergy = false;
     bool lineProbeNeedsH = false;
     bool lineProbeNeedsEnergy = false;
+
+    std::vector<motorsim::VtkOutlineLoop> outlineLoops;
+    bool outlinesPrepared = false;
+    bool outlinesWritten = false;
+
+    const auto prepareOutlines = [&]() {
+        if (!outlinesPrepared) {
+            outlineLoops = buildOutlineLoops(frame.spec);
+            outlinesPrepared = true;
+        }
+    };
 
     if (scenarioHasOutputs && !filter.skip) {
         for (const auto& request : frame.spec.outputs.fieldMaps) {
@@ -262,6 +352,19 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
                                                   frame.spec.originX, frame.spec.originY, frame.spec.dx,
                                                   frame.spec.dy, grid.Bx, grid.By, &grid.Hx, &grid.Hy,
                                                   includeH, includeEnergy);
+                    if (!outlinesWritten) {
+                        prepareOutlines();
+                        if (!outlineLoops.empty()) {
+                            std::filesystem::path outlinePath = outPath;
+                            outlinePath.replace_extension();
+                            outlinePath += "_outlines.vtp";
+                            ensureParentDirectory(outlinePath);
+                            motorsim::write_vtp_outlines(outlinePath.string(), outlineLoops);
+                            out << "Frame " << frame.index << ": wrote geometry_outlines to " << outlinePath
+                                << '\n';
+                        }
+                        outlinesWritten = true;
+                    }
                 }
                 out << "Frame " << frame.index << ": wrote field_map '" << request.id
                     << "' to " << outPath << '\n';
