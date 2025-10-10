@@ -108,12 +108,12 @@ int main() {
 
     const auto magnitude = [](double value) { return std::abs(value); };
 
-    if (!(magnitude(torques[0]) > 5.0)) {
-        std::cerr << "Torque at 0 degrees too small: " << torques[0] << '\n';
+    if (!(magnitude(torques[0]) < 5.0)) {
+        std::cerr << "Torque at 0 degrees should be near zero: " << torques[0] << '\n';
         return 1;
     }
-    if (!(magnitude(torques[3]) > 5.0)) {
-        std::cerr << "Torque at 180 degrees too small: " << torques[3] << '\n';
+    if (!(magnitude(torques[3]) < 5.0)) {
+        std::cerr << "Torque at 180 degrees should be near zero: " << torques[3] << '\n';
         return 1;
     }
     if (!(torques[1] * torques[2] < 0.0)) {
@@ -121,7 +121,7 @@ int main() {
                   << torques[2] << '\n';
         return 1;
     }
-    if (!(magnitude(torques[1]) > 40.0 && magnitude(torques[2]) > 40.0)) {
+    if (!(magnitude(torques[1]) > 50.0 && magnitude(torques[2]) > 50.0)) {
         std::cerr << "Peak torque magnitudes too small: " << torques[1] << ", " << torques[2] << '\n';
         return 1;
     }
