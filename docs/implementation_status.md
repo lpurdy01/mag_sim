@@ -13,6 +13,7 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
 - Field plots: `ci_artifacts/rotor_ripple_frame0.png` and `ci_artifacts/rotor_ripple_frame2.png` illustrate timeline evolution alongside the existing two-wire/interface/iron-ring renders.
 - Accuracy reports: `ci_artifacts/test_accuracy_report.txt` aggregates analytic/regression solver comparisons, now including force, torque, and back-EMF validation summaries captured from the dedicated regression binaries; additional torque/back-EMF CSVs are copied directly from `outputs/`.
 - Sample VTK: `outputs/rotor_ripple_field_frame_000.vti` (and subsequent frames) are exported on every CI run and verified with `python/verify_vtk.py`. Companion outline polydata and `_labels.csv` mapping files are uploaded for ParaView inspection.
+- Rotor timeline bundles now rotate a multi-segment rotor and high-µ stator, emit outline polydata that ParaView can load without crashing, and log symmetry metrics (`opposition60_120`, `repeat0_180`) plus relative probe/back-EMF errors in the regression summary to track solver accuracy over time.
 
 ## Remaining work
 - The roadmap milestones listed above are complete. Future efforts can focus on extending scenario libraries, refining solver performance, or integrating additional analytical benchmarks (e.g., full stator/rotor sweeps or 3D extrusions) as new research questions arise.

@@ -267,8 +267,8 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
     ofs << "<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\""
         << (littleEndian ? "LittleEndian" : "BigEndian") << "\">\n";
     ofs << "  <PolyData>\n";
-    ofs << "    <Piece NumberOfPoints=\"" << points.size() / 3 << "\" NumberOfLines=\""
-        << lineCount << "\">\n";
+    ofs << "    <Piece NumberOfPoints=\"" << points.size() / 3 << "\" NumberOfVerts=\"0\" NumberOfLines=\""
+        << lineCount << "\" NumberOfStrips=\"0\" NumberOfPolys=\"0\">\n";
     ofs << "      <Points>\n";
     ofs << "        <DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
     for (std::size_t i = 0; i < points.size(); i += 3) {
@@ -276,6 +276,7 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
     }
     ofs << "        </DataArray>\n";
     ofs << "      </Points>\n";
+    ofs << "      <PointData/>\n";
     ofs << "      <Lines>\n";
     ofs << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
     std::size_t cursor = 0;

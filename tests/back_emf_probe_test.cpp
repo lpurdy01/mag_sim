@@ -1,6 +1,7 @@
 #include "motorsim/ingest.hpp"
 #include "motorsim/probes.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -83,7 +84,8 @@ int main() {
         std::cerr << "Unexpected polygon flux: " << polygonFlux << " expected " << expectedFlux << '\n';
         return 1;
     }
-    if (!approxEqual(rectFlux, 2.0 * spec.dx * spec.dy)) {
+    const double rectExpectedFlux = 2.0 * spec.dx * spec.dy;
+    if (!approxEqual(rectFlux, rectExpectedFlux)) {
         // 2 cells * area * Bmag (Bmag = 1.0 in this synthetic field)
         std::cerr << "Unexpected rect flux: " << rectFlux << '\n';
         return 1;
@@ -110,8 +112,18 @@ int main() {
         return 1;
     }
 
+    const auto relError = [](double value, double reference) {
+        const double denom = std::max(std::abs(reference), 1e-12);
+        return std::abs(value - reference) / denom;
+    };
+
+    const double polygonFluxRelErr = relError(polygonFlux, expectedFlux);
+    const double rectFluxRelErr = relError(rectFlux, rectExpectedFlux);
+    const double emfRelErr = relError(sample.emf, expectedEmf);
+
     std::cout << "BackEmfTest: polygon_flux=" << polygonFlux << " rect_flux=" << rectFlux
-              << " emf=" << sample.emf << '\n';
+              << " emf=" << sample.emf << " polygon_flux_relErr=" << polygonFluxRelErr
+              << " rect_flux_relErr=" << rectFluxRelErr << " emf_relErr=" << emfRelErr << '\n';
 
     return 0;
 }

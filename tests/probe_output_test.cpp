@@ -2,6 +2,7 @@
 #include "motorsim/probes.hpp"
 #include "motorsim/types.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -72,6 +73,11 @@ int main() {
         return std::abs(a - b) <= tol;
     };
 
+    const auto relError = [](double value, double reference) {
+        const double denom = std::max(std::abs(reference), 1e-12);
+        return std::abs(value - reference) / denom;
+    };
+
     if (!approxEqual(result.forceX, 0.0, 1e-6)) {
         std::cerr << "Expected Fx ~ 0, got " << result.forceX << '\n';
         return 1;
@@ -96,8 +102,13 @@ int main() {
         return 1;
     }
 
+    const double fyRelErr = relError(result.forceY, expectedFy);
+    const double fxAbsErr = std::abs(result.forceX);
+    const double tzAbsErr = std::abs(result.torqueZ);
+
     std::cout << "ProbeOutput: Fx=" << result.forceX << " Fy=" << result.forceY
-              << " Tz=" << result.torqueZ << '\n';
+              << " Tz=" << result.torqueZ << " Fy_relErr=" << fyRelErr
+              << " Fx_absErr=" << fxAbsErr << " Tz_absErr=" << tzAbsErr << '\n';
 
     return 0;
 }

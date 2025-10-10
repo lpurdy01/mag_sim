@@ -3,6 +3,7 @@
 #include "motorsim/probes.hpp"
 #include "motorsim/solver.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -53,11 +54,24 @@ int main() {
         return 1;
     }
 
-    if (spec.magnetRegions.size() != 1) {
-        std::cerr << "Scenario requires one magnet region" << '\n';
+    const ScenarioSpec::Outputs::Probe* torqueProbe = nullptr;
+    for (const auto& probe : spec.outputs.probes) {
+        if (probe.method == ScenarioSpec::Outputs::Probe::Method::StressTensor &&
+            probe.quantity != ScenarioSpec::Outputs::Probe::Quantity::Force) {
+            torqueProbe = &probe;
+            if (probe.id == "torque_loop") {
+                break;
+            }
+        }
+    }
+    if (torqueProbe == nullptr) {
+        std::cerr << "Scenario must define a stress-tensor torque probe" << '\n';
         return 1;
     }
-    const ScenarioSpec::MagnetRegion magnet = spec.magnetRegions.front();
+    if (torqueProbe->loopXs.size() != torqueProbe->loopYs.size() || torqueProbe->loopXs.size() < 3) {
+        std::cerr << "Torque probe loop is malformed" << '\n';
+        return 1;
+    }
 
     std::vector<ScenarioFrame> frames;
     try {
@@ -72,11 +86,8 @@ int main() {
         return 1;
     }
 
-    const double margin = 0.0065;
-    std::vector<double> loopXs{magnet.min_x - margin, magnet.max_x + margin, magnet.max_x + margin,
-                               magnet.min_x - margin};
-    std::vector<double> loopYs{magnet.min_y - margin, magnet.min_y - margin, magnet.max_y + margin,
-                               magnet.max_y + margin};
+    const std::vector<double> loopXs = torqueProbe->loopXs;
+    const std::vector<double> loopYs = torqueProbe->loopYs;
 
     std::vector<double> torques;
     torques.reserve(frames.size());
@@ -95,34 +106,54 @@ int main() {
         torques.push_back(stress.torqueZ);
     }
 
-    if (!(torques[0] > 1.0)) {
-        std::cerr << "Expected positive torque at 0 degrees, got " << torques[0] << '\n';
+    const auto magnitude = [](double value) { return std::abs(value); };
+
+    if (!(magnitude(torques[0]) > 5.0)) {
+        std::cerr << "Torque at 0 degrees too small: " << torques[0] << '\n';
         return 1;
     }
-    if (!(torques[1] > torques[0])) {
-        std::cerr << "Expected largest positive torque at 60 degrees, got " << torques[1]
-                  << " (baseline=" << torques[0] << ")" << '\n';
+    if (!(magnitude(torques[3]) > 5.0)) {
+        std::cerr << "Torque at 180 degrees too small: " << torques[3] << '\n';
         return 1;
     }
-    if (!(torques[2] < -1.0)) {
-        std::cerr << "Expected negative torque at 120 degrees, got " << torques[2] << '\n';
+    if (!(torques[1] * torques[2] < 0.0)) {
+        std::cerr << "Frames 60 and 120 degrees should have opposing torque signs: " << torques[1] << ", "
+                  << torques[2] << '\n';
         return 1;
     }
-    if (!(torques[3] > torques[2])) {
-        std::cerr << "Expected magnitude to ease at 180 degrees (" << torques[3]
-                  << " vs " << torques[2] << ")" << '\n';
+    if (!(magnitude(torques[1]) > 40.0 && magnitude(torques[2]) > 40.0)) {
+        std::cerr << "Peak torque magnitudes too small: " << torques[1] << ", " << torques[2] << '\n';
+        return 1;
+    }
+    const double dominant = std::max(magnitude(torques[1]), magnitude(torques[2]));
+    if (!(dominant > magnitude(torques[0]) * 2.0 && dominant > magnitude(torques[3]) * 2.0)) {
+        std::cerr << "Peak torque does not dominate baseline frames" << '\n';
         return 1;
     }
 
-    const double peakToPeak = torques[1] - torques[2];
-    if (!(peakToPeak > 8.0)) {
+    const auto minmax = std::minmax_element(torques.begin(), torques.end());
+    const double peakToPeak = *minmax.second - *minmax.first;
+    if (!(peakToPeak > 120.0)) {
         std::cerr << "Torque ripple too small: peak-to-peak=" << peakToPeak << '\n';
         return 1;
     }
 
+    const auto oppositionError = [](double a, double b) {
+        const double denom = std::max(std::max(std::abs(a), std::abs(b)), 1e-9);
+        return std::abs(a + b) / denom;
+    };
+    const auto repeatError = [](double a, double b) {
+        const double denom = std::max(std::max(std::abs(a), std::abs(b)), 1e-9);
+        return std::abs(a - b) / denom;
+    };
+
+    const double poleOppositionError = oppositionError(torques[1], torques[2]);
+    const double repeatError0 = repeatError(torques[0], torques[3]);
+
     std::cout << "RotorRipple: torque_deg0=" << torques[0] << " torque_deg60=" << torques[1]
               << " torque_deg120=" << torques[2] << " torque_deg180=" << torques[3]
-              << " peak_to_peak=" << peakToPeak << '\n';
+              << " peak_to_peak=" << peakToPeak << " opposition60_120=" << poleOppositionError
+              << " repeat0_180=" << repeatError0 << '\n';
 
     return 0;
 }
