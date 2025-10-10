@@ -105,6 +105,26 @@ target_include_directories(back_emf_probe_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME back_emf_probe COMMAND back_emf_probe_test)
 
+add_executable(torque_validation_test
+    tests/torque_validation_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(torque_validation_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME torque_validation COMMAND torque_validation_test)
+
+add_executable(rotor_ripple_test
+    tests/rotor_ripple_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(rotor_ripple_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME rotor_ripple COMMAND rotor_ripple_test)
+
 add_test(
     NAME scenario_python_emit
     COMMAND

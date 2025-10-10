@@ -9,6 +9,5 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
 - **Back-EMF probes**: Flux integration across timeline frames emits per-interval voltages and is covered in `docs/back_emf.md`.
 - **Visualization upgrades**: `python/visualize_scenario_field.py` exposes log-scale colormaps, boundary overlays, streamline controls, analytic overlays, and vector scaling modes as described in the roadmap.
 
-## Outstanding Work
-- **Analytical validation stages**: Dedicated regression scenarios and documentation for the staged analytic ladder are still pending.
-- **Documentation gaps**: The roadmap called for `docs/validation_stages.md`, which has not been created.
+## Next Steps
+- The staged validation ladder is now in place; future research tasks can build atop the documented scenarios.

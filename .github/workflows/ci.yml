@@ -68,7 +68,7 @@ jobs:
             --save ci_artifacts/line_current_interface_field.png \
             --draw-boundaries \
             --streamlines \
-            --overlay-analytic-interface \
+            --overlay-analytic interface \
             --analytic-contours 10
           python3 python/visualize_scenario_field.py \
             --scenario inputs/iron_ring_demo.json \

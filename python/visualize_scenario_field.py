@@ -547,6 +547,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--overlay-analytic-interface",
+        dest="overlay_analytic",
+        action="store_const",
+        const="interface",
+        help=(
+            "Deprecated alias for --overlay-analytic interface; kept for backward compatibility "
+            "with older CI scripts."
+        ),
+    )
+    parser.add_argument(
         "--analytic-contours",
         type=int,
         default=8,

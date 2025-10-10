@@ -1,0 +1,28 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.12,
+    "Ly": 0.12,
+    "nx": 61,
+    "ny": 61
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "sources": [
+    {"type": "wire", "x": -0.04, "y": 0.0, "radius": 0.003, "I": 200.0},
+    {"type": "wire", "x": 0.04, "y": 0.0, "radius": 0.003, "I": -200.0}
+  ],
+  "magnet_regions": [
+    {
+      "type": "rect",
+      "x_range": [-0.01, 0.01],
+      "y_range": [-0.01, 0.01],
+      "magnetization": [350000.0, 0.0]
+    }
+  ]
+}
