@@ -72,7 +72,7 @@ int main() {
         return 1;
     }
 
-    const double margin = 0.004;
+    const double margin = 0.0065;
     std::vector<double> loopXs{magnet.min_x - margin, magnet.max_x + margin, magnet.max_x + margin,
                                magnet.min_x - margin};
     std::vector<double> loopYs{magnet.min_y - margin, magnet.min_y - margin, magnet.max_y + margin,
@@ -95,25 +95,27 @@ int main() {
         torques.push_back(stress.torqueZ);
     }
 
-    if (!(torques[0] > 0.05)) {
+    if (!(torques[0] > 1.0)) {
         std::cerr << "Expected positive torque at 0 degrees, got " << torques[0] << '\n';
         return 1;
     }
-    if (!(torques[1] > 0.0 && torques[1] < torques[0])) {
-        std::cerr << "Expected reduced positive torque at 60 degrees, got " << torques[1] << '\n';
+    if (!(torques[1] > torques[0])) {
+        std::cerr << "Expected largest positive torque at 60 degrees, got " << torques[1]
+                  << " (baseline=" << torques[0] << ")" << '\n';
         return 1;
     }
-    if (!(torques[2] < -0.02)) {
+    if (!(torques[2] < -1.0)) {
         std::cerr << "Expected negative torque at 120 degrees, got " << torques[2] << '\n';
         return 1;
     }
-    if (!(torques[3] < torques[2])) {
-        std::cerr << "Expected strongest negative torque at 180 degrees" << '\n';
+    if (!(torques[3] > torques[2])) {
+        std::cerr << "Expected magnitude to ease at 180 degrees (" << torques[3]
+                  << " vs " << torques[2] << ")" << '\n';
         return 1;
     }
 
-    const double peakToPeak = torques[0] - torques[3];
-    if (!(peakToPeak > 0.3)) {
+    const double peakToPeak = torques[1] - torques[2];
+    if (!(peakToPeak > 8.0)) {
         std::cerr << "Torque ripple too small: peak-to-peak=" << peakToPeak << '\n';
         return 1;
     }

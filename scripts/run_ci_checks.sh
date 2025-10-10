@@ -113,6 +113,7 @@ python3 python/visualize_scenario_field.py \
   --scenario inputs/tests/rotor_ripple_test.json \
   --field-map outputs/rotor_ripple_field_frame_000.csv \
   --save ci_artifacts/rotor_ripple_frame0.png \
+  --outline-vtp outputs/rotor_ripple_field_frame_000_outlines.vtp \
   --draw-boundaries \
   --streamlines \
   --color-scale log \
@@ -121,6 +122,7 @@ python3 python/visualize_scenario_field.py \
   --scenario inputs/tests/rotor_ripple_test.json \
   --field-map outputs/rotor_ripple_field_frame_002.csv \
   --save ci_artifacts/rotor_ripple_frame2.png \
+  --outline-vtp outputs/rotor_ripple_field_frame_002_outlines.vtp \
   --draw-boundaries \
   --streamlines \
   --color-scale log \
@@ -132,7 +134,7 @@ python3 python/visualize_wire.py \
 
 echo "[ci-check] Collecting CSV artifacts"
 shopt -s nullglob
-for file in outputs/*.csv outputs/*.vti outputs/*_outlines.vtp; do
+for file in outputs/*.csv outputs/*.vti outputs/*_outlines.vtp outputs/*_outlines_labels.csv; do
   cp "$file" ci_artifacts/
 done
 

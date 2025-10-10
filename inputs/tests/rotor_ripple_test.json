@@ -8,10 +8,25 @@
     "ny": 61
   },
   "materials": [
-    {"name": "air", "mu_r": 1.0}
+    {"name": "air", "mu_r": 1.0},
+    {"name": "rotor_steel", "mu_r": 12.0}
   ],
   "regions": [
-    {"type": "uniform", "material": "air"}
+    {"type": "uniform", "material": "air"},
+    {
+      "type": "polygon",
+      "material": "rotor_steel",
+      "vertices": [
+        [0.0, -0.028],
+        [0.02, -0.02],
+        [0.028, 0.0],
+        [0.02, 0.02],
+        [0.0, 0.028],
+        [-0.02, 0.02],
+        [-0.028, 0.0],
+        [-0.02, -0.02]
+      ]
+    }
   ],
   "sources": [
     {"type": "wire", "x": -0.04, "y": 0.0, "radius": 0.003, "I": 200.0},
@@ -23,6 +38,14 @@
       "x_range": [-0.01, 0.01],
       "y_range": [-0.01, 0.01],
       "magnetization": [350000.0, 0.0]
+    }
+  ],
+  "rotors": [
+    {
+      "name": "rotor",
+      "pivot": [0.0, 0.0],
+      "polygon_indices": [0],
+      "magnet_indices": [0]
     }
   ],
   "outputs": [
@@ -56,10 +79,10 @@
       "loop": {
         "type": "polygon",
         "vertices": [
-          [-0.014, -0.014],
-          [0.014, -0.014],
-          [0.014, 0.014],
-          [-0.014, 0.014]
+          [-0.0165, -0.0165],
+          [0.0165, -0.0165],
+          [0.0165, 0.0165],
+          [-0.0165, 0.0165]
         ]
       },
       "path": "outputs/rotor_ripple_torque.csv"
@@ -78,9 +101,9 @@
     }
   ],
   "timeline": [
-    {"t": 0.0, "rotor_angle": 0.0},
-    {"t": 0.001, "rotor_angle": 60.0},
-    {"t": 0.002, "rotor_angle": 120.0},
-    {"t": 0.003, "rotor_angle": 180.0}
+    {"t": 0.0, "rotor_angles": {"rotor": 0.0}},
+    {"t": 0.001, "rotor_angles": {"rotor": 60.0}},
+    {"t": 0.002, "rotor_angles": {"rotor": 120.0}},
+    {"t": 0.003, "rotor_angles": {"rotor": 180.0}}
   ]
 }

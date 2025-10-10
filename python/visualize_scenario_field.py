@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import pathlib
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -29,6 +31,13 @@ class Wire:
 
 
 MU0 = 4.0e-7 * np.pi
+
+OUTLINE_STYLE_MAP = {
+    0: ("white", "--", 1.2),  # Domain
+    1: ("tab:orange", "-", 1.4),  # Material regions
+    2: ("tab:red", ":", 1.6),  # Magnets
+    3: ("tab:purple", "-", 1.2),  # Wires
+}
 
 
 def compute_domain_bounds(spec: dict) -> Tuple[float, float, float, float]:
@@ -118,6 +127,91 @@ def gather_boundaries(spec: dict) -> Dict[str, List]:
         "magnet_polygons": magnet_polys,
         "magnet_rects": magnet_rects,
     }
+
+
+def load_outline_vtp(vtp_path: pathlib.Path, labels_path: Optional[pathlib.Path] = None) -> List[Dict[str, object]]:
+    try:
+        tree = ET.parse(vtp_path)
+    except ET.ParseError as exc:  # pragma: no cover - XML error path
+        raise SystemExit(f"Failed to parse VTP outlines '{vtp_path}': {exc}") from exc
+
+    root = tree.getroot()
+    piece = root.find(".//Piece")
+    if piece is None:
+        raise SystemExit(f"VTP file '{vtp_path}' does not contain a PolyData Piece element")
+
+    points_array = piece.find("./Points/DataArray")
+    if points_array is None or points_array.text is None:
+        raise SystemExit(f"VTP file '{vtp_path}' is missing point coordinates")
+    point_values = [float(value) for value in points_array.text.split()]
+    if len(point_values) % 3 != 0:
+        raise SystemExit(f"VTP file '{vtp_path}' contains incomplete point triples")
+    points: List[Tuple[float, float]] = []
+    for i in range(0, len(point_values), 3):
+        points.append((point_values[i], point_values[i + 1]))
+
+    def extract_array(path: str) -> List[int]:
+        node = piece.find(path)
+        if node is None or node.text is None:
+            raise SystemExit(f"VTP file '{vtp_path}' is missing array at '{path}'")
+        return [int(value) for value in node.text.split()]
+
+    connectivity = extract_array("./Lines/DataArray[@Name='connectivity']")
+    offsets = extract_array("./Lines/DataArray[@Name='offsets']")
+
+    kind_values: Optional[List[int]] = None
+    loop_index_values: Optional[List[int]] = None
+    cell_data = piece.find("./CellData")
+    if cell_data is not None:
+        for data_array in cell_data.findall("DataArray"):
+            name = data_array.get("Name")
+            if name == "kind" and data_array.text is not None:
+                kind_values = [int(value) for value in data_array.text.split()]
+            elif name == "loop_index" and data_array.text is not None:
+                loop_index_values = [int(value) for value in data_array.text.split()]
+
+    if loop_index_values is None:
+        loop_index_values = list(range(len(offsets)))
+    if kind_values is None:
+        kind_values = [0] * len(offsets)
+
+    if labels_path is None:
+        labels_path = vtp_path.with_name(vtp_path.stem + "_labels.csv")
+    labels: Dict[int, Tuple[str, str]] = {}
+    if labels_path.exists():
+        with labels_path.open(newline="") as csv_file:
+            reader = csv.DictReader(csv_file)
+            for row in reader:
+                try:
+                    loop_idx = int(row.get("loop_index", "0"))
+                except ValueError:
+                    continue
+                label = row.get("label", "") or ""
+                group = row.get("group", "") or ""
+                labels[loop_idx] = (label, group)
+
+    loops: List[Dict[str, object]] = []
+    start = 0
+    for i, offset in enumerate(offsets):
+        if offset < start or offset > len(connectivity):
+            raise SystemExit(f"Invalid offsets array in '{vtp_path}'")
+        indices = connectivity[start:offset]
+        start = offset
+        coords = [points[idx] for idx in indices if 0 <= idx < len(points)]
+        xs = [coord[0] for coord in coords]
+        ys = [coord[1] for coord in coords]
+        label, group = labels.get(loop_index_values[i], (f"loop_{loop_index_values[i]}", ""))
+        loops.append(
+            {
+                "xs": xs,
+                "ys": ys,
+                "kind": kind_values[i] if i < len(kind_values) else 0,
+                "label": label,
+                "group": group,
+            }
+        )
+
+    return loops
 
 
 def compute_interface_reference_field(
@@ -373,6 +467,7 @@ def plot_field(
     log_floor: float,
     draw_boundaries: bool,
     boundaries: Dict[str, List],
+    outline_loops: Optional[List[Dict[str, object]]],
     vector_mode: str,
     vector_log_floor: float,
     streamlines: bool,
@@ -436,6 +531,19 @@ def plot_field(
             rect_x = [xmin, xmax, xmax, xmin, xmin]
             rect_y = [ymin, ymin, ymax, ymax, ymin]
             ax.plot(rect_x, rect_y, color="tab:red", linestyle=":", linewidth=1.2, alpha=0.9)
+
+        if outline_loops:
+            for loop in outline_loops:
+                xs = list(loop.get("xs", []))
+                ys = list(loop.get("ys", []))
+                if len(xs) < 2 or len(xs) != len(ys):
+                    continue
+                if xs[0] != xs[-1] or ys[0] != ys[-1]:
+                    xs = xs + [xs[0]]
+                    ys = ys + [ys[0]]
+                kind = int(loop.get("kind", 0))
+                color, linestyle, linewidth = OUTLINE_STYLE_MAP.get(kind, ("white", "-", 1.0))
+                ax.plot(xs, ys, color=color, linestyle=linestyle, linewidth=linewidth, alpha=0.85)
 
     if analytic is not None and analytic_levels > 0:
         levels = np.linspace(np.nanmin(analytic["Bmag"]), np.nanmax(analytic["Bmag"]), analytic_levels)
@@ -516,6 +624,18 @@ def main() -> None:
         help="Overlay material and magnet region boundaries on the plot.",
     )
     parser.add_argument(
+        "--outline-vtp",
+        type=pathlib.Path,
+        default=None,
+        help="Optional VTK PolyData file produced by the solver to overlay geometry outlines.",
+    )
+    parser.add_argument(
+        "--outline-labels",
+        type=pathlib.Path,
+        default=None,
+        help="Optional CSV providing labels for --outline-vtp (defaults to <path>_labels.csv).",
+    )
+    parser.add_argument(
         "--vector-mode",
         choices=("linear", "log", "off"),
         default="linear",
@@ -578,6 +698,15 @@ def main() -> None:
         raise SystemExit(f"Scenario file not found: {args.scenario}")
 
     spec, wires = load_scenario(args.scenario)
+
+    outline_loops: Optional[List[Dict[str, object]]] = None
+    if args.outline_vtp is not None:
+        if not args.outline_vtp.exists():
+            raise SystemExit(f"Outline file not found: {args.outline_vtp}")
+        outline_loops = load_outline_vtp(args.outline_vtp, args.outline_labels)
+        if outline_loops and not args.draw_boundaries:
+            print("Note: enabling --draw-boundaries to display supplied outline VTP")
+            args.draw_boundaries = True
     field_map_path = resolve_field_map_path(spec, args)
     if not field_map_path.exists():
         raise SystemExit(
@@ -616,6 +745,7 @@ def main() -> None:
         args.log_floor,
         args.draw_boundaries,
         boundaries,
+        outline_loops,
         args.vector_mode,
         args.vector_log_floor,
         args.streamlines,

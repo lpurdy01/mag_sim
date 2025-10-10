@@ -2,10 +2,12 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace motorsim {
 namespace {
@@ -208,16 +210,25 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
 
     std::vector<double> points;
     points.reserve(pointTotal * 3);
-    std::vector<long long> connectivity;
+    std::vector<std::int32_t> connectivity;
     connectivity.reserve(pointTotal);
-    std::vector<long long> offsets;
+    std::vector<std::int32_t> offsets;
     offsets.reserve(lineCount);
     std::vector<int> kinds;
     kinds.reserve(lineCount);
-    std::vector<std::string> labels;
-    labels.reserve(lineCount);
+    std::vector<int> ids;
+    ids.reserve(lineCount);
+    struct LabelEntry {
+        int id{0};
+        int kind{0};
+        std::string label;
+        std::string group;
+    };
+    std::vector<LabelEntry> metadata;
+    metadata.reserve(lineCount);
 
     std::size_t pointOffset = 0;
+    int nextId = 0;
     for (const auto& loop : loops) {
         if (loop.xs.size() != loop.ys.size() || loop.xs.size() < 2) {
             continue;
@@ -230,18 +241,20 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
             points.push_back(loop.xs[i]);
             points.push_back(loop.ys[i]);
             points.push_back(0.0);
-            connectivity.push_back(static_cast<long long>(pointOffset + i));
+            connectivity.push_back(static_cast<std::int32_t>(pointOffset + i));
         }
         if (!isClosed) {
             points.push_back(loop.xs.front());
             points.push_back(loop.ys.front());
             points.push_back(0.0);
-            connectivity.push_back(static_cast<long long>(pointOffset + baseVertices));
+            connectivity.push_back(static_cast<std::int32_t>(pointOffset + baseVertices));
         }
         pointOffset += vertices;
-        offsets.push_back(static_cast<long long>(connectivity.size()));
+        offsets.push_back(static_cast<std::int32_t>(connectivity.size()));
         kinds.push_back(static_cast<int>(loop.kind));
-        labels.push_back(loop.label);
+        ids.push_back(nextId);
+        metadata.push_back(LabelEntry{nextId, kinds.back(), loop.label, loop.groupLabel});
+        ++nextId;
     }
 
     std::ofstream ofs(path);
@@ -264,7 +277,7 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
     ofs << "        </DataArray>\n";
     ofs << "      </Points>\n";
     ofs << "      <Lines>\n";
-    ofs << "        <DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
+    ofs << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">\n";
     std::size_t cursor = 0;
     for (std::size_t l = 0; l < lineCount; ++l) {
         ofs << "          ";
@@ -278,7 +291,7 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
         ofs << "\n";
     }
     ofs << "        </DataArray>\n";
-    ofs << "        <DataArray type=\"Int64\" Name=\"offsets\" format=\"ascii\">\n";
+    ofs << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">\n";
     for (std::size_t l = 0; l < lineCount; ++l) {
         ofs << "          " << offsets[l] << "\n";
     }
@@ -290,9 +303,9 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
         ofs << "          " << kind << "\n";
     }
     ofs << "        </DataArray>\n";
-    ofs << "        <DataArray type=\"String\" Name=\"label\" format=\"ascii\">\n";
-    for (const auto& label : labels) {
-        ofs << "          " << label << "\n";
+    ofs << "        <DataArray type=\"Int32\" Name=\"loop_index\" format=\"ascii\">\n";
+    for (int id : ids) {
+        ofs << "          " << id << "\n";
     }
     ofs << "        </DataArray>\n";
     ofs << "      </CellData>\n";
@@ -302,6 +315,36 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
     ofs.flush();
     if (!ofs) {
         throw std::runtime_error("Failed while writing VTK outline output: " + path);
+    }
+
+    std::filesystem::path labelPath(path);
+    labelPath.replace_extension();
+    labelPath += "_labels.csv";
+    std::ofstream csv(labelPath);
+    if (!csv.is_open()) {
+        throw std::runtime_error("Failed to open VTK outline label CSV: " + labelPath.string());
+    }
+    csv << "loop_index,kind,label,group\n";
+    const auto escape = [](const std::string& value) {
+        std::string out;
+        out.reserve(value.size() + 2);
+        out.push_back('"');
+        for (char c : value) {
+            if (c == '"') {
+                out.push_back('"');
+            }
+            out.push_back(c);
+        }
+        out.push_back('"');
+        return out;
+    };
+    for (const auto& entry : metadata) {
+        csv << entry.id << ',' << entry.kind << ',' << escape(entry.label) << ','
+            << escape(entry.group) << "\n";
+    }
+    csv.flush();
+    if (!csv) {
+        throw std::runtime_error("Failed while writing VTK outline label CSV: " + labelPath.string());
     }
 }
 

@@ -97,6 +97,19 @@ int main() {
         std::cerr << "Frame 1 rotor rotation incorrect\n";
         return 1;
     }
+    const auto& magnetFrame1 = frame1.spec.magnetRegions[0];
+    if (!approxEqual(magnetFrame1.min_x, -0.05, 1e-6) || !approxEqual(magnetFrame1.max_x, -0.03, 1e-6) ||
+        !approxEqual(magnetFrame1.min_y, -0.01, 1e-6) || !approxEqual(magnetFrame1.max_y, 0.01, 1e-6)) {
+        std::cerr << "Frame 1 magnet geometry did not rotate as expected\n";
+        return 1;
+    }
+    if (!approxEqual(frame1.spec.wires[0].x, 0.0, 1e-9) ||
+        !approxEqual(frame1.spec.wires[0].y, -0.02, 1e-9) ||
+        !approxEqual(frame1.spec.wires[1].x, 0.0, 1e-9) ||
+        !approxEqual(frame1.spec.wires[1].y, 0.02, 1e-9)) {
+        std::cerr << "Frame 1 wire positions did not follow rotor rotation\n";
+        return 1;
+    }
 
     const ScenarioFrame& frame2 = frames[2];
     if (!approxEqual(frame2.time, 2.0e-3) || !approxEqual(frame2.spec.wires[0].current, 0.0) ||
@@ -110,6 +123,22 @@ int main() {
     if (!approxEqual(frame2.spec.magnetRegions[0].Mx, expectedMx, 1e-9) ||
         !approxEqual(frame2.spec.magnetRegions[0].My, expectedMy, 1e-9)) {
         std::cerr << "Frame 2 magnet angle override incorrect\n";
+        return 1;
+    }
+    const auto& magnetFrame2 = frame2.spec.magnetRegions[0];
+    const auto& baseMagnet = spec.magnetRegions[0];
+    if (!approxEqual(magnetFrame2.min_x, baseMagnet.min_x, 1e-9) ||
+        !approxEqual(magnetFrame2.max_x, baseMagnet.max_x, 1e-9) ||
+        !approxEqual(magnetFrame2.min_y, baseMagnet.min_y, 1e-9) ||
+        !approxEqual(magnetFrame2.max_y, baseMagnet.max_y, 1e-9)) {
+        std::cerr << "Frame 2 magnet geometry should revert to the base orientation\n";
+        return 1;
+    }
+    if (!approxEqual(frame2.spec.wires[0].x, spec.wires[0].x, 1e-9) ||
+        !approxEqual(frame2.spec.wires[0].y, spec.wires[0].y, 1e-9) ||
+        !approxEqual(frame2.spec.wires[1].x, spec.wires[1].x, 1e-9) ||
+        !approxEqual(frame2.spec.wires[1].y, spec.wires[1].y, 1e-9)) {
+        std::cerr << "Frame 2 wire positions should match base scenario\n";
         return 1;
     }
 

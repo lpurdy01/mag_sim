@@ -25,9 +25,17 @@
       "magnetization": [1.0, 0.0]
     }
   ],
+  "rotors": [
+    {
+      "name": "upper",
+      "pivot": [0.0, 0.0],
+      "magnet_indices": [0],
+      "wire_indices": [0, 1]
+    }
+  ],
   "timeline": [
     {"t": 0.0, "wire_currents": [10.0, -10.0]},
-    {"t": 0.001, "wire_currents": [5.0, -5.0], "rotor_angle": 90.0},
+    {"t": 0.001, "wire_currents": [5.0, -5.0], "rotor_angles": {"upper": 90.0}},
     {
       "t": 0.002,
       "wires": [

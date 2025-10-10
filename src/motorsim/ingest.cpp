@@ -357,11 +357,122 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 if (!(region.min_x < region.max_x) || !(region.min_y < region.max_y)) {
                     throw std::runtime_error("rect magnet region requires min < max in both ranges");
                 }
+                region.xs = {region.min_x, region.max_x, region.max_x, region.min_x};
+                region.ys = {region.min_y, region.min_y, region.max_y, region.max_y};
             } else {
                 throw std::runtime_error("Unsupported magnet region type: " + shape);
             }
 
             spec.magnetRegions.push_back(std::move(region));
+        }
+    }
+
+    spec.rotors.clear();
+    std::unordered_map<std::string, std::size_t> rotorNameToIndex;
+    if (json.contains("rotors")) {
+        const auto& rotorsNode = json.at("rotors");
+        if (!rotorsNode.is_array()) {
+            throw std::runtime_error("rotors must be an array when provided");
+        }
+        spec.rotors.reserve(rotorsNode.size());
+
+        const auto parsePivot = [](const nlohmann::json& node, double& px, double& py) {
+            if (node.is_array()) {
+                if (node.size() != 2) {
+                    throw std::runtime_error("rotor pivot array must contain exactly two values");
+                }
+                px = node.at(0).get<double>();
+                py = node.at(1).get<double>();
+            } else if (node.is_object()) {
+                px = node.value("x", node.value("px", 0.0));
+                py = node.value("y", node.value("py", 0.0));
+            } else {
+                throw std::runtime_error("rotor pivot must be an array [x, y] or object with x/y fields");
+            }
+        };
+
+        for (const auto& rotorNode : rotorsNode) {
+            if (!rotorNode.is_object()) {
+                throw std::runtime_error("rotor entries must be JSON objects");
+            }
+            ScenarioSpec::Rotor rotor{};
+            rotor.name = rotorNode.value("name", std::string{});
+            if (rotor.name.empty()) {
+                rotor.name = "rotor_" + std::to_string(spec.rotors.size());
+            }
+            if (!rotorNameToIndex.emplace(rotor.name, spec.rotors.size()).second) {
+                throw std::runtime_error("Duplicate rotor name: " + rotor.name);
+            }
+
+            if (rotorNode.contains("pivot")) {
+                parsePivot(rotorNode.at("pivot"), rotor.pivotX, rotor.pivotY);
+            } else if (rotorNode.contains("center")) {
+                parsePivot(rotorNode.at("center"), rotor.pivotX, rotor.pivotY);
+            } else {
+                rotor.pivotX = rotorNode.value("pivot_x", rotorNode.value("center_x", 0.0));
+                rotor.pivotY = rotorNode.value("pivot_y", rotorNode.value("center_y", 0.0));
+            }
+
+            const auto parseIndexList = [&](const nlohmann::json& arr, std::size_t count,
+                                            const std::string& field, std::vector<std::size_t>& dest) {
+                if (count == 0) {
+                    throw std::runtime_error("rotor '" + rotor.name + "' references " + field +
+                                             " but scenario defines none");
+                }
+                if (!arr.is_array()) {
+                    throw std::runtime_error("rotor field '" + field + "' must be an array");
+                }
+                for (const auto& value : arr) {
+                    std::size_t index = 0;
+                    if (value.is_number_integer()) {
+                        index = value.get<std::size_t>();
+                    } else if (value.is_number_unsigned()) {
+                        index = value.get<std::size_t>();
+                    } else if (value.is_object()) {
+                        if (value.contains("index")) {
+                            index = value.at("index").get<std::size_t>();
+                        } else if (value.contains("idx")) {
+                            index = value.at("idx").get<std::size_t>();
+                        } else {
+                            throw std::runtime_error(
+                                "rotor field '" + field + "' object entries must include 'index' or 'idx'");
+                        }
+                    } else {
+                        throw std::runtime_error("rotor field '" + field + "' entries must be indices or objects");
+                    }
+                    if (index >= count) {
+                        throw std::runtime_error("rotor field '" + field + "' index out of range");
+                    }
+                    dest.push_back(index);
+                }
+            };
+
+            if (rotorNode.contains("polygon_indices")) {
+                parseIndexList(rotorNode.at("polygon_indices"), spec.polygons.size(), "polygon_indices",
+                               rotor.polygonIndices);
+            }
+            if (rotorNode.contains("polygons")) {
+                parseIndexList(rotorNode.at("polygons"), spec.polygons.size(), "polygons", rotor.polygonIndices);
+            }
+
+            if (rotorNode.contains("magnet_indices")) {
+                parseIndexList(rotorNode.at("magnet_indices"), spec.magnetRegions.size(), "magnet_indices",
+                               rotor.magnetIndices);
+            }
+            if (rotorNode.contains("magnets")) {
+                parseIndexList(rotorNode.at("magnets"), spec.magnetRegions.size(), "magnets",
+                               rotor.magnetIndices);
+            }
+
+            if (rotorNode.contains("wire_indices")) {
+                parseIndexList(rotorNode.at("wire_indices"), spec.wires.size(), "wire_indices",
+                               rotor.wireIndices);
+            }
+            if (rotorNode.contains("wires")) {
+                parseIndexList(rotorNode.at("wires"), spec.wires.size(), "wires", rotor.wireIndices);
+            }
+
+            spec.rotors.push_back(std::move(rotor));
         }
     }
 
@@ -707,6 +818,87 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 entry.rotorAngleDeg = frame.at("rotor_angle_deg").get<double>();
             }
 
+            const auto addRotorAngle = [&](std::size_t rotorIndex, double angleDeg) {
+                if (rotorIndex >= spec.rotors.size()) {
+                    throw std::runtime_error("timeline rotor angle index out of range");
+                }
+                ScenarioSpec::TimelineFrame::RotorAngleOverride override{};
+                override.index = rotorIndex;
+                override.angleDegrees = angleDeg;
+                entry.rotorAngles.push_back(override);
+            };
+
+            if (frame.contains("rotor_angles")) {
+                if (spec.rotors.empty()) {
+                    throw std::runtime_error(
+                        "timeline rotor_angles provided but scenario defines no rotors");
+                }
+                const auto& rotorAnglesNode = frame.at("rotor_angles");
+                if (rotorAnglesNode.is_array()) {
+                    if (!rotorAnglesNode.empty() && rotorAnglesNode.front().is_number()) {
+                        const std::size_t count =
+                            std::min<std::size_t>(rotorAnglesNode.size(), spec.rotors.size());
+                        for (std::size_t i = 0; i < count; ++i) {
+                            addRotorAngle(i, rotorAnglesNode.at(i).get<double>());
+                        }
+                    } else {
+                        for (const auto& item : rotorAnglesNode) {
+                            if (!item.is_object()) {
+                                throw std::runtime_error(
+                                    "timeline rotor_angles array entries must be objects when not numeric");
+                            }
+                            std::size_t rotorIndex = 0;
+                            if (item.contains("index")) {
+                                rotorIndex = item.at("index").get<std::size_t>();
+                            } else if (item.contains("idx")) {
+                                rotorIndex = item.at("idx").get<std::size_t>();
+                            } else if (item.contains("name")) {
+                                const std::string name = item.at("name").get<std::string>();
+                                const auto it = rotorNameToIndex.find(name);
+                                if (it == rotorNameToIndex.end()) {
+                                    throw std::runtime_error(
+                                        "timeline rotor_angles references unknown rotor name: " + name);
+                                }
+                                rotorIndex = it->second;
+                            } else {
+                                throw std::runtime_error(
+                                    "timeline rotor_angles entries must include 'index', 'idx', or 'name'");
+                            }
+
+                            double angleDeg = 0.0;
+                            if (item.contains("angle_deg")) {
+                                angleDeg = item.at("angle_deg").get<double>();
+                            } else if (item.contains("angle")) {
+                                angleDeg = item.at("angle").get<double>();
+                            } else if (item.contains("degrees")) {
+                                angleDeg = item.at("degrees").get<double>();
+                            } else if (item.contains("value")) {
+                                angleDeg = item.at("value").get<double>();
+                            } else {
+                                throw std::runtime_error(
+                                    "timeline rotor_angles entries must include an angle field");
+                            }
+                            addRotorAngle(rotorIndex, angleDeg);
+                        }
+                    }
+                } else if (rotorAnglesNode.is_object()) {
+                    for (const auto& kv : rotorAnglesNode.items()) {
+                        const auto it = rotorNameToIndex.find(kv.key());
+                        if (it == rotorNameToIndex.end()) {
+                            throw std::runtime_error("timeline rotor_angles references unknown rotor name: " +
+                                                     kv.key());
+                        }
+                        if (!kv.value().is_number()) {
+                            throw std::runtime_error(
+                                "timeline rotor_angles object values must be numeric angles in degrees");
+                        }
+                        addRotorAngle(it->second, kv.value().get<double>());
+                    }
+                } else {
+                    throw std::runtime_error("timeline rotor_angles must be an array or object");
+                }
+            }
+
             const auto parseWireOverrides = [&](const nlohmann::json& wiresNode) {
                 if (!wiresNode.is_array()) {
                     throw std::runtime_error("timeline wires entry must be an array");
@@ -894,12 +1086,12 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                 const double x = x0 + static_cast<double>(i) * spec.dx;
                 const std::size_t idx = grid.idx(i, j);
                 for (const auto& region : spec.magnetRegions) {
-                    if (region.shape == ScenarioSpec::MagnetRegion::Shape::Polygon) {
+                    const bool hasPolygon = region.xs.size() == region.ys.size() && region.xs.size() >= 3;
+                    if (hasPolygon) {
                         if (x < region.min_x || x > region.max_x || y < region.min_y || y > region.max_y) {
                             continue;
                         }
-                        if (pointInRect(x, y, region.min_x, region.max_x, region.min_y, region.max_y) &&
-                            pointInPolygonCoords(x, y, region.xs, region.ys)) {
+                        if (pointInPolygonCoords(x, y, region.xs, region.ys)) {
                             grid.Mx[idx] += region.Mx;
                             grid.My[idx] += region.My;
                         }
@@ -973,7 +1165,122 @@ namespace {
 
 void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::TimelineFrame& frame,
                             ScenarioSpec& workingSpec) {
-    if (frame.hasRotorAngle) {
+    if (!baseSpec.rotors.empty()) {
+        std::vector<double> rotorAngles(baseSpec.rotors.size(), 0.0);
+        std::vector<bool> rotorActive(baseSpec.rotors.size(), false);
+
+        if (frame.hasRotorAngle && !baseSpec.rotors.empty()) {
+            rotorAngles[0] = frame.rotorAngleDeg;
+            rotorActive[0] = true;
+        }
+
+        for (const auto& override : frame.rotorAngles) {
+            if (override.index >= baseSpec.rotors.size()) {
+                throw std::runtime_error("timeline rotor angle index out of range");
+            }
+            rotorAngles[override.index] = override.angleDegrees;
+            rotorActive[override.index] = true;
+        }
+
+        for (std::size_t r = 0; r < baseSpec.rotors.size(); ++r) {
+            if (!rotorActive[r]) {
+                continue;
+            }
+            const auto& rotor = baseSpec.rotors[r];
+            const double angleRad = rotorAngles[r] * kPi / 180.0;
+            const double cosA = std::cos(angleRad);
+            const double sinA = std::sin(angleRad);
+
+            for (std::size_t idx : rotor.polygonIndices) {
+                if (idx >= baseSpec.polygons.size() || idx >= workingSpec.polygons.size()) {
+                    throw std::runtime_error("rotor polygon index out of range");
+                }
+                const auto& basePoly = baseSpec.polygons[idx];
+                auto& poly = workingSpec.polygons[idx];
+                if (basePoly.xs.size() != basePoly.ys.size() || basePoly.xs.empty()) {
+                    continue;
+                }
+                poly.xs.resize(basePoly.xs.size());
+                poly.ys.resize(basePoly.ys.size());
+                double minX = std::numeric_limits<double>::infinity();
+                double maxX = -std::numeric_limits<double>::infinity();
+                double minY = std::numeric_limits<double>::infinity();
+                double maxY = -std::numeric_limits<double>::infinity();
+                for (std::size_t v = 0; v < basePoly.xs.size(); ++v) {
+                    const double baseX = basePoly.xs[v];
+                    const double baseY = basePoly.ys[v];
+                    const double dx = baseX - rotor.pivotX;
+                    const double dy = baseY - rotor.pivotY;
+                    const double rx = rotor.pivotX + dx * cosA - dy * sinA;
+                    const double ry = rotor.pivotY + dx * sinA + dy * cosA;
+                    poly.xs[v] = rx;
+                    poly.ys[v] = ry;
+                    minX = std::min(minX, rx);
+                    maxX = std::max(maxX, rx);
+                    minY = std::min(minY, ry);
+                    maxY = std::max(maxY, ry);
+                }
+                poly.min_x = minX;
+                poly.max_x = maxX;
+                poly.min_y = minY;
+                poly.max_y = maxY;
+            }
+
+            for (std::size_t idx : rotor.magnetIndices) {
+                if (idx >= baseSpec.magnetRegions.size() || idx >= workingSpec.magnetRegions.size()) {
+                    throw std::runtime_error("rotor magnet index out of range");
+                }
+                const auto& baseMagnet = baseSpec.magnetRegions[idx];
+                auto& magnet = workingSpec.magnetRegions[idx];
+
+                std::vector<double> baseXs = baseMagnet.xs;
+                std::vector<double> baseYs = baseMagnet.ys;
+                if (baseXs.size() != baseYs.size() || baseXs.size() < 3) {
+                    baseXs = {baseMagnet.min_x, baseMagnet.max_x, baseMagnet.max_x, baseMagnet.min_x};
+                    baseYs = {baseMagnet.min_y, baseMagnet.min_y, baseMagnet.max_y, baseMagnet.max_y};
+                }
+                magnet.xs.resize(baseXs.size());
+                magnet.ys.resize(baseYs.size());
+                double minX = std::numeric_limits<double>::infinity();
+                double maxX = -std::numeric_limits<double>::infinity();
+                double minY = std::numeric_limits<double>::infinity();
+                double maxY = -std::numeric_limits<double>::infinity();
+                for (std::size_t v = 0; v < baseXs.size(); ++v) {
+                    const double dx = baseXs[v] - rotor.pivotX;
+                    const double dy = baseYs[v] - rotor.pivotY;
+                    const double rx = rotor.pivotX + dx * cosA - dy * sinA;
+                    const double ry = rotor.pivotY + dx * sinA + dy * cosA;
+                    magnet.xs[v] = rx;
+                    magnet.ys[v] = ry;
+                    minX = std::min(minX, rx);
+                    maxX = std::max(maxX, rx);
+                    minY = std::min(minY, ry);
+                    maxY = std::max(maxY, ry);
+                }
+                magnet.min_x = minX;
+                magnet.max_x = maxX;
+                magnet.min_y = minY;
+                magnet.max_y = maxY;
+
+                double mx = baseMagnet.Mx;
+                double my = baseMagnet.My;
+                magnet.Mx = mx * cosA - my * sinA;
+                magnet.My = mx * sinA + my * cosA;
+            }
+
+            for (std::size_t idx : rotor.wireIndices) {
+                if (idx >= baseSpec.wires.size() || idx >= workingSpec.wires.size()) {
+                    throw std::runtime_error("rotor wire index out of range");
+                }
+                const auto& baseWire = baseSpec.wires[idx];
+                auto& wire = workingSpec.wires[idx];
+                const double dx = baseWire.x - rotor.pivotX;
+                const double dy = baseWire.y - rotor.pivotY;
+                wire.x = rotor.pivotX + dx * cosA - dy * sinA;
+                wire.y = rotor.pivotY + dx * sinA + dy * cosA;
+            }
+        }
+    } else if (frame.hasRotorAngle) {
         if (baseSpec.magnetRegions.empty()) {
             throw std::runtime_error(
                 "timeline rotor_angle specified but scenario defines no magnet_regions");

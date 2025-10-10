@@ -77,6 +77,30 @@ class Wire:
 
 
 @dataclass
+class Rotor:
+    name: Optional[str] = None
+    pivot: Tuple[float, float] = (0.0, 0.0)
+    polygon_indices: List[int] = field(default_factory=list)
+    magnet_indices: List[int] = field(default_factory=list)
+    wire_indices: List[int] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, object]:
+        data: Dict[str, object] = {}
+        if self.name:
+            data["name"] = self.name
+        px, py = self.pivot
+        if px != 0.0 or py != 0.0:
+            data["pivot"] = [float(px), float(py)]
+        if self.polygon_indices:
+            data["polygon_indices"] = [int(index) for index in self.polygon_indices]
+        if self.magnet_indices:
+            data["magnet_indices"] = [int(index) for index in self.magnet_indices]
+        if self.wire_indices:
+            data["wire_indices"] = [int(index) for index in self.wire_indices]
+        return data
+
+
+@dataclass
 class FieldMapOutput:
     """Request to write the full-field map to disk."""
 
@@ -276,6 +300,7 @@ class TimelineFrame:
     wire_currents: Optional[List[float]] = None
     wires: List[Dict[str, Union[int, float]]] = field(default_factory=list)
     rotor_angle_deg: Optional[float] = None
+    rotor_angles: List[Dict[str, Union[int, float, str]]] = field(default_factory=list)
     magnets: List[Dict[str, Union[int, float, Tuple[float, float]]]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, object]:
@@ -302,6 +327,24 @@ class TimelineFrame:
             data["wires"] = serialised
         if self.rotor_angle_deg is not None:
             data["rotor_angle"] = float(self.rotor_angle_deg)
+        if self.rotor_angles:
+            serialised_angles: List[Dict[str, object]] = []
+            for override in self.rotor_angles:
+                entry: Dict[str, object] = {}
+                if "index" in override:
+                    entry["index"] = int(override["index"])
+                elif "name" in override:
+                    entry["name"] = str(override["name"])
+                else:
+                    raise ValueError("Timeline rotor angle override requires an 'index' or 'name'")
+                if "angle_deg" in override:
+                    entry["angle_deg"] = float(override["angle_deg"])
+                elif "angle" in override:
+                    entry["angle"] = float(override["angle"])
+                else:
+                    raise ValueError("Timeline rotor angle override requires 'angle_deg' or 'angle'")
+                serialised_angles.append(entry)
+            data["rotor_angles"] = serialised_angles
         if self.magnets:
             serialised = []
             for override in self.magnets:
@@ -337,6 +380,7 @@ class Scenario:
     materials: List[Material] = field(default_factory=list)
     regions: List[RegionSpec] = field(default_factory=list)
     sources: List[Wire] = field(default_factory=list)
+    rotors: List[Rotor] = field(default_factory=list)
     magnet_regions: List[MagnetRectRegion] = field(default_factory=list)
     outputs: List["ScenarioOutput"] = field(default_factory=list)
     timeline: List[TimelineFrame] = field(default_factory=list)
@@ -382,6 +426,24 @@ class Scenario:
         for wire in self.sources:
             if wire.radius <= 0.0:
                 raise ValueError("Wire radius must be positive")
+        polygon_count = sum(isinstance(region, PolygonRegion) for region in self.regions)
+        rotor_name_set: Set[str] = set()
+        for rotor in self.rotors:
+            if not isinstance(rotor, Rotor):
+                raise ValueError(f"Unsupported rotor type: {type(rotor)}")
+            if rotor.name:
+                if rotor.name in rotor_name_set:
+                    raise ValueError(f"Duplicate rotor name '{rotor.name}'")
+                rotor_name_set.add(rotor.name)
+            for index in rotor.polygon_indices:
+                if index < 0 or index >= polygon_count:
+                    raise ValueError("Rotor polygon index out of range")
+            for index in rotor.magnet_indices:
+                if index < 0 or index >= len(self.magnet_regions):
+                    raise ValueError("Rotor magnet index out of range")
+            for index in rotor.wire_indices:
+                if index < 0 or index >= len(self.sources):
+                    raise ValueError("Rotor wire index out of range")
         seen_ids: Set[str] = set()
         for output in self.outputs:
             if not isinstance(output, (FieldMapOutput, LineProbeOutput, StressTensorProbeOutput, BackEmfProbeOutput)):
@@ -411,6 +473,8 @@ class Scenario:
         }
         if self.magnet_regions:
             data["magnet_regions"] = [region.to_dict() for region in self.magnet_regions]
+        if self.rotors:
+            data["rotors"] = [rotor.to_dict() for rotor in self.rotors]
         if self.outputs:
             data["outputs"] = [output.to_dict() for output in self.outputs]
         if self.timeline:
@@ -435,6 +499,7 @@ __all__ = [
     "HalfspaceRegion",
     "PolygonRegion",
     "Wire",
+    "Rotor",
     "FieldMapOutput",
     "LineProbeOutput",
     "StressTensorProbeOutput",

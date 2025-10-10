@@ -96,6 +96,45 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
     using motorsim::VtkOutlineLoop;
     std::vector<VtkOutlineLoop> loops;
 
+    std::vector<std::string> polygonGroups(spec.polygons.size());
+    std::vector<std::string> polygonNames(spec.polygons.size());
+    std::vector<std::string> magnetGroups(spec.magnetRegions.size());
+    std::vector<std::string> magnetNames(spec.magnetRegions.size());
+    std::vector<std::string> wireGroups(spec.wires.size());
+    std::vector<std::string> wireNames(spec.wires.size());
+
+    for (std::size_t rotorIdx = 0; rotorIdx < spec.rotors.size(); ++rotorIdx) {
+        const auto& rotor = spec.rotors[rotorIdx];
+        std::string rotorLabel = rotor.name;
+        if (rotorLabel.empty()) {
+            rotorLabel = "rotor_" + std::to_string(rotorIdx);
+        }
+        for (std::size_t local = 0; local < rotor.polygonIndices.size(); ++local) {
+            const std::size_t idx = rotor.polygonIndices[local];
+            if (idx >= polygonGroups.size()) {
+                continue;
+            }
+            polygonGroups[idx] = rotorLabel;
+            polygonNames[idx] = rotorLabel + ":polygon_" + std::to_string(local);
+        }
+        for (std::size_t local = 0; local < rotor.magnetIndices.size(); ++local) {
+            const std::size_t idx = rotor.magnetIndices[local];
+            if (idx >= magnetGroups.size()) {
+                continue;
+            }
+            magnetGroups[idx] = rotorLabel;
+            magnetNames[idx] = rotorLabel + ":magnet_" + std::to_string(local);
+        }
+        for (std::size_t local = 0; local < rotor.wireIndices.size(); ++local) {
+            const std::size_t idx = rotor.wireIndices[local];
+            if (idx >= wireGroups.size()) {
+                continue;
+            }
+            wireGroups[idx] = rotorLabel;
+            wireNames[idx] = rotorLabel + ":wire_" + std::to_string(local);
+        }
+    }
+
     const double minX = spec.originX;
     const double maxX = spec.originX + static_cast<double>(spec.nx - 1) * spec.dx;
     const double minY = spec.originY;
@@ -110,7 +149,12 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
         }
         VtkOutlineLoop loop;
         loop.kind = VtkOutlineLoop::Kind::Material;
-        loop.label = "material_polygon_" + std::to_string(i);
+        if (!polygonNames[i].empty()) {
+            loop.label = polygonNames[i];
+        } else {
+            loop.label = "material_polygon_" + std::to_string(i);
+        }
+        loop.groupLabel = polygonGroups[i];
         loop.xs = poly.xs;
         loop.ys = poly.ys;
         loops.push_back(std::move(loop));
@@ -120,16 +164,19 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
         const auto& magnet = spec.magnetRegions[i];
         VtkOutlineLoop loop;
         loop.kind = VtkOutlineLoop::Kind::Magnet;
-        loop.label = "magnet_" + std::to_string(i);
-        if (magnet.shape == motorsim::ScenarioSpec::MagnetRegion::Shape::Rect) {
+        if (!magnetNames[i].empty()) {
+            loop.label = magnetNames[i];
+        } else {
+            loop.label = "magnet_" + std::to_string(i);
+        }
+        loop.groupLabel = magnetGroups[i];
+        if (magnet.xs.size() == magnet.ys.size() && magnet.xs.size() >= 3) {
+            loop.xs = magnet.xs;
+            loop.ys = magnet.ys;
+            loops.push_back(std::move(loop));
+        } else {
             loops.push_back(makeRectangleLoop(loop.kind, loop.label, magnet.min_x, magnet.max_x, magnet.min_y,
                                               magnet.max_y));
-        } else {
-            if (magnet.xs.size() == magnet.ys.size() && magnet.xs.size() >= 3) {
-                loop.xs = magnet.xs;
-                loop.ys = magnet.ys;
-                loops.push_back(std::move(loop));
-            }
         }
     }
 
@@ -142,7 +189,12 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
         }
         VtkOutlineLoop loop;
         loop.kind = VtkOutlineLoop::Kind::Wire;
-        loop.label = "wire_" + std::to_string(i);
+        if (!wireNames[i].empty()) {
+            loop.label = wireNames[i];
+        } else {
+            loop.label = "wire_" + std::to_string(i);
+        }
+        loop.groupLabel = wireGroups[i];
         constexpr std::size_t segments = 64;
         loop.xs.reserve(segments);
         loop.ys.reserve(segments);

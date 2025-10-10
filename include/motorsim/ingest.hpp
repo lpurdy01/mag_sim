@@ -19,6 +19,15 @@ struct ScenarioSpec {
         double current{0.0};
     };
 
+    struct Rotor {
+        std::string name;
+        double pivotX{0.0};
+        double pivotY{0.0};
+        std::vector<std::size_t> polygonIndices;
+        std::vector<std::size_t> magnetIndices;
+        std::vector<std::size_t> wireIndices;
+    };
+
     struct Material {
         std::string name;
         double mu_r{1.0};
@@ -130,9 +139,15 @@ struct ScenarioSpec {
             double magnetizationY{0.0};
         };
 
+        struct RotorAngleOverride {
+            std::size_t index{0};
+            double angleDegrees{0.0};
+        };
+
         double time{0.0};
         bool hasRotorAngle{false};
         double rotorAngleDeg{0.0};
+        std::vector<RotorAngleOverride> rotorAngles;
         std::vector<WireOverride> wireOverrides;
         std::vector<MagnetOverride> magnetOverrides;
     };
@@ -152,6 +167,7 @@ struct ScenarioSpec {
     std::vector<PolygonRegion> polygons;
     std::vector<RegionMask> regionMasks;
     std::vector<Wire> wires;
+    std::vector<Rotor> rotors;
     std::vector<MagnetRegion> magnetRegions;
     BoundaryType boundaryType{BoundaryType::Dirichlet};
     Outputs outputs;

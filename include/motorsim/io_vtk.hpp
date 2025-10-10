@@ -16,6 +16,7 @@ struct VtkOutlineLoop {
 
     Kind kind{Kind::Domain};
     std::string label;
+    std::string groupLabel;
     std::vector<double> xs;
     std::vector<double> ys;
 };
@@ -40,7 +41,10 @@ void write_vti_field_map(const std::string& path,
 // Emits a VTK PolyData (.vtp) file containing closed polyline outlines that
 // represent scenario geometry (domain boundary, material polygons, magnets,
 // wires, etc.). Each loop is tagged with a categorical `kind` and a `label`
-// string stored as cell data for convenient filtering in ParaView.
+// string stored as cell data for convenient filtering in ParaView. A
+// companion CSV stores the label together with any `groupLabel` metadata so
+// groupings (e.g. rotor assemblies) can be reconstructed without relying on
+// VTK string arrays.
 void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoop>& loops);
 
 }  // namespace motorsim
