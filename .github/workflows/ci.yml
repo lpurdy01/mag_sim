@@ -14,7 +14,7 @@ jobs:
       - name: Build
         run: cmake --build build -j
       - name: Test (full suite)
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --parallel $(nproc)
       - name: Analytic wire regression test
         run: cd build && ctest --output-on-failure -R analytic_wire
       - name: Install visualization dependencies

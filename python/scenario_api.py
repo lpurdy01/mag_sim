@@ -92,8 +92,8 @@ class FieldMapOutput:
             raise ValueError(
                 "FieldMapOutput quantity must be 'B', 'H', 'BH', or 'energy_density'"
             )
-        if self.format != "csv":
-            raise ValueError("FieldMapOutput currently only supports CSV format")
+        if self.format not in {"csv", "vti"}:
+            raise ValueError("FieldMapOutput format must be 'csv' or 'vti'")
         if self.path is not None and not self.path:
             raise ValueError("FieldMapOutput path must be a non-empty string when provided")
 
@@ -150,7 +150,174 @@ class LineProbeOutput:
         return data
 
 
-ScenarioOutput = Union[FieldMapOutput, LineProbeOutput]
+@dataclass
+class StressTensorProbeOutput:
+    """Closed contour probe evaluated via the Maxwell stress tensor."""
+
+    id: str
+    vertices: List[Tuple[float, float]]
+    path: Optional[str] = None
+    quantity: str = "torque"
+    method: str = "stress_tensor"
+
+    def validate(self) -> None:
+        if not self.id:
+            raise ValueError("StressTensorProbeOutput id must be non-empty")
+        if self.method != "stress_tensor":
+            raise ValueError("StressTensorProbeOutput only supports method='stress_tensor'")
+        if self.quantity not in {"force", "torque", "force_and_torque"}:
+            raise ValueError(
+                "StressTensorProbeOutput quantity must be 'force', 'torque', or 'force_and_torque'"
+            )
+        if len(self.vertices) < 3:
+            raise ValueError("StressTensorProbeOutput requires at least three vertices")
+        for vertex in self.vertices:
+            if len(vertex) != 2:
+                raise ValueError("StressTensorProbeOutput vertices must be (x, y) tuples")
+        if self.path is not None and not self.path:
+            raise ValueError("StressTensorProbeOutput path must be a non-empty string when provided")
+
+    def to_dict(self) -> Dict[str, object]:
+        vertices = [[float(x), float(y)] for x, y in self.vertices]
+        data: Dict[str, object] = {
+            "type": "probe",
+            "id": self.id,
+            "probe_type": self.quantity,
+            "method": self.method,
+            "loop": {"type": "polygon", "vertices": vertices},
+        }
+        if self.path:
+            data["path"] = self.path
+        return data
+
+
+@dataclass
+class BackEmfProbeOutput:
+    """Flux-change probe producing a back-EMF CSV across timeline frames."""
+
+    id: str
+    component: str = "Bmag"
+    vertices: Optional[List[Tuple[float, float]]] = None
+    rect: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
+    frames: Optional[List[int]] = None
+    path: Optional[str] = None
+
+    def validate(self) -> None:
+        if not self.id:
+            raise ValueError("BackEmfProbeOutput id must be non-empty")
+        normalized = self.component.lower()
+        if normalized not in {"bx", "by", "bmag", "b"}:
+            raise ValueError("BackEmfProbeOutput component must be 'Bx', 'By', or 'Bmag'")
+        has_vertices = self.vertices is not None and len(self.vertices) >= 3
+        has_rect = self.rect is not None and len(self.rect) == 2
+        if has_vertices and has_rect:
+            raise ValueError("BackEmfProbeOutput cannot define both vertices and rect")
+        if not has_vertices and not has_rect:
+            raise ValueError("BackEmfProbeOutput requires either vertices or rect definition")
+        if has_vertices:
+            for vertex in self.vertices or []:
+                if len(vertex) != 2:
+                    raise ValueError("BackEmfProbeOutput vertices must be (x, y) tuples")
+        if has_rect:
+            x_range, y_range = self.rect  # type: ignore[misc]
+            if len(x_range) != 2 or len(y_range) != 2:
+                raise ValueError("BackEmfProbeOutput rect must provide (x_min, x_max) and (y_min, y_max)")
+        if self.frames is not None:
+            if len(self.frames) < 2:
+                raise ValueError("BackEmfProbeOutput frames must contain at least two indices")
+            for value in self.frames:
+                if value < 0:
+                    raise ValueError("BackEmfProbeOutput frame indices must be non-negative")
+        if self.path is not None and not self.path:
+            raise ValueError("BackEmfProbeOutput path must be a non-empty string when provided")
+
+    def to_dict(self) -> Dict[str, object]:
+        component_map = {"bx": "Bx", "by": "By", "bmag": "Bmag", "b": "Bmag"}
+        component_key = component_map[self.component.lower()]
+        data: Dict[str, object] = {"type": "back_emf_probe", "id": self.id, "component": component_key}
+        if self.vertices is not None:
+            vertices = [[float(x), float(y)] for x, y in self.vertices]
+            data["region"] = {"type": "polygon", "vertices": vertices}
+        elif self.rect is not None:
+            (xmin, xmax), (ymin, ymax) = self.rect  # type: ignore[misc]
+            data["region"] = {
+                "type": "rect",
+                "x_range": [float(xmin), float(xmax)],
+                "y_range": [float(ymin), float(ymax)],
+            }
+        if self.frames is not None:
+            data["frames"] = [int(index) for index in self.frames]
+        if self.path:
+            data["path"] = self.path
+        return data
+
+
+ScenarioOutput = Union[FieldMapOutput, LineProbeOutput, StressTensorProbeOutput, BackEmfProbeOutput]
+
+
+@dataclass
+class MagnetRectRegion:
+    x_range: Tuple[float, float]
+    y_range: Tuple[float, float]
+    magnetization: Tuple[float, float]
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "type": "rect",
+            "x_range": [float(self.x_range[0]), float(self.x_range[1])],
+            "y_range": [float(self.y_range[0]), float(self.y_range[1])],
+            "magnetization": [float(self.magnetization[0]), float(self.magnetization[1])],
+        }
+
+
+@dataclass
+class TimelineFrame:
+    time: Optional[float] = None
+    wire_currents: Optional[List[float]] = None
+    wires: List[Dict[str, Union[int, float]]] = field(default_factory=list)
+    rotor_angle_deg: Optional[float] = None
+    magnets: List[Dict[str, Union[int, float, Tuple[float, float]]]] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, object]:
+        data: Dict[str, object] = {}
+        if self.time is not None:
+            data["t"] = float(self.time)
+        if self.wire_currents is not None:
+            data["wire_currents"] = [float(value) for value in self.wire_currents]
+        if self.wires:
+            serialised = []
+            for override in self.wires:
+                if "index" not in override:
+                    raise ValueError("Timeline wire override requires an 'index' key")
+                entry: Dict[str, object] = {"index": int(override["index"])}
+                if "current" in override:
+                    entry["current"] = float(override["current"])
+                elif "I" in override:
+                    entry["I"] = float(override["I"])
+                elif "scale" in override:
+                    entry["scale"] = float(override["scale"])
+                else:
+                    raise ValueError("Timeline wire override requires current/I/scale value")
+                serialised.append(entry)
+            data["wires"] = serialised
+        if self.rotor_angle_deg is not None:
+            data["rotor_angle"] = float(self.rotor_angle_deg)
+        if self.magnets:
+            serialised = []
+            for override in self.magnets:
+                if "index" not in override:
+                    raise ValueError("Timeline magnet override requires an 'index'")
+                entry: Dict[str, object] = {"index": int(override["index"])}
+                if "angle_deg" in override:
+                    entry["angle_deg"] = float(override["angle_deg"])
+                if "magnetization" in override:
+                    mx, my = override["magnetization"]  # type: ignore[index]
+                    entry["magnetization"] = [float(mx), float(my)]
+                serialised.append(entry)
+            data["magnets"] = serialised
+        return data
+
+
 @dataclass
 class PolygonRegion:
     vertices: List[Tuple[float, float]]
@@ -170,7 +337,9 @@ class Scenario:
     materials: List[Material] = field(default_factory=list)
     regions: List[RegionSpec] = field(default_factory=list)
     sources: List[Wire] = field(default_factory=list)
+    magnet_regions: List[MagnetRectRegion] = field(default_factory=list)
     outputs: List["ScenarioOutput"] = field(default_factory=list)
+    timeline: List[TimelineFrame] = field(default_factory=list)
     units: str = "SI"
     version: str = "0.2"
 
@@ -215,12 +384,20 @@ class Scenario:
                 raise ValueError("Wire radius must be positive")
         seen_ids: Set[str] = set()
         for output in self.outputs:
-            if not isinstance(output, (FieldMapOutput, LineProbeOutput)):
+            if not isinstance(output, (FieldMapOutput, LineProbeOutput, StressTensorProbeOutput, BackEmfProbeOutput)):
                 raise ValueError(f"Unsupported output type: {type(output)}")
             output.validate()
             if output.id in seen_ids:
                 raise ValueError(f"Duplicate output id '{output.id}'")
             seen_ids.add(output.id)
+        for region in self.magnet_regions:
+            if not isinstance(region, MagnetRectRegion):
+                raise ValueError(f"Unsupported magnet region type: {type(region)}")
+            if region.x_range[0] >= region.x_range[1] or region.y_range[0] >= region.y_range[1]:
+                raise ValueError("MagnetRectRegion requires strictly increasing ranges")
+        for frame in self.timeline:
+            if not isinstance(frame, TimelineFrame):
+                raise ValueError(f"Unsupported timeline frame type: {type(frame)}")
 
     def to_dict(self) -> Dict[str, object]:
         self._validate()
@@ -232,8 +409,12 @@ class Scenario:
             "regions": [region.to_dict() for region in self.regions],
             "sources": [wire.to_dict() for wire in self.sources],
         }
+        if self.magnet_regions:
+            data["magnet_regions"] = [region.to_dict() for region in self.magnet_regions]
         if self.outputs:
             data["outputs"] = [output.to_dict() for output in self.outputs]
+        if self.timeline:
+            data["timeline"] = [frame.to_dict() for frame in self.timeline]
         return data
 
     def to_json(self, *, indent: int = 2) -> str:
@@ -256,5 +437,9 @@ __all__ = [
     "Wire",
     "FieldMapOutput",
     "LineProbeOutput",
+    "StressTensorProbeOutput",
+    "BackEmfProbeOutput",
+    "MagnetRectRegion",
+    "TimelineFrame",
     "Scenario",
 ]

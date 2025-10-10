@@ -294,6 +294,71 @@ def reshape_field(xs: np.ndarray, ys: np.ndarray, values: Tuple[np.ndarray, ...]
     return grid_x, grid_y, tuple(reshaped)
 
 
+def prepare_quiver_components(
+    bx: np.ndarray, by: np.ndarray, mode: str, log_floor: float
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    if mode == "off":
+        return None
+
+    if mode not in {"linear", "log"}:
+        raise ValueError(f"Unsupported vector mode '{mode}'")
+
+    if mode == "linear":
+        return bx, by
+
+    if log_floor <= 0.0:
+        raise SystemExit("--vector-log-floor must be positive when using log vector mode")
+
+    magnitude = np.hypot(bx, by)
+    if not np.isfinite(magnitude).any():
+        return np.zeros_like(bx), np.zeros_like(by)
+
+    safe_mag = np.maximum(magnitude, log_floor)
+    log_mag = np.log10(safe_mag)
+    finite_mask = np.isfinite(log_mag)
+    if not finite_mask.any():
+        return np.zeros_like(bx), np.zeros_like(by)
+
+    min_val = np.nanmin(log_mag[finite_mask])
+    shifted = log_mag - min_val
+    max_val = np.nanmax(shifted[finite_mask])
+    if max_val <= 0.0:
+        scale = np.zeros_like(shifted)
+    else:
+        scale = shifted / max_val
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        unit_x = np.divide(bx, magnitude, out=np.zeros_like(bx), where=magnitude > 0.0)
+        unit_y = np.divide(by, magnitude, out=np.zeros_like(by), where=magnitude > 0.0)
+
+    return unit_x * scale, unit_y * scale
+
+
+def compute_quiver_scale(
+    grid_x: np.ndarray, grid_y: np.ndarray, qx: np.ndarray, qy: np.ndarray
+) -> Optional[float]:
+    magnitude = np.hypot(qx, qy)
+    finite = magnitude[np.isfinite(magnitude)]
+    if finite.size == 0:
+        return None
+
+    max_mag = float(finite.max())
+    if max_mag <= 0.0:
+        return None
+
+    span_x = float(np.nanmax(grid_x) - np.nanmin(grid_x))
+    span_y = float(np.nanmax(grid_y) - np.nanmin(grid_y))
+    extent = max(span_x, span_y)
+    if not np.isfinite(extent) or extent <= 0.0:
+        return None
+
+    desired_length = 0.12 * extent
+    if desired_length <= 0.0:
+        return None
+
+    return max_mag / desired_length
+
+
 def plot_field(
     grid_x: np.ndarray,
     grid_y: np.ndarray,
@@ -308,7 +373,8 @@ def plot_field(
     log_floor: float,
     draw_boundaries: bool,
     boundaries: Dict[str, List],
-    show_vectors: bool,
+    vector_mode: str,
+    vector_log_floor: float,
     streamlines: bool,
     analytic: Optional[Dict[str, np.ndarray]],
     analytic_levels: int,
@@ -333,18 +399,25 @@ def plot_field(
     if streamlines:
         ax.streamplot(grid_x, grid_y, bx, by, density=1.2, color="w", linewidth=0.6)
 
-    if show_vectors:
+    quiver_components = prepare_quiver_components(bx, by, vector_mode, vector_log_floor)
+    if quiver_components is not None:
+        qx, qy = quiver_components
         skip = max(1, quiver_skip)
-        ax.quiver(
-            grid_x[::skip, ::skip],
-            grid_y[::skip, ::skip],
-            bx[::skip, ::skip],
-            by[::skip, ::skip],
-            color="w",
-            scale=0.002,
-            width=0.003,
-            pivot="mid",
-        )
+        qx = qx[::skip, ::skip]
+        qy = qy[::skip, ::skip]
+        xcoords = grid_x[::skip, ::skip]
+        ycoords = grid_y[::skip, ::skip]
+        scale_value = compute_quiver_scale(xcoords, ycoords, qx, qy)
+        quiver_kwargs = {
+            "color": "w",
+            "width": 0.003,
+            "pivot": "mid",
+            "angles": "xy",
+            "scale_units": "xy",
+        }
+        if scale_value is not None:
+            quiver_kwargs["scale"] = scale_value
+        ax.quiver(xcoords, ycoords, qx, qy, **quiver_kwargs)
 
     if draw_boundaries:
         for (p0, p1, mu) in boundaries.get("halfspaces", []):
@@ -443,9 +516,21 @@ def main() -> None:
         help="Overlay material and magnet region boundaries on the plot.",
     )
     parser.add_argument(
+        "--vector-mode",
+        choices=("linear", "log", "off"),
+        default="linear",
+        help="Control quiver magnitude scaling (linear, log, or disable vectors).",
+    )
+    parser.add_argument(
+        "--vector-log-floor",
+        type=float,
+        default=1e-7,
+        help="Floor for |B| when --vector-mode=log to avoid taking log of zero.",
+    )
+    parser.add_argument(
         "--hide-vectors",
         action="store_true",
-        help="Disable the quiver vector overlay.",
+        help="Deprecated alias for --vector-mode=off.",
     )
     parser.add_argument(
         "--streamlines",
@@ -453,11 +538,12 @@ def main() -> None:
         help="Draw field streamlines instead of (or in addition to) vectors.",
     )
     parser.add_argument(
-        "--overlay-analytic-interface",
-        action="store_true",
+        "--overlay-analytic",
+        choices=("none", "interface"),
+        default="none",
         help=(
-            "Overlay contour lines from the analytic method-of-images solution for scenarios "
-            "with a single wire and planar permeability interface."
+            "Overlay contour lines from analytic references (currently only 'interface' for the "
+            "planar permeability interface test)."
         ),
     )
     parser.add_argument(
@@ -474,6 +560,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.hide_vectors and args.vector_mode != "off":
+        print("Warning: --hide-vectors is deprecated; using --vector-mode=off.")
+        args.vector_mode = "off"
+
     if not args.scenario.exists():
         raise SystemExit(f"Scenario file not found: {args.scenario}")
 
@@ -488,7 +578,7 @@ def main() -> None:
     grid_x, grid_y, (bx, by, bmag) = reshape_field(xs, ys, (bxs, bys, bmags))
 
     boundaries: Dict[str, List] = {}
-    if args.draw_boundaries or args.overlay_analytic_interface:
+    if args.draw_boundaries or args.overlay_analytic != "none":
         try:
             boundaries = gather_boundaries(spec)
         except ValueError as exc:
@@ -496,7 +586,7 @@ def main() -> None:
             boundaries = {}
 
     analytic = None
-    if args.overlay_analytic_interface:
+    if args.overlay_analytic == "interface":
         analytic = compute_interface_reference_field(spec, grid_x, grid_y)
         if analytic is None:
             print("Warning: analytic interface overlay unavailable for this scenario")
@@ -516,7 +606,8 @@ def main() -> None:
         args.log_floor,
         args.draw_boundaries,
         boundaries,
-        not args.hide_vectors,
+        args.vector_mode,
+        args.vector_log_floor,
         args.streamlines,
         analytic,
         args.analytic_contours,

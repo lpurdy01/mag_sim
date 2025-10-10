@@ -7,6 +7,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
+CTEST_PARALLEL_LEVEL="${CTEST_PARALLEL_LEVEL:-}" 
+if [[ -z "$CTEST_PARALLEL_LEVEL" ]]; then
+  if command -v nproc >/dev/null 2>&1; then
+    CTEST_PARALLEL_LEVEL="$(nproc)"
+  else
+    CTEST_PARALLEL_LEVEL="1"
+  fi
+fi
 
 cd "$ROOT_DIR"
 
@@ -17,7 +25,7 @@ echo "[ci-check] Building"
 cmake --build "$BUILD_DIR" -j
 
 echo "[ci-check] Running full test suite"
-(cd "$BUILD_DIR" && ctest --output-on-failure)
+(cd "$BUILD_DIR" && ctest --output-on-failure --parallel "$CTEST_PARALLEL_LEVEL")
 
 echo "[ci-check] Running analytic wire regression"
 (cd "$BUILD_DIR" && ctest --output-on-failure -R analytic_wire)
@@ -75,7 +83,7 @@ python3 python/visualize_scenario_field.py \
   --save ci_artifacts/line_current_interface_field.png \
   --draw-boundaries \
   --streamlines \
-  --overlay-analytic-interface \
+  --overlay-analytic interface \
   --analytic-contours 10
 python3 python/visualize_scenario_field.py \
   --scenario inputs/iron_ring_demo.json \
@@ -83,14 +91,16 @@ python3 python/visualize_scenario_field.py \
   --save ci_artifacts/iron_ring_field.png \
   --draw-boundaries \
   --streamlines \
-  --color-scale log
+  --color-scale log \
+  --vector-mode log
 python3 python/visualize_scenario_field.py \
   --scenario inputs/tests/magnet_strip_test.json \
   --field-map outputs/magnet_strip_field.csv \
   --save ci_artifacts/magnet_strip_field.png \
   --draw-boundaries \
   --streamlines \
-  --color-scale log
+  --color-scale log \
+  --vector-mode log
 python3 python/visualize_wire.py \
   --csv outputs/validation_wire_line.csv \
   --save ci_artifacts/analytic_wire_line.png \

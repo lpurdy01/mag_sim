@@ -3,6 +3,7 @@
 #include "motorsim/types.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -390,7 +391,7 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                         "Unsupported field_map quantity for output '" + id + "': " + request.quantity);
                 }
                 request.format = output.value("format", std::string{"csv"});
-                if (request.format != "csv") {
+                if (request.format != "csv" && request.format != "vti") {
                     throw std::runtime_error(
                         "Unsupported field_map format for output '" + id + "': " + request.format);
                 }
@@ -398,7 +399,7 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path =
                         requireNonEmpty("outputs.path", output.at("path").get<std::string>());
                 } else {
-                    request.path = "outputs/" + id + ".csv";
+                    request.path = "outputs/" + id + (request.format == "csv" ? ".csv" : ".vti");
                 }
                 spec.outputs.fieldMaps.push_back(std::move(request));
             } else if (type == "line_probe") {
@@ -430,9 +431,397 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path = "outputs/" + id + ".csv";
                 }
                 spec.outputs.lineProbes.push_back(std::move(request));
+            } else if (type == "probe") {
+                ScenarioSpec::Outputs::Probe request{};
+                request.id = id;
+                const std::string quantity = output.value("probe_type", std::string{"torque"});
+                if (quantity == "torque") {
+                    request.quantity = ScenarioSpec::Outputs::Probe::Quantity::Torque;
+                } else if (quantity == "force") {
+                    request.quantity = ScenarioSpec::Outputs::Probe::Quantity::Force;
+                } else if (quantity == "force_and_torque") {
+                    request.quantity = ScenarioSpec::Outputs::Probe::Quantity::ForceAndTorque;
+                } else {
+                    throw std::runtime_error("Unsupported probe_type for output '" + id + "': " + quantity);
+                }
+
+                const std::string method = output.value("method", std::string{"stress_tensor"});
+                if (method == "stress_tensor") {
+                    request.method = ScenarioSpec::Outputs::Probe::Method::StressTensor;
+                } else {
+                    throw std::runtime_error("Unsupported probe method for output '" + id + "': " + method);
+                }
+
+                const auto parseVertices = [&](const nlohmann::json& vertices) {
+                    if (!vertices.is_array() || vertices.size() < 3) {
+                        throw std::runtime_error("Probe loop for output '" + id + "' requires at least three vertices");
+                    }
+                    request.loopXs.clear();
+                    request.loopYs.clear();
+                    request.loopXs.reserve(vertices.size());
+                    request.loopYs.reserve(vertices.size());
+                    for (const auto& vertex : vertices) {
+                        if (!vertex.is_array() || vertex.size() != 2) {
+                            throw std::runtime_error(
+                                "Probe loop vertices must be [x, y] pairs for output '" + id + "'");
+                        }
+                        request.loopXs.push_back(vertex.at(0).get<double>());
+                        request.loopYs.push_back(vertex.at(1).get<double>());
+                    }
+                };
+
+                if (!output.contains("loop")) {
+                    throw std::runtime_error("Probe output '" + id + "' is missing required loop definition");
+                }
+                const auto& loop = output.at("loop");
+                if (loop.is_array()) {
+                    parseVertices(loop);
+                } else if (loop.is_object()) {
+                    const std::string loopType = loop.value("type", std::string{"polygon"});
+                    if (loopType != "polygon") {
+                        throw std::runtime_error(
+                            "Unsupported probe loop type for output '" + id + "': " + loopType);
+                    }
+                    if (!loop.contains("vertices")) {
+                        throw std::runtime_error(
+                            "Probe loop object for output '" + id + "' must contain a 'vertices' array");
+                    }
+                    parseVertices(loop.at("vertices"));
+                } else {
+                    throw std::runtime_error("Probe loop for output '" + id + "' must be an array or object");
+                }
+
+                if (output.contains("path")) {
+                    request.path =
+                        requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + ".csv";
+                }
+
+                spec.outputs.probes.push_back(std::move(request));
+            } else if (type == "back_emf_probe") {
+                ScenarioSpec::Outputs::BackEmfProbe request{};
+                request.id = id;
+
+                std::string component = output.value("component", std::string{"Bmag"});
+                std::transform(component.begin(), component.end(), component.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (component == "bx") {
+                    request.component = FluxComponent::Bx;
+                } else if (component == "by") {
+                    request.component = FluxComponent::By;
+                } else if (component == "b" || component == "bmag" || component == "mag") {
+                    request.component = FluxComponent::Bmag;
+                } else {
+                    throw std::runtime_error("Unsupported back_emf_probe component for output '" + id +
+                                             "': " + component);
+                }
+
+                const auto parseFrames = [&](const nlohmann::json& frameNode) {
+                    if (!frameNode.is_array()) {
+                        throw std::runtime_error(
+                            "back_emf_probe frames must be an array of frame indices for output '" + id + "'");
+                    }
+                    request.frameIndices.clear();
+                    request.frameIndices.reserve(frameNode.size());
+                    for (const auto& entry : frameNode) {
+                        if (!entry.is_number_integer()) {
+                            throw std::runtime_error(
+                                "back_emf_probe frames entries must be integers for output '" + id + "'");
+                        }
+                        const int value = entry.get<int>();
+                        if (value < 0) {
+                            throw std::runtime_error(
+                                "back_emf_probe frames entries must be non-negative for output '" + id + "'");
+                        }
+                        request.frameIndices.push_back(static_cast<std::size_t>(value));
+                    }
+                    if (request.frameIndices.size() < 2) {
+                        throw std::runtime_error(
+                            "back_emf_probe output '" + id + "' requires at least two frame indices");
+                    }
+                };
+
+                if (output.contains("frames")) {
+                    parseFrames(output.at("frames"));
+                } else if (output.contains("frame_indices")) {
+                    parseFrames(output.at("frame_indices"));
+                }
+
+                const auto parsePolygonVertices = [&](const nlohmann::json& vertices) {
+                    if (!vertices.is_array() || vertices.size() < 3) {
+                        throw std::runtime_error("back_emf_probe region for output '" + id +
+                                                 "' requires at least three vertices");
+                    }
+                    request.shape = ScenarioSpec::Outputs::BackEmfProbe::RegionShape::Polygon;
+                    request.xs.clear();
+                    request.ys.clear();
+                    request.xs.reserve(vertices.size());
+                    request.ys.reserve(vertices.size());
+                    double minX = std::numeric_limits<double>::infinity();
+                    double maxX = -std::numeric_limits<double>::infinity();
+                    double minY = std::numeric_limits<double>::infinity();
+                    double maxY = -std::numeric_limits<double>::infinity();
+                    for (const auto& vertex : vertices) {
+                        if (!vertex.is_array() || vertex.size() != 2) {
+                            throw std::runtime_error(
+                                "back_emf_probe vertices must be [x, y] pairs for output '" + id + "'");
+                        }
+                        const double vx = vertex.at(0).get<double>();
+                        const double vy = vertex.at(1).get<double>();
+                        request.xs.push_back(vx);
+                        request.ys.push_back(vy);
+                        minX = std::min(minX, vx);
+                        maxX = std::max(maxX, vx);
+                        minY = std::min(minY, vy);
+                        maxY = std::max(maxY, vy);
+                    }
+                    request.minX = minX;
+                    request.maxX = maxX;
+                    request.minY = minY;
+                    request.maxY = maxY;
+                };
+
+                const auto parseRect = [&](const nlohmann::json& region) {
+                    if (!region.contains("x_range") || !region.contains("y_range")) {
+                        throw std::runtime_error(
+                            "back_emf_probe rect region requires x_range and y_range for output '" + id + "'");
+                    }
+                    const auto& xr = region.at("x_range");
+                    const auto& yr = region.at("y_range");
+                    if (!xr.is_array() || xr.size() != 2 || !yr.is_array() || yr.size() != 2) {
+                        throw std::runtime_error(
+                            "back_emf_probe rect ranges must contain two entries for output '" + id + "'");
+                    }
+                    const double x0 = xr.at(0).get<double>();
+                    const double x1 = xr.at(1).get<double>();
+                    const double y0 = yr.at(0).get<double>();
+                    const double y1 = yr.at(1).get<double>();
+                    const double minX = std::min(x0, x1);
+                    const double maxX = std::max(x0, x1);
+                    const double minY = std::min(y0, y1);
+                    const double maxY = std::max(y0, y1);
+                    if (!(maxX > minX) || !(maxY > minY)) {
+                        throw std::runtime_error("back_emf_probe rect ranges must span a positive area for output '" + id +
+                                                 "'");
+                    }
+                    request.shape = ScenarioSpec::Outputs::BackEmfProbe::RegionShape::Rect;
+                    request.minX = minX;
+                    request.maxX = maxX;
+                    request.minY = minY;
+                    request.maxY = maxY;
+                    request.xs.clear();
+                    request.ys.clear();
+                };
+
+                bool regionParsed = false;
+                if (output.contains("region")) {
+                    const auto& region = output.at("region");
+                    if (!region.is_object()) {
+                        throw std::runtime_error("back_emf_probe region must be an object for output '" + id + "'");
+                    }
+                    const std::string regionType = region.value("type", std::string{"polygon"});
+                    if (regionType == "polygon") {
+                        if (!region.contains("vertices")) {
+                            throw std::runtime_error(
+                                "back_emf_probe polygon region requires vertices for output '" + id + "'");
+                        }
+                        parsePolygonVertices(region.at("vertices"));
+                        regionParsed = true;
+                    } else if (regionType == "rect" || regionType == "rectangle") {
+                        parseRect(region);
+                        regionParsed = true;
+                    } else {
+                        throw std::runtime_error("Unsupported back_emf_probe region type for output '" + id +
+                                                 "': " + regionType);
+                    }
+                }
+
+                if (!regionParsed && output.contains("loop")) {
+                    const auto& loop = output.at("loop");
+                    if (loop.is_array()) {
+                        parsePolygonVertices(loop);
+                        regionParsed = true;
+                    } else if (loop.is_object()) {
+                        const std::string loopType = loop.value("type", std::string{"polygon"});
+                        if (loopType != "polygon") {
+                            throw std::runtime_error(
+                                "Unsupported back_emf_probe loop type for output '" + id + "': " + loopType);
+                        }
+                        if (!loop.contains("vertices")) {
+                            throw std::runtime_error(
+                                "back_emf_probe loop object for output '" + id + "' requires vertices");
+                        }
+                        parsePolygonVertices(loop.at("vertices"));
+                        regionParsed = true;
+                    } else {
+                        throw std::runtime_error(
+                            "back_emf_probe loop must be an array or object for output '" + id + "'");
+                    }
+                }
+
+                if (!regionParsed) {
+                    throw std::runtime_error(
+                        "back_emf_probe output '" + id + "' requires a region or loop definition");
+                }
+
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + "_emf.csv";
+                }
+
+                spec.outputs.backEmfProbes.push_back(std::move(request));
             } else {
                 throw std::runtime_error("Unsupported output type: " + type);
             }
+        }
+    }
+
+    spec.timeline.clear();
+    if (json.contains("timeline")) {
+        const auto& timeline = json.at("timeline");
+        if (!timeline.is_array() || timeline.empty()) {
+            throw std::runtime_error("timeline must be a non-empty array when provided");
+        }
+        spec.timeline.reserve(timeline.size());
+        std::size_t frameIndex = 0;
+        for (const auto& frame : timeline) {
+            if (!frame.is_object()) {
+                throw std::runtime_error("timeline entries must be JSON objects");
+            }
+            ScenarioSpec::TimelineFrame entry{};
+            if (frame.contains("t")) {
+                entry.time = frame.at("t").get<double>();
+            } else if (frame.contains("time")) {
+                entry.time = frame.at("time").get<double>();
+            } else {
+                entry.time = static_cast<double>(frameIndex);
+            }
+
+            if (frame.contains("rotor_angle")) {
+                entry.hasRotorAngle = true;
+                entry.rotorAngleDeg = frame.at("rotor_angle").get<double>();
+            } else if (frame.contains("rotor_angle_deg")) {
+                entry.hasRotorAngle = true;
+                entry.rotorAngleDeg = frame.at("rotor_angle_deg").get<double>();
+            }
+
+            const auto parseWireOverrides = [&](const nlohmann::json& wiresNode) {
+                if (!wiresNode.is_array()) {
+                    throw std::runtime_error("timeline wires entry must be an array");
+                }
+                if (spec.wires.empty()) {
+                    throw std::runtime_error(
+                        "timeline wires overrides require the scenario to define wires");
+                }
+                if (wiresNode.empty()) {
+                    return;
+                }
+
+                if (wiresNode.front().is_number()) {
+                    if (wiresNode.size() != spec.wires.size()) {
+                        throw std::runtime_error(
+                            "timeline wire_currents array must match the number of wires in the scenario");
+                    }
+                    for (std::size_t i = 0; i < wiresNode.size(); ++i) {
+                        ScenarioSpec::TimelineFrame::WireOverride override{};
+                        override.index = i;
+                        override.current = wiresNode.at(i).get<double>();
+                        entry.wireOverrides.push_back(override);
+                    }
+                    return;
+                }
+
+                for (const auto& wireEntry : wiresNode) {
+                    if (!wireEntry.is_object()) {
+                        throw std::runtime_error(
+                            "timeline wires overrides must be numeric array or objects with index/current");
+                    }
+                    ScenarioSpec::TimelineFrame::WireOverride override{};
+                    override.index = wireEntry.at("index").get<std::size_t>();
+                    if (override.index >= spec.wires.size()) {
+                        throw std::runtime_error("timeline wire override index out of range");
+                    }
+                    if (wireEntry.contains("current")) {
+                        override.current = wireEntry.at("current").get<double>();
+                    } else if (wireEntry.contains("I")) {
+                        override.current = wireEntry.at("I").get<double>();
+                    } else if (wireEntry.contains("scale")) {
+                        const double scale = wireEntry.at("scale").get<double>();
+                        override.current = spec.wires[override.index].current * scale;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline wire override must provide 'current', 'I', or 'scale'");
+                    }
+                    entry.wireOverrides.push_back(override);
+                }
+            };
+
+            if (frame.contains("wire_currents")) {
+                parseWireOverrides(frame.at("wire_currents"));
+            }
+            if (frame.contains("wires")) {
+                parseWireOverrides(frame.at("wires"));
+            }
+
+            const auto parseMagnetOverrides = [&](const nlohmann::json& magnetNode) {
+                if (spec.magnetRegions.empty()) {
+                    throw std::runtime_error(
+                        "timeline magnet overrides require the scenario to define magnet_regions");
+                }
+                if (!magnetNode.is_array()) {
+                    throw std::runtime_error("timeline magnets entry must be an array");
+                }
+                for (const auto& magnetEntry : magnetNode) {
+                    if (!magnetEntry.is_object()) {
+                        throw std::runtime_error(
+                            "timeline magnets overrides must be objects with index/angle/magnetization");
+                    }
+                    ScenarioSpec::TimelineFrame::MagnetOverride override{};
+                    override.index = magnetEntry.at("index").get<std::size_t>();
+                    if (override.index >= spec.magnetRegions.size()) {
+                        throw std::runtime_error("timeline magnet override index out of range");
+                    }
+                    if (magnetEntry.contains("angle_deg")) {
+                        override.hasAngle = true;
+                        override.angleDegrees = magnetEntry.at("angle_deg").get<double>();
+                    } else if (magnetEntry.contains("angle")) {
+                        override.hasAngle = true;
+                        override.angleDegrees = magnetEntry.at("angle").get<double>();
+                    }
+                    if (magnetEntry.contains("magnetization")) {
+                        const auto& mag = magnetEntry.at("magnetization");
+                        if (mag.is_array()) {
+                            if (mag.size() != 2) {
+                                throw std::runtime_error(
+                                    "timeline magnetization array must contain exactly two entries");
+                            }
+                            override.hasVector = true;
+                            override.magnetizationX = mag.at(0).get<double>();
+                            override.magnetizationY = mag.at(1).get<double>();
+                        } else if (mag.is_object()) {
+                            override.hasVector = true;
+                            override.magnetizationX = mag.value("Mx", 0.0);
+                            override.magnetizationY = mag.value("My", 0.0);
+                        } else {
+                            throw std::runtime_error(
+                                "timeline magnetization must be an array or object with Mx/My");
+                        }
+                    }
+                    entry.magnetOverrides.push_back(override);
+                }
+            };
+
+            if (frame.contains("magnets")) {
+                parseMagnetOverrides(frame.at("magnets"));
+            }
+            if (frame.contains("magnet_overrides")) {
+                parseMagnetOverrides(frame.at("magnet_overrides"));
+            }
+
+            spec.timeline.push_back(std::move(entry));
+            ++frameIndex;
         }
     }
 
@@ -578,6 +967,84 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
             }
         }
     }
+}
+
+namespace {
+
+void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::TimelineFrame& frame,
+                            ScenarioSpec& workingSpec) {
+    if (frame.hasRotorAngle) {
+        if (baseSpec.magnetRegions.empty()) {
+            throw std::runtime_error(
+                "timeline rotor_angle specified but scenario defines no magnet_regions");
+        }
+        const double angleRad = frame.rotorAngleDeg * kPi / 180.0;
+        const double cosA = std::cos(angleRad);
+        const double sinA = std::sin(angleRad);
+        for (std::size_t i = 0; i < workingSpec.magnetRegions.size(); ++i) {
+            const auto& baseRegion = baseSpec.magnetRegions[i];
+            double mx = baseRegion.Mx;
+            double my = baseRegion.My;
+            workingSpec.magnetRegions[i].Mx = mx * cosA - my * sinA;
+            workingSpec.magnetRegions[i].My = mx * sinA + my * cosA;
+        }
+    }
+
+    for (const auto& override : frame.magnetOverrides) {
+        if (override.index >= workingSpec.magnetRegions.size()) {
+            throw std::runtime_error("timeline magnet override index out of range");
+        }
+        auto& region = workingSpec.magnetRegions[override.index];
+        const auto& baseRegion = baseSpec.magnetRegions[override.index];
+        if (override.hasVector) {
+            region.Mx = override.magnetizationX;
+            region.My = override.magnetizationY;
+        }
+        if (override.hasAngle) {
+            const double angleRad = override.angleDegrees * kPi / 180.0;
+            const double cosA = std::cos(angleRad);
+            const double sinA = std::sin(angleRad);
+            double mx = baseRegion.Mx;
+            double my = baseRegion.My;
+            region.Mx = mx * cosA - my * sinA;
+            region.My = mx * sinA + my * cosA;
+        }
+    }
+
+    for (const auto& override : frame.wireOverrides) {
+        if (override.index >= workingSpec.wires.size()) {
+            throw std::runtime_error("timeline wire override index out of range");
+        }
+        workingSpec.wires[override.index].current = override.current;
+    }
+}
+
+}  // namespace
+
+std::vector<ScenarioFrame> expandScenarioTimeline(const ScenarioSpec& spec) {
+    std::vector<ScenarioFrame> frames;
+    if (spec.timeline.empty()) {
+        ScenarioFrame frame{};
+        frame.index = 0;
+        frame.time = 0.0;
+        frame.spec = spec;
+        frame.spec.timeline.clear();
+        frames.push_back(std::move(frame));
+        return frames;
+    }
+
+    frames.reserve(spec.timeline.size());
+    for (std::size_t idx = 0; idx < spec.timeline.size(); ++idx) {
+        ScenarioFrame frame{};
+        frame.index = idx;
+        frame.time = spec.timeline[idx].time;
+        frame.spec = spec;
+        frame.spec.timeline.clear();
+        applyTimelineOverrides(spec, spec.timeline[idx], frame.spec);
+        frames.push_back(std::move(frame));
+    }
+
+    return frames;
 }
 
 }  // namespace motorsim

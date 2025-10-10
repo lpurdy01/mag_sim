@@ -1,0 +1,42 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.1,
+    "Ly": 0.1,
+    "nx": 5,
+    "ny": 5
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "sources": [
+    {"type": "wire", "x": -0.02, "y": 0.0, "radius": 0.002, "I": 10.0},
+    {"type": "wire", "x": 0.02, "y": 0.0, "radius": 0.002, "I": -10.0}
+  ],
+  "magnet_regions": [
+    {
+      "type": "rect",
+      "x_range": [-0.01, 0.01],
+      "y_range": [0.03, 0.05],
+      "magnetization": [1.0, 0.0]
+    }
+  ],
+  "timeline": [
+    {"t": 0.0, "wire_currents": [10.0, -10.0]},
+    {"t": 0.001, "wire_currents": [5.0, -5.0], "rotor_angle": 90.0},
+    {
+      "t": 0.002,
+      "wires": [
+        {"index": 0, "current": 0.0},
+        {"index": 1, "current": 2.5}
+      ],
+      "magnets": [
+        {"index": 0, "angle_deg": 45.0}
+      ]
+    }
+  ]
+}

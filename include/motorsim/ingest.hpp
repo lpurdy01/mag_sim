@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "motorsim/grid.hpp"
+#include "motorsim/types.hpp"
 
 namespace motorsim {
 
@@ -80,8 +81,60 @@ struct ScenarioSpec {
             std::string format;    // e.g., "csv"
         };
 
+        struct Probe {
+            enum class Quantity { Force, Torque, ForceAndTorque };
+            enum class Method { StressTensor };
+
+            std::string id;
+            std::string path;
+            Quantity quantity{Quantity::Torque};
+            Method method{Method::StressTensor};
+            std::vector<double> loopXs;
+            std::vector<double> loopYs;
+        };
+
+        struct BackEmfProbe {
+            enum class RegionShape { Polygon, Rect };
+
+            std::string id;
+            std::string path;
+            FluxComponent component{FluxComponent::Bmag};
+            RegionShape shape{RegionShape::Polygon};
+            std::vector<double> xs;
+            std::vector<double> ys;
+            double minX{0.0};
+            double maxX{0.0};
+            double minY{0.0};
+            double maxY{0.0};
+            std::vector<std::size_t> frameIndices;
+        };
+
         std::vector<FieldMap> fieldMaps;
         std::vector<LineProbe> lineProbes;
+        std::vector<Probe> probes;
+        std::vector<BackEmfProbe> backEmfProbes;
+    };
+
+    struct TimelineFrame {
+        struct WireOverride {
+            std::size_t index{0};
+            double current{0.0};
+        };
+
+        struct MagnetOverride {
+            std::size_t index{0};
+            bool hasAngle{false};
+            double angleDegrees{0.0};
+            bool hasVector{false};
+            double magnetizationX{0.0};
+            double magnetizationY{0.0};
+        };
+
+        double time{0.0};
+        bool hasRotorAngle{false};
+        double rotorAngleDeg{0.0};
+        std::vector<WireOverride> wireOverrides;
+        std::vector<MagnetOverride> magnetOverrides;
     };
 
     std::string version;
@@ -102,10 +155,19 @@ struct ScenarioSpec {
     std::vector<MagnetRegion> magnetRegions;
     BoundaryType boundaryType{BoundaryType::Dirichlet};
     Outputs outputs;
+    std::vector<TimelineFrame> timeline;
 };
 
 ScenarioSpec loadScenarioFromJson(const std::string& path);
 
 void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid);
+
+struct ScenarioFrame {
+    std::size_t index{0};
+    double time{0.0};
+    ScenarioSpec spec;
+};
+
+std::vector<ScenarioFrame> expandScenarioTimeline(const ScenarioSpec& spec);
 
 }  // namespace motorsim

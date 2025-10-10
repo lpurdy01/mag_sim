@@ -1,0 +1,49 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.1,
+    "Ly": 0.1,
+    "nx": 5,
+    "ny": 5
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "sources": [],
+  "timeline": [
+    {"t": 0.0},
+    {"t": 0.001}
+  ],
+  "outputs": [
+    {
+      "type": "back_emf_probe",
+      "id": "coil_flux",
+      "component": "Bx",
+      "region": {
+        "type": "polygon",
+        "vertices": [
+          [-0.015, -0.015],
+          [0.015, -0.015],
+          [0.015, 0.015],
+          [-0.015, 0.015]
+        ]
+      },
+      "frames": [0, 1],
+      "path": "outputs/coil_flux_emf.csv"
+    },
+    {
+      "type": "back_emf_probe",
+      "id": "slot_flux",
+      "component": "Bmag",
+      "region": {
+        "type": "rect",
+        "x_range": [-0.02, 0.02],
+        "y_range": [0.02, 0.04]
+      }
+    }
+  ]
+}
