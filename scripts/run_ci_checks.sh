@@ -32,7 +32,7 @@ echo "[ci-check] Running analytic wire regression"
 
 if [[ "${SKIP_PY_DEPS:-0}" != "1" ]]; then
   echo "[ci-check] Ensuring visualization Python dependencies are available"
-  python3 -m pip install --user --quiet numpy matplotlib
+  python3 -m pip install --user --quiet numpy matplotlib vtk
 fi
 
 echo "[ci-check] Preparing artifact directories"
@@ -68,6 +68,10 @@ echo "[ci-check] Solving scenarios"
 "$BUILD_DIR/motor_sim" --scenario inputs/line_current_interface.json --solve --outputs all
 "$BUILD_DIR/motor_sim" --scenario inputs/iron_ring_demo.json --solve --outputs all --tol 5e-6 --max-iters 40000
 "$BUILD_DIR/motor_sim" --scenario inputs/tests/magnet_strip_test.json --solve --outputs all
+"$BUILD_DIR/motor_sim" --scenario inputs/tests/rotor_ripple_test.json --solve --outputs all --parallel-frames --max-iters 40000 --tol 2.5e-6
+
+echo "[ci-check] Verifying VTK export"
+python3 python/verify_vtk.py outputs/rotor_ripple_field_frame_000.vti
 
 echo "[ci-check] Rendering visualisations"
 export MPLBACKEND=Agg
@@ -101,6 +105,22 @@ python3 python/visualize_scenario_field.py \
   --streamlines \
   --color-scale log \
   --vector-mode log
+python3 python/visualize_scenario_field.py \
+  --scenario inputs/tests/rotor_ripple_test.json \
+  --field-map outputs/rotor_ripple_field_frame_000.csv \
+  --save ci_artifacts/rotor_ripple_frame0.png \
+  --draw-boundaries \
+  --streamlines \
+  --color-scale log \
+  --vector-mode log
+python3 python/visualize_scenario_field.py \
+  --scenario inputs/tests/rotor_ripple_test.json \
+  --field-map outputs/rotor_ripple_field_frame_002.csv \
+  --save ci_artifacts/rotor_ripple_frame2.png \
+  --draw-boundaries \
+  --streamlines \
+  --color-scale log \
+  --vector-mode log
 python3 python/visualize_wire.py \
   --csv outputs/validation_wire_line.csv \
   --save ci_artifacts/analytic_wire_line.png \
@@ -108,8 +128,8 @@ python3 python/visualize_wire.py \
 
 echo "[ci-check] Collecting CSV artifacts"
 shopt -s nullglob
-for csv in outputs/*.csv; do
-  cp "$csv" ci_artifacts/
+for file in outputs/*.csv outputs/*.vti; do
+  cp "$file" ci_artifacts/
 done
 
 echo "[ci-check] Done. Artefacts are available in ci_artifacts/"

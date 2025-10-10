@@ -3,11 +3,16 @@
 This document tracks progress against the "Next-Stage Development Plan — Time Series, Forces, and Advanced Probes" roadmap.
 
 ## Completed Milestones
-- **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` and the `python/verify_vtk.py` utility; documentation lives in `docs/vtk_output.md`.
-- **Time-series infrastructure**: Scenario timelines, per-frame solving, and parallel execution are available and covered in `docs/time_series.md`.
-- **Maxwell stress probes**: Force/torque evaluation and documentation reside in `docs/torque_forces.md`.
-- **Back-EMF probes**: Flux integration across timeline frames emits per-interval voltages and is covered in `docs/back_emf.md`.
-- **Visualization upgrades**: `python/visualize_scenario_field.py` exposes log-scale colormaps, boundary overlays, streamline controls, analytic overlays, and vector scaling modes as described in the roadmap.
+- **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` with regression coverage in `tests/output_quantity_test.cpp` and exercised in CI through the rotor ripple timeline artefacts. The `python/verify_vtk.py` utility (documented in `docs/vtk_output.md`) now runs during CI to sanity-check the generated `.vti` files.
+- **Time-series infrastructure**: Scenario timelines, per-frame solving, and parallel execution are available (see `docs/time_series.md`). The CI workflow drives `inputs/tests/rotor_ripple_test.json` with `--parallel-frames` to emit multi-frame datasets and CSV/VTI artefacts.
+- **Maxwell stress probes**: Force/torque evaluation and documentation reside in `docs/torque_forces.md`, with validation fixtures in `tests/torque_validation_test.cpp` and rotor ripple torque ripple checks.
+- **Back-EMF probes**: Flux integration across timeline frames emits per-interval voltages (`docs/back_emf.md`) and is now represented in the artefact bundle via `outputs/rotor_ripple_emf.csv`.
+- **Visualization upgrades**: `python/visualize_scenario_field.py` exposes log-scale colormaps, boundary overlays, streamline controls, analytic overlays, and vector scaling modes (documented in `docs/visualization.md`). CI renders both static validation scenes and the new rotor ripple frames.
 
-## Next Steps
-- The staged validation ladder is now in place; future research tasks can build atop the documented scenarios.
+## CI artefact coverage
+- Field plots: `ci_artifacts/rotor_ripple_frame0.png` and `ci_artifacts/rotor_ripple_frame2.png` illustrate timeline evolution alongside the existing two-wire/interface/iron-ring renders.
+- Accuracy reports: `ci_artifacts/test_accuracy_report.txt` aggregates analytic/regression solver comparisons; additional torque/back-EMF CSVs are copied directly from `outputs/`.
+- Sample VTK: `outputs/rotor_ripple_field_frame_000.vti` (and subsequent frames) are exported on every CI run and verified with `python/verify_vtk.py`.
+
+## Remaining work
+- The roadmap milestones listed above are complete. Future efforts can focus on extending scenario libraries, refining solver performance, or integrating additional analytical benchmarks as new research questions arise.

@@ -129,7 +129,7 @@ void write_vti_field_map(const std::string& path,
     const bool littleEndian = isLittleEndian();
     ofs << "<?xml version=\"1.0\"?>\n";
     ofs << "<VTKFile type=\"ImageData\" version=\"0.1\" byte_order=\""
-        << (littleEndian ? "LittleEndian" : "BigEndian") << "\" header_type=\"UInt64\"\">\n";
+        << (littleEndian ? "LittleEndian" : "BigEndian") << "\" header_type=\"UInt64\">\n";
     ofs << "  <ImageData WholeExtent=\"0 " << (nx - 1) << " 0 " << (ny - 1) << " 0 0\""
         << " Origin=\"" << originX << ' ' << originY << " 0\""
         << " Spacing=\"" << dx << ' ' << dy << " 1\">\n";

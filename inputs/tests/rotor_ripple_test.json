@@ -25,6 +25,58 @@
       "magnetization": [350000.0, 0.0]
     }
   ],
+  "outputs": [
+    {
+      "type": "field_map",
+      "id": "ripple_field",
+      "quantity": "B",
+      "format": "vti",
+      "path": "outputs/rotor_ripple_field.vti"
+    },
+    {
+      "type": "field_map",
+      "id": "ripple_field_csv",
+      "quantity": "B",
+      "format": "csv",
+      "path": "outputs/rotor_ripple_field.csv"
+    },
+    {
+      "type": "line_probe",
+      "id": "midline",
+      "axis": "y",
+      "value": 0.0,
+      "quantity": "Bmag",
+      "path": "outputs/rotor_ripple_midline.csv"
+    },
+    {
+      "type": "probe",
+      "id": "torque_loop",
+      "probe_type": "torque",
+      "method": "stress_tensor",
+      "loop": {
+        "type": "polygon",
+        "vertices": [
+          [-0.014, -0.014],
+          [0.014, -0.014],
+          [0.014, 0.014],
+          [-0.014, 0.014]
+        ]
+      },
+      "path": "outputs/rotor_ripple_torque.csv"
+    },
+    {
+      "type": "back_emf_probe",
+      "id": "coil_emf",
+      "component": "Bmag",
+      "region": {
+        "type": "rect",
+        "x_range": [-0.018, 0.018],
+        "y_range": [-0.018, 0.018]
+      },
+      "frames": [0, 1, 2, 3],
+      "path": "outputs/rotor_ripple_emf.csv"
+    }
+  ],
   "timeline": [
     {"t": 0.0, "rotor_angle": 0.0},
     {"t": 0.001, "rotor_angle": 60.0},
