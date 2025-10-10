@@ -7,7 +7,7 @@ import argparse
 import json
 import pathlib
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -28,6 +28,181 @@ class Wire:
     current: float
 
 
+MU0 = 4.0e-7 * np.pi
+
+
+def compute_domain_bounds(spec: dict) -> Tuple[float, float, float, float]:
+    domain = spec.get("domain", {})
+    lx = float(domain.get("Lx", 0.0))
+    ly = float(domain.get("Ly", 0.0))
+    if lx <= 0.0 or ly <= 0.0:
+        raise ValueError("Scenario domain must define positive Lx and Ly to draw boundaries")
+    xmin = -0.5 * lx
+    xmax = 0.5 * lx
+    ymin = -0.5 * ly
+    ymax = 0.5 * ly
+    return xmin, xmax, ymin, ymax
+
+
+def line_rectangle_intersections(nx: float, ny: float, offset: float,
+                                 bounds: Tuple[float, float, float, float]) -> List[Tuple[float, float]]:
+    xmin, xmax, ymin, ymax = bounds
+    points: List[Tuple[float, float]] = []
+
+    def add_point(x: float, y: float) -> None:
+        for px, py in points:
+            if abs(px - x) < 1e-9 and abs(py - y) < 1e-9:
+                return
+        points.append((x, y))
+
+    if abs(ny) > 1e-12:
+        for x in (xmin, xmax):
+            y = -(nx * x + offset) / ny
+            if ymin - 1e-9 <= y <= ymax + 1e-9:
+                add_point(x, y)
+    if abs(nx) > 1e-12:
+        for y in (ymin, ymax):
+            x = -(ny * y + offset) / nx
+            if xmin - 1e-9 <= x <= xmax + 1e-9:
+                add_point(x, y)
+    return points[:2]
+
+
+def gather_boundaries(spec: dict) -> Dict[str, List]:
+    bounds = compute_domain_bounds(spec)
+    regions = spec.get("regions", [])
+    materials = {entry.get("name"): float(entry.get("mu_r", 1.0)) for entry in spec.get("materials", [])}
+
+    halfspaces: List[Tuple[Tuple[float, float], Tuple[float, float], float]] = []
+    polygons: List[Tuple[List[float], List[float], str]] = []
+    for region in regions:
+        rtype = region.get("type")
+        if rtype == "halfspace":
+            normal = region.get("normal", [0.0, 0.0])
+            if len(normal) != 2:
+                continue
+            nx, ny = float(normal[0]), float(normal[1])
+            offset = float(region.get("offset", 0.0))
+            pts = line_rectangle_intersections(nx, ny, offset, bounds)
+            if len(pts) == 2:
+                material = str(region.get("material", ""))
+                mu = materials.get(material, float("nan"))
+                halfspaces.append((pts[0], pts[1], mu))
+        elif rtype == "polygon":
+            vertices = region.get("vertices", [])
+            xs = [float(v[0]) for v in vertices if isinstance(v, list) and len(v) == 2]
+            ys = [float(v[1]) for v in vertices if isinstance(v, list) and len(v) == 2]
+            if len(xs) >= 3:
+                material = str(region.get("material", ""))
+                polygons.append((xs, ys, material))
+
+    magnet_polys: List[Tuple[List[float], List[float]]] = []
+    magnet_rects: List[Tuple[float, float, float, float]] = []
+    for region in spec.get("magnet_regions", []):
+        rtype = region.get("type")
+        if rtype == "polygon":
+            vertices = region.get("vertices", [])
+            xs = [float(v[0]) for v in vertices if isinstance(v, list) and len(v) == 2]
+            ys = [float(v[1]) for v in vertices if isinstance(v, list) and len(v) == 2]
+            if len(xs) >= 3:
+                magnet_polys.append((xs, ys))
+        elif rtype == "rect":
+            xrange = region.get("x_range", [0.0, 0.0])
+            yrange = region.get("y_range", [0.0, 0.0])
+            if len(xrange) == 2 and len(yrange) == 2:
+                magnet_rects.append((float(xrange[0]), float(xrange[1]), float(yrange[0]), float(yrange[1])))
+
+    return {
+        "halfspaces": halfspaces,
+        "polygons": polygons,
+        "magnet_polygons": magnet_polys,
+        "magnet_rects": magnet_rects,
+    }
+
+
+def compute_interface_reference_field(
+    spec: dict, grid_x: np.ndarray, grid_y: np.ndarray
+) -> Optional[Dict[str, np.ndarray]]:
+    regions = [region for region in spec.get("regions", []) if region.get("type") == "halfspace"]
+    if len(regions) != 2:
+        return None
+
+    normals = [region.get("normal", [0.0, 0.0]) for region in regions]
+    offsets = [float(region.get("offset", 0.0)) for region in regions]
+
+    try:
+        nx_vals = [float(n[0]) for n in normals]
+        ny_vals = [float(n[1]) for n in normals]
+    except (TypeError, ValueError):
+        return None
+
+    if any(abs(ny) > 1e-6 for ny in ny_vals):
+        return None
+
+    left_index = None
+    right_index = None
+    for idx, nx in enumerate(nx_vals):
+        if nx > 0.0:
+            left_index = idx
+        elif nx < 0.0:
+            right_index = idx
+    if left_index is None or right_index is None:
+        return None
+
+    materials = {entry.get("name"): float(entry.get("mu_r", 1.0)) for entry in spec.get("materials", [])}
+    try:
+        mu_left = MU0 * materials[regions[left_index]["material"]]
+        mu_right = MU0 * materials[regions[right_index]["material"]]
+    except KeyError:
+        return None
+
+    sources = [src for src in spec.get("sources", []) if src.get("type") == "wire"]
+    if not sources:
+        return None
+    wire = sources[0]
+    wire_x = float(wire.get("x", 0.0))
+    wire_y = float(wire.get("y", 0.0))
+    current = float(wire.get("I", 0.0))
+
+    interface_x = -offsets[left_index] / nx_vals[left_index]
+    image_x = 2.0 * interface_x - wire_x
+    rho = (mu_left - mu_right) / (mu_left + mu_right)
+    tau = (2.0 * mu_right) / (mu_left + mu_right)
+
+    dx_real = grid_x - wire_x
+    dy_real = grid_y - wire_y
+    r2_real = dx_real * dx_real + dy_real * dy_real
+
+    dx_image = grid_x - image_x
+    dy_image = grid_y - wire_y
+    r2_image = dx_image * dx_image + dy_image * dy_image
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        coeff_real_left = (mu_left * current) / (2.0 * np.pi * r2_real)
+        coeff_image = (mu_left * rho * current) / (2.0 * np.pi * r2_image)
+        coeff_transmitted = (mu_right * tau * current) / (2.0 * np.pi * r2_real)
+
+    coeff_real_left = np.where(r2_real > 0.0, coeff_real_left, 0.0)
+    coeff_image = np.where(r2_image > 0.0, coeff_image, 0.0)
+    coeff_transmitted = np.where(r2_real > 0.0, coeff_transmitted, 0.0)
+
+    boundary_eval = (
+        nx_vals[left_index] * grid_x + ny_vals[left_index] * grid_y + offsets[left_index]
+    )
+    left_mask = boundary_eval < 0.0
+
+    bx = np.zeros_like(grid_x)
+    by = np.zeros_like(grid_y)
+
+    bx[left_mask] = -(coeff_real_left[left_mask] * dy_real[left_mask] + coeff_image[left_mask] * dy_image[left_mask])
+    by[left_mask] = coeff_real_left[left_mask] * dx_real[left_mask] + coeff_image[left_mask] * dx_image[left_mask]
+
+    right_mask = ~left_mask
+    bx[right_mask] = -coeff_transmitted[right_mask] * dy_real[right_mask]
+    by[right_mask] = coeff_transmitted[right_mask] * dx_real[right_mask]
+
+    bmag = np.hypot(bx, by)
+    return {"Bx": bx, "By": by, "Bmag": bmag}
 def load_scenario(path: pathlib.Path) -> Tuple[dict, List[Wire]]:
     with path.open("r", encoding="utf-8") as handle:
         spec = json.load(handle)
@@ -131,6 +306,12 @@ def plot_field(
     title: str,
     color_scale: str,
     log_floor: float,
+    draw_boundaries: bool,
+    boundaries: Dict[str, List],
+    show_vectors: bool,
+    streamlines: bool,
+    analytic: Optional[Dict[str, np.ndarray]],
+    analytic_levels: int,
 ) -> None:
     fig, ax = plt.subplots(figsize=(7, 6))
     display_mag = bmag
@@ -149,17 +330,45 @@ def plot_field(
     cbar_label = "|B| [T]" if color_scale == "linear" else "|B| [T] (log scale)"
     fig.colorbar(pcm, ax=ax, label=cbar_label)
 
-    skip = max(1, quiver_skip)
-    ax.quiver(
-        grid_x[::skip, ::skip],
-        grid_y[::skip, ::skip],
-        bx[::skip, ::skip],
-        by[::skip, ::skip],
-        color="w",
-        scale=0.002,
-        width=0.003,
-        pivot="mid",
-    )
+    if streamlines:
+        ax.streamplot(grid_x, grid_y, bx, by, density=1.2, color="w", linewidth=0.6)
+
+    if show_vectors:
+        skip = max(1, quiver_skip)
+        ax.quiver(
+            grid_x[::skip, ::skip],
+            grid_y[::skip, ::skip],
+            bx[::skip, ::skip],
+            by[::skip, ::skip],
+            color="w",
+            scale=0.002,
+            width=0.003,
+            pivot="mid",
+        )
+
+    if draw_boundaries:
+        for (p0, p1, mu) in boundaries.get("halfspaces", []):
+            xs = [p0[0], p1[0]]
+            ys = [p0[1], p1[1]]
+            ax.plot(xs, ys, color="w", linestyle="--", linewidth=1.0, alpha=0.6)
+        for xs, ys, material in boundaries.get("polygons", []):
+            closed_xs = xs + [xs[0]]
+            closed_ys = ys + [ys[0]]
+            ax.plot(closed_xs, closed_ys, color="w", linestyle="-", linewidth=1.0, alpha=0.7)
+        for xs, ys in boundaries.get("magnet_polygons", []):
+            closed_xs = xs + [xs[0]]
+            closed_ys = ys + [ys[0]]
+            ax.plot(closed_xs, closed_ys, color="tab:red", linestyle=":", linewidth=1.2, alpha=0.9)
+        for xmin, xmax, ymin, ymax in boundaries.get("magnet_rects", []):
+            rect_x = [xmin, xmax, xmax, xmin, xmin]
+            rect_y = [ymin, ymin, ymax, ymax, ymin]
+            ax.plot(rect_x, rect_y, color="tab:red", linestyle=":", linewidth=1.2, alpha=0.9)
+
+    if analytic is not None and analytic_levels > 0:
+        levels = np.linspace(np.nanmin(analytic["Bmag"]), np.nanmax(analytic["Bmag"]), analytic_levels)
+        levels = levels[np.isfinite(levels)]
+        if levels.size > 0:
+            ax.contour(grid_x, grid_y, analytic["Bmag"], levels=levels, colors="white", linewidths=0.6, linestyles="dashed")
 
     for wire in wires:
         color = "tab:red" if wire.current >= 0.0 else "tab:blue"
@@ -229,6 +438,35 @@ def main() -> None:
         help="Minimum |B| value when --color-scale=log to avoid taking log of zero.",
     )
     parser.add_argument(
+        "--draw-boundaries",
+        action="store_true",
+        help="Overlay material and magnet region boundaries on the plot.",
+    )
+    parser.add_argument(
+        "--hide-vectors",
+        action="store_true",
+        help="Disable the quiver vector overlay.",
+    )
+    parser.add_argument(
+        "--streamlines",
+        action="store_true",
+        help="Draw field streamlines instead of (or in addition to) vectors.",
+    )
+    parser.add_argument(
+        "--overlay-analytic-interface",
+        action="store_true",
+        help=(
+            "Overlay contour lines from the analytic method-of-images solution for scenarios "
+            "with a single wire and planar permeability interface."
+        ),
+    )
+    parser.add_argument(
+        "--analytic-contours",
+        type=int,
+        default=8,
+        help="Number of contour levels when plotting the analytic overlay.",
+    )
+    parser.add_argument(
         "--save",
         type=pathlib.Path,
         default=None,
@@ -249,6 +487,20 @@ def main() -> None:
     xs, ys, bxs, bys, bmags = load_field_csv(field_map_path)
     grid_x, grid_y, (bx, by, bmag) = reshape_field(xs, ys, (bxs, bys, bmags))
 
+    boundaries: Dict[str, List] = {}
+    if args.draw_boundaries or args.overlay_analytic_interface:
+        try:
+            boundaries = gather_boundaries(spec)
+        except ValueError as exc:
+            print(f"Warning: {exc}")
+            boundaries = {}
+
+    analytic = None
+    if args.overlay_analytic_interface:
+        analytic = compute_interface_reference_field(spec, grid_x, grid_y)
+        if analytic is None:
+            print("Warning: analytic interface overlay unavailable for this scenario")
+
     title = f"Field map: {args.scenario.name}"
     plot_field(
         grid_x,
@@ -262,6 +514,12 @@ def main() -> None:
         title,
         args.color_scale,
         args.log_floor,
+        args.draw_boundaries,
+        boundaries,
+        not args.hide_vectors,
+        args.streamlines,
+        analytic,
+        args.analytic_contours,
     )
 
 

@@ -31,12 +31,20 @@ void write_csv_line_profile(const std::string& path,
 void write_csv_field_map(const std::string& path,
                          const std::vector<double>& x,
                          const std::vector<double>& y,
-                         const std::vector<double>& bx,
-                         const std::vector<double>& by,
-                         const std::vector<double>& bmag) {
+                         const std::vector<FieldColumnView>& columns) {
     const std::size_t n = x.size();
-    if (y.size() != n || bx.size() != n || by.size() != n || bmag.size() != n) {
+    if (y.size() != n) {
         throw std::invalid_argument("write_csv_field_map: mismatched vector sizes");
+    }
+    for (const auto& column : columns) {
+        if (column.values == nullptr) {
+            throw std::invalid_argument("write_csv_field_map: null column pointer for '" +
+                                        column.header + "'");
+        }
+        if (column.values->size() != n) {
+            throw std::invalid_argument(
+                "write_csv_field_map: column size mismatch for '" + column.header + "'");
+        }
     }
 
     std::ofstream ofs(path);
@@ -44,10 +52,18 @@ void write_csv_field_map(const std::string& path,
         throw std::runtime_error("Failed to open CSV output: " + path);
     }
 
-    ofs << "x,y,Bx,By,Bmag\n";
+    ofs << "x,y";
+    for (const auto& column : columns) {
+        ofs << ',' << column.header;
+    }
+    ofs << '\n';
+
     for (std::size_t i = 0; i < n; ++i) {
-        ofs << x[i] << ',' << y[i] << ',' << bx[i] << ',' << by[i] << ',' << bmag[i]
-            << '\n';
+        ofs << x[i] << ',' << y[i];
+        for (const auto& column : columns) {
+            ofs << ',' << (*(column.values))[i];
+        }
+        ofs << '\n';
     }
 }
 

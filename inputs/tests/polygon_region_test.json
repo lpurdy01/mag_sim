@@ -1,0 +1,21 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.10,
+    "Ly": 0.10,
+    "nx": 101,
+    "ny": 101
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0},
+    {"name": "iron", "mu_r": 1500.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"},
+    {"type": "polygon", "material": "iron", "vertices": [[-0.03, -0.03], [0.03, -0.03], [0.03, 0.03], [-0.03, 0.03]]},
+    {"type": "polygon", "material": "air", "vertices": [[-0.01, -0.01], [0.01, -0.01], [0.01, 0.01], [-0.01, 0.01]]}
+  ],
+  "sources": [],
+  "outputs": []
+}

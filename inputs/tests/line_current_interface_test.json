@@ -1,0 +1,25 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.30,
+    "Ly": 0.20,
+    "nx": 241,
+    "ny": 161
+  },
+  "boundary": {
+    "type": "dirichlet"
+  },
+  "materials": [
+    {"name": "mu_left", "mu_r": 1.0},
+    {"name": "mu_right", "mu_r": 100.0}
+  ],
+  "regions": [
+    {"type": "halfspace", "normal": [1.0, 0.0], "offset": 0.0, "material": "mu_left"},
+    {"type": "halfspace", "normal": [-1.0, 0.0], "offset": 0.0, "material": "mu_right"}
+  ],
+  "sources": [
+    {"type": "wire", "x": -0.06, "y": 0.0, "radius": 0.00375, "I": 10.0}
+  ],
+  "outputs": []
+}

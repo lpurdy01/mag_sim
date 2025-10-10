@@ -3,6 +3,7 @@
 #include "motorsim/types.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -11,19 +12,15 @@
 int main() {
     using namespace motorsim;
 
-    ScenarioSpec spec{};
-    spec.version = "0.1";
-    spec.Lx = 0.20;
-    spec.Ly = 0.20;
-    spec.nx = 201;
-    spec.ny = 201;
-    spec.dx = spec.Lx / static_cast<double>(spec.nx - 1);
-    spec.dy = spec.Ly / static_cast<double>(spec.ny - 1);
-    spec.originX = -0.5 * spec.Lx;
-    spec.originY = -0.5 * spec.Ly;
-    spec.mu_r_background = 1.0;
-    spec.wires.push_back({-0.03, 0.0, 0.003, 10.0});
-    spec.wires.push_back({0.03, 0.0, 0.003, -10.0});
+    namespace fs = std::filesystem;
+    const fs::path scenarioPath =
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/two_wire_cancel_test.json").lexically_normal();
+    ScenarioSpec spec = loadScenarioFromJson(scenarioPath.string());
+
+    if (spec.wires.size() != 2) {
+        std::cerr << "two_wire_cancel_test: expected two wires in scenario\n";
+        return 1;
+    }
 
     Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
     rasterizeScenarioToGrid(spec, grid);

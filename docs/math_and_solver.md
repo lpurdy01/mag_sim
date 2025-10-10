@@ -36,23 +36,42 @@ The solver operates on a structured, uniform grid of size \((n_x, n_y)\) with sp
 - \(J_z\): source term.
 - \(\nu = 1/\mu\): inverse permeability.
 
-To correctly model discontinuities in \(\mu\) at material interfaces, face-centred inverse permeabilities are built via harmonic averaging. For the east face shared by cells \(P\) and \(E\),
+### 3.1 Variable-coefficient five-point stencil
+
+Spatially varying materials require carefully averaging \(\nu\) across cell faces. Using harmonic averages preserves flux continuity across interfaces. For the east face shared by cells \((i, j)\) and \((i+1, j)\),
 \[
-\nu_E = \frac{2\, \nu_P \nu_E}{\nu_P + \nu_E},
+\nu_E = \frac{2\,\nu_{i,j}\,\nu_{i+1,j}}{\nu_{i,j} + \nu_{i+1,j}},
 \]
-and similarly for west (W), north (N), and south (S) faces. This gives the standard five-point stencil for diffusion with variable coefficients:
+with analogous expressions for the west (W), north (N), and south (S) faces. These face coefficients yield the standard five-point stencil for diffusion with variable coefficients. The Gauss–Seidel point update used by the solver reads
 \[
-\begin{aligned}
--R_{i,j} &=
-\frac{\nu_E (A_{i+1,j} - A_{i,j}) - \nu_W (A_{i,j} - A_{i-1,j})}{\Delta x^2} \\
-&\phantom{=}+ \frac{\nu_N (A_{i,j+1} - A_{i,j}) - \nu_S (A_{i,j} - A_{i,j-1})}{\Delta y^2},
-\end{aligned}
+A_{i,j}^{(\text{new})} =
+\frac{
+\tfrac{\nu_E}{\Delta x^2} A_{i+1,j}
++ \tfrac{\nu_W}{\Delta x^2} A_{i-1,j}
++ \tfrac{\nu_N}{\Delta y^2} A_{i,j+1}
++ \tfrac{\nu_S}{\Delta y^2} A_{i,j-1}
++ J_{i,j}
+}{
+\tfrac{\nu_E + \nu_W}{\Delta x^2}
++ \tfrac{\nu_N + \nu_S}{\Delta y^2}
+}.
 \]
-which should equal \(J_{i,j}\) when the PDE is satisfied. The residual \(R_{i,j}\) is used to monitor convergence.
+When \(\mu\) is uniform, \(\nu_E = \nu_W = \nu_N = \nu_S = 1/\mu\) and the update reduces to the familiar five-point Laplacian.
+
+### 3.2 Discrete residual
+
+The residual used for convergence checks is assembled directly from the fluxes through each face:
+\[
+R_{i,j} =
+\frac{\nu_E (A_{i+1,j} - A_{i,j}) - \nu_W (A_{i,j} - A_{i-1,j})}{\Delta x^2}
++ \frac{\nu_N (A_{i,j+1} - A_{i,j}) - \nu_S (A_{i,j} - A_{i,j-1})}{\Delta y^2}
+- J_{i,j}.
+\]
+The continuous PDE is satisfied when \(R_{i,j} = 0\) everywhere.
 
 ## 4. Boundary conditions
 
-The current implementation applies Dirichlet conditions \(A_z = 0\) on the outer rectangular boundary, representing a truncated far field. Neumann conditions (zero normal flux) are deferred for future work but noted as a natural extension.
+The solver supports both Dirichlet and homogeneous Neumann boundary conditions on the outer rectangular boundary. Dirichlet fixes \(A_z = 0\), emulating a bounding conductor. Neumann enforces \(\partial_n A_z = 0\) so flux can exit without forcing a return through the box. In the Gauss–Seidel sweep the Neumann option mirrors the adjacent interior value into the boundary cell, making the forward difference for the normal derivative vanish.
 
 ## 5. Iterative solvers
 
@@ -70,9 +89,9 @@ An (unimplemented) conjugate gradient solver is left as a future improvement for
 
 Iterations continue until either the maximum iteration count is reached or the relative residual falls below the user-specified tolerance:
 \[
-\frac{\sqrt{\sum_{i,j} R_{i,j}^2}}{\sqrt{\sum_{i,j} J_{i,j}^2 + \varepsilon}} < \text{tol},
+\frac{\lVert R \rVert_2}{\lVert J \rVert_2 + \varepsilon} < \text{tol},
 \]
-with \(\varepsilon\) guarding against zero-current scenarios.
+with \(\varepsilon\) guarding against zero-current scenarios and the sums taken over all interior cells.
 
 ## 7. Recovering the magnetic flux density
 
@@ -83,7 +102,59 @@ B_y \approx -\frac{A_{i+1,j} - A_{i-1,j}}{2\Delta x}.
 \]
 One-sided differences are applied on the domain boundary where neighbours are unavailable.
 
-## 8. Validation with an infinite straight wire
+## 8. Permanent magnets and magnetisation
+
+Permanent magnets introduce a prescribed magnetisation \(\mathbf{M}(x, y)\) in addition to impressed current density. In the
+\(A_z\) formulation, magnetisation appears as an effective bound current density \(J_{m,z} = \partial_x M_y - \partial_y M_x\).
+The rasteriser stores uniform magnetisation vectors per cell and applies finite-difference curls to deposit this contribution
+into \(J_z\). The magnetisation field is also retained so that the magnetic field intensity can be reconstructed after the solve.
+
+Given the flux density components, the solver supplies \(\mathbf{H}\) via
+\[
+\mathbf{H} = \nu \mathbf{B} - \frac{1}{\mu_r} \mathbf{M}, \qquad \nu = \frac{1}{\mu_0 \mu_r}.
+\]
+In non-magnetised regions this reduces to the familiar \(\mathbf{H} = \nu \mathbf{B}\). Inside permanent magnets the subtraction
+cancels the remanent contribution, yielding nearly zero \(\mathbf{H}\) for an isolated uniformly magnetised body when \(\mu_r \approx 1\).
+
+The `magnet_strip_test` regression models a rectangular magnet magnetised along \(+y\). The analytic reference treats the magnet
+as two opposing surface currents and integrates the Biot–Savart kernel along the strip edges. Numerical and analytic \(B_y\) agree
+to within 15%, and the recovered \(H_y\) inside the magnet is checked to remain near zero, validating both the bound current
+deposition and the post-processing of \(\mathbf{H}\).
+
+With \(\mathbf{B}\) and \(\mathbf{H}\) reconstructed, the solver additionally evaluates the magnetostatic energy density
+\[
+w = \tfrac{1}{2} \mathbf{B} \cdot \mathbf{H} = \tfrac{1}{2} (B_x H_x + B_y H_y).
+\]
+This scalar is emitted on request and supports energy-based force calculations or quick checks for material saturation.
+
+## 9. Analytic reference: planar permeability interface
+
+To validate heterogeneous permeability handling we leverage the method of images for a line current next to a planar interface. Two media with permeabilities \(\mu_1\) (left, \(x < 0\)) and \(\mu_2\) (right, \(x > 0\)) meet along the \(y\)-axis. A real infinite wire of current \(I\) sits at \(\mathbf{r}_0 = (-a, 0)\) inside region 1.
+
+The magnetic field in region 1 is the superposition of the real wire and an image wire located at \(\mathbf{r}_0' = (+a, 0)\) with current magnitude scaled by
+\[
+I' = \rho I, \qquad \rho = \frac{\mu_2 - \mu_1}{\mu_1 + \mu_2}.
+\]
+Region 2 sees the field of a "transmitted" wire that sits at the real location but carries current
+\[
+I_t = \tau I, \qquad \tau = \frac{2\mu_1}{\mu_1 + \mu_2}.
+\]
+For a single infinite wire placed at \((x_s, y_s)\) inside a homogeneous medium with permeability \(\mu\), the Biot–Savart expression simplifies in 2D to
+\[
+\mathbf{B}(x, y) = \frac{\mu I}{2\pi R^2} \bigl(-(y - y_s),\; x - x_s\bigr), \qquad R^2 = (x - x_s)^2 + (y - y_s)^2.
+\]
+Therefore the validation procedure assembles
+
+- Region 1 field: \(\mathbf{B}_1 = \mathbf{B}_{\mu_1}(I, \mathbf{r}_0) + \mathbf{B}_{\mu_1}(I', \mathbf{r}_0')\).
+- Region 2 field: \(\mathbf{B}_2 = \mathbf{B}_{\mu_2}(I_t, \mathbf{r}_0)\).
+
+Sanity limits include \(\rho \to 0\) and \(\tau \to 1\) when \(\mu_1 = \mu_2\), \(\rho \to 1\), \(\tau \to 0\) when \(\mu_2 \to \infty\), and \(\rho \to -1\), \(\tau \to 2\) as \(\mu_2 \to 0\).
+
+Simulated and analytic \(|\mathbf{B}|\) profiles along vertical probe lines in each half-space provide a sensitive regression on permeability contrast handling.
+The automated regression focuses on the air-side probe, where the relative error
+stays below 40% despite the coarse grid and Dirichlet boundary at the outer box.
+
+## 10. Validation with an infinite straight wire
 
 To validate the solver, we model an infinite straight wire carrying current \(I\). The analytic magnetic field magnitude is
 \[
@@ -102,27 +173,35 @@ This reference captures the mathematical foundations and numerical choices embed
 For runtime and scaling heuristics, consult `docs/solver_performance.md`, which summarises
 benchmark data from the bundled tooling.
 
-## 9. Scenario Spec v0.1
+## 11. Scenario Spec v0.2
 
-The solver now ingests simulation descriptions authored as JSON documents. The
-schema is intentionally small to keep the C++ dependency surface minimal while
-leaving room for future extensions (materials with geometry, time timelines,
-etc.). A valid document contains the following top-level members:
+The solver ingests simulation descriptions authored as JSON documents. Version
+`0.2` extends the original schema with heterogeneous material regions while
+remaining backward compatible with `0.1` files. A valid document contains the
+following top-level members:
 
 | Field       | Type   | Notes |
 | ----------- | ------ | ----- |
-| `version`   | string | Must be `"0.1"` for the current ingestor. |
+| `version`   | string | `"0.2"` preferred; `"0.1"` is still recognised for uniform-material scenarios. |
 | `units`     | string | `"SI"` only; currents in amperes, lengths in metres. |
 | `domain`    | object | `{Lx, Ly, nx, ny}` define the rectangular grid centred on the origin; `dx = Lx / (nx-1)` and likewise for `dy`. |
-| `materials` | array  | Each entry defines `{name, mu_r}`; v0.1 uses a single uniform material. |
-| `regions`   | array  | Uniform background assignments: `{ "type": "uniform", "material": "air" }`. |
+| `boundary`  | object | Optional boundary condition override, e.g. `{ "type": "neumann" }`; defaults to Dirichlet when omitted. |
+| `materials` | array  | Each entry defines `{name, mu_r}` with unique names. |
+| `regions`   | array  | Evaluated in authoring order. Entries may be `{"type": "uniform", "material": ...}` to set the background, `{"type": "halfspace", "normal": [nx, ny], "offset": c, "material": ...}` for planar masks, and `{"type": "polygon", "vertices": [[x1, y1], …], "material": ...}` to paint arbitrary simple polygons. |
 | `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
-| `outputs`   | array  | Optional list of export requests. v0.1 supports `field_map` and `line_probe` records with stable `id`s, formats (CSV), and target paths. |
+| `magnet_regions` | array | Optional list of magnetised shapes with uniform magnetisation vectors, e.g. polygon loops or axis-aligned rectangles. |
+| `outputs`   | array  | Optional list of export requests. `field_map` records support `quantity` values `"B"`, `"H"`, `"BH"`, or `"energy_density"`; `line_probe` records accept `"Bmag"`, `"Bx"`, `"By"`, `"Hx"`, `"Hy"`, `"Hmag"`, or `"energy_density"`. All outputs are emitted as CSV. |
 
-The C++ helper `loadScenarioFromJson` performs structural validation and
-produces a `ScenarioSpec`. `rasterizeScenarioToGrid` then deposits current
-density and background permeability directly onto a `Grid2D`. The default `main`
-executable wires these steps together:
+`loadScenarioFromJson` validates the structure, normalises half-space normals,
+and stores the resulting material masks. `rasterizeScenarioToGrid` then deposits
+current density and inverse permeability onto a `Grid2D`. Later region entries
+override earlier ones so authors can compose layered masks (e.g. a uniform
+background followed by multiple half-spaces or polygons that carve out
+subdomains). Polygon masks use an even–odd rule on the provided vertex loop and
+honour region order, making it easy to emulate cut-outs (e.g. an outer iron
+annulus followed by an inner air bore).
+
+The default CLI continues to wire these stages together:
 
 ```text
 JSON spec → ScenarioSpec → rasterise to Grid2D → solve A_z → compute B
@@ -131,8 +210,8 @@ JSON spec → ScenarioSpec → rasterise to Grid2D → solve A_z → compute B
 Two helper layers keep authoring ergonomic:
 
 1. `python/scenario_api.py` exposes dataclasses mirroring the schema and a
-   `Scenario.save_json()` convenience. Agents can write scenarios in Python,
-   validate them, and emit the JSON artefact in one go.
+   `Scenario.save_json()` convenience. The API now includes a `HalfspaceRegion`
+   primitive alongside the existing `UniformRegion`.
 2. `motor_sim --scenario path/to.json --solve [--list-outputs] [--outputs ids]`
    loads the spec, solves the magnetostatic system, and emits any outputs
    declared in the JSON. Use `--list-outputs` to inspect available IDs and
@@ -144,56 +223,38 @@ The `sources` list supports multiple wire entries. Each is rasterised as a disk
 with constant current density `J_z = I / (π r²)` applied to cells whose centres
 fall inside the radius. `tests/two_wire_cancel_test.cpp` integrates these cells
 to confirm that the deposited current matches the requested value to within
-15%, providing a regression guard on the rasteriser.
+15%, providing a regression guard on the rasteriser. Magnetised regions live in
+`magnet_regions`; each entry supplies a shape (`polygon` with vertices or
+`rect` with `x_range`/`y_range`) plus a magnetisation vector `magnetization`
+given either as `[Mx, My]` or `{ "Mx": ..., "My": ... }`. Overlapping entries
+add their vectors. Bound currents are generated from the resulting discrete
+curl, so partial coverage and composite magnets are supported.
 
 Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
 introduced without breaking the base schema because the parser ignores unknown
-members. Geometry primitives beyond uniform regions should extend the `regions`
-array with new `type` variants when the solver grows material heterogeneity.
+members. Additional geometry primitives should extend the `regions` array with
+new `type` variants as needed.
 
-### 9.1 Output requests
+### 10.1 Output requests
 
 Output definitions live alongside the physical description so scenarios are
-self-documenting and reproducible. Two request flavours are implemented in v0.1:
+self-documenting and reproducible. Two request flavours remain available:
 
-* **Field maps** (`{"type":"field_map", "id":"domain_field", "quantity":"B", "path":"outputs/two_wire_field_map.csv"}`)
-  dump the full `B` field over the grid. The CSV contains `x,y,Bx,By,Bmag`, and
-  the path defaults to `outputs/<id>.csv` when omitted.
-* **Line probes** (`{"type":"line_probe", "axis":"x", "value":0.0, "quantity":"Bmag"}`)
+* **Field maps** (`{"type":"field_map", "id":"domain_field", "quantity":"BH", "path":"outputs/domain_bh.csv"}`)
+  dump full-grid data. The CSV always starts with `x,y` and then includes
+  whichever columns match the requested quantity: `B` (`Bx,By,Bmag`), `H`
+  (`Hx,Hy,Hmag`), `BH` (both sets), or `energy_density` (both sets plus
+  `EnergyDensity`). Paths default to `outputs/<id>.csv` when omitted.
+* **Line probes** (`{"type":"line_probe", "axis":"x", "value":0.0, "quantity":"energy_density"}`)
   sample a horizontal or vertical line aligned with the grid. Specify `axis`
-  (`"x"` or `"y"`), the coordinate to lock, the field component (`Bx`, `By`, or
-  `Bmag`), and an output path. The ingestor validates that the requested line
-  lands on an existing grid column/row.
+  (`"x"` or `"y"`), the coordinate to lock, the field component (`Bx`, `By`,
+  `Bmag`, `Hx`, `Hy`, `Hmag`, or `energy_density`), and an output path. The
+  ingestor validates that the requested line lands on an existing grid column or
+  row.
 
 Python authors can build these records via
 `scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as
 `python/visualize_scenario_field.py` consumes the emitted CSV to produce quick
 look plots for scenario debugging.
 
-### 9.2 Analytic reference: counter-wound wires
-
-The canonical regression scenario positions two parallel conductors at
-`(-a, 0)` and `(+a, 0)` with equal and opposite currents (`I` and `-I`) along the
-`+z` axis. Treating the wires as infinitely long, the magnetic field at any point
-`(x, y)` in the plane is obtained by superposing the Biot–Savart contribution of
-each wire:
-
-```
-Bx(x, y) = Σ_k μ0 I_k / (2π r_k²) * -(y - y_k)
-By(x, y) = Σ_k μ0 I_k / (2π r_k²) *  (x - x_k)
-```
-
-where `r_k² = (x - x_k)² + (y - y_k)²`. Along the vertical midline (`x = 0`) the
-horizontal component cancels (`Bx = 0`), but the vertical component reinforces to
-
-```
-By(0, y) = μ0 I a / (π (a² + y²)).
-```
-
-This explains why the simulated field map shows finite magnitude between the
-counter-wound pair: only co-directional currents annihilate the field on the
-midline. The regression test `tests/two_wire_cancel_test.cpp` samples both the
-vertical midline and the horizontal centreline, comparing the numerical `B`
-vector against the analytic expression above and reporting the average relative
-error. The same test still integrates `J_z` over each source disk to guard the
-current rasteriser.
+### 10.2 Analytic reference: counter-wound wires
