@@ -17,6 +17,17 @@ The build directory is never committed (`.gitignore` keeps it clean). Tests live
 under `tests/` and are surfaced through CTest so they can be executed both from
 the terminal and IDE integrations.
 
+Key runtime flags for `motor_sim`:
+
+* `--solver {sor|cg}` toggles between the legacy Gauss–Seidel solver and the new preconditioned conjugate gradient (default is
+  SOR for continuity).
+* `--warm-start` reuses the previous frame's field as the initial guess when traversing a timeline, dramatically cutting CG
+  iterations.
+* `--use-prolongation` seeds the fine-grid solve from an automatically selected coarse solve; adjust with `--coarse-nx/--coarse-ny`.
+* `--progress-every <seconds>` controls the live progress cadence (default 2 s). Pair with `--snapshot-every <iters>` to enable
+  diagnostic field dumps requested by progress sinks.
+* `--quiet` suppresses progress output when scripting multiple runs.
+
 ## 2. VS Code configuration
 
 The repo ships with `.vscode/` settings tuned for the `CMake Tools` and `C/C++`

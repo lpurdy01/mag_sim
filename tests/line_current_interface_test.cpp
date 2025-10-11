@@ -2,6 +2,7 @@
 #include "motorsim/solver.hpp"
 #include "motorsim/types.hpp"
 
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -32,7 +33,7 @@ struct ErrorSummary {
 
 ErrorSummary run_case(const motorsim::ScenarioSpec& baseSpec, double mu_r_right,
                       motorsim::ScenarioSpec::BoundaryType boundary, double sample_offset,
-                      double max_probe_y) {
+                      double max_probe_y, motorsim::SolverKind solverKind) {
     using namespace motorsim;
 
     ScenarioSpec spec = baseSpec;
@@ -71,8 +72,9 @@ ErrorSummary run_case(const motorsim::ScenarioSpec& baseSpec, double mu_r_right,
     options.maxIters = 25000;
     options.tol = 5e-6;
     options.omega = 1.6;
+    options.kind = solverKind;
 
-    const SolveReport report = solveAz_GS_SOR(grid, options);
+    const SolveResult report = solveAz(grid, options);
     if (!report.converged || !(report.relResidual < options.tol)) {
         std::cerr << "line_current_interface_test: warning relResidual=" << report.relResidual
                   << " (tol=" << options.tol << ")\n";
@@ -165,50 +167,94 @@ int main() {
         {100.0, 0.20, 0.70},
     };
 
-    ErrorSummary referenceDirichlet{};
+    ErrorSummary referenceDirichletSor{};
     for (const auto& entry : dirichlet_cases) {
-        const ErrorSummary summary =
+        const ErrorSummary sorSummary =
             run_case(baseSpec, entry.mu_r_right, ScenarioSpec::BoundaryType::Dirichlet, sample_offset,
-                     max_probe_y);
-        if (!(summary.relResidual < 2e-1)) {
-            std::cerr << "line_current_interface_test: Dirichlet solver residual=" << summary.relResidual
+                     max_probe_y, motorsim::SolverKind::SOR);
+        const ErrorSummary cgSummary =
+            run_case(baseSpec, entry.mu_r_right, ScenarioSpec::BoundaryType::Dirichlet, sample_offset,
+                     max_probe_y, motorsim::SolverKind::CG);
+
+        if (!(sorSummary.relResidual < 2e-1)) {
+            std::cerr << "line_current_interface_test: Dirichlet solver residual=" << sorSummary.relResidual
                       << " exceeds guard 0.2\n";
             return 1;
         }
-        if (!(summary.leftRelErr < entry.leftTol)) {
-            std::cerr << "line_current_interface_test: Dirichlet left relErr=" << summary.leftRelErr
+        if (!(sorSummary.leftRelErr < entry.leftTol)) {
+            std::cerr << "line_current_interface_test: Dirichlet left relErr=" << sorSummary.leftRelErr
                       << " exceeds tol=" << entry.leftTol << " for mu_r_right=" << entry.mu_r_right << "\n";
             return 1;
         }
-        if (!(summary.rightRelErr < entry.rightTol)) {
-            std::cerr << "line_current_interface_test: Dirichlet right relErr=" << summary.rightRelErr
+        if (!(sorSummary.rightRelErr < entry.rightTol)) {
+            std::cerr << "line_current_interface_test: Dirichlet right relErr=" << sorSummary.rightRelErr
                       << " exceeds tol=" << entry.rightTol << " for mu_r_right=" << entry.mu_r_right << "\n";
             return 1;
         }
-        referenceDirichlet = summary;
+        if (!(cgSummary.relResidual <= sorSummary.relResidual * 1.1 + 1e-12)) {
+            std::cerr << "line_current_interface_test: Dirichlet CG residual=" << cgSummary.relResidual
+                      << " exceeds parity bound relative to SOR " << sorSummary.relResidual << "\n";
+            return 1;
+        }
+        if (!(cgSummary.leftRelErr <= sorSummary.leftRelErr + 0.02)) {
+            std::cerr << "line_current_interface_test: Dirichlet CG left relErr=" << cgSummary.leftRelErr
+                      << " exceeds parity slack relative to SOR " << sorSummary.leftRelErr << "\n";
+            return 1;
+        }
+        if (!(cgSummary.rightRelErr <= sorSummary.rightRelErr + 0.02)) {
+            std::cerr << "line_current_interface_test: Dirichlet CG right relErr=" << cgSummary.rightRelErr
+                      << " exceeds parity slack relative to SOR " << sorSummary.rightRelErr << "\n";
+            return 1;
+        }
+
+        referenceDirichletSor = sorSummary;
         std::cout << "line_current_interface_test: mu_r_right=" << entry.mu_r_right
-                  << ", boundary=Dirichlet, leftRelErr=" << summary.leftRelErr
-                  << ", rightRelErr=" << summary.rightRelErr << '\n';
+                  << ", boundary=Dirichlet (SOR) leftRelErr=" << sorSummary.leftRelErr
+                  << ", rightRelErr=" << sorSummary.rightRelErr << '\n';
+        std::cout << "line_current_interface_test: mu_r_right=" << entry.mu_r_right
+                  << ", boundary=Dirichlet (CG) leftRelErr=" << cgSummary.leftRelErr
+                  << ", rightRelErr=" << cgSummary.rightRelErr << '\n';
     }
 
-    const ErrorSummary neumann_summary =
-        run_case(baseSpec, 100.0, ScenarioSpec::BoundaryType::Neumann, sample_offset, max_probe_y);
-    std::cout << "line_current_interface_test: mu_r_right=100.0, boundary=Neumann, leftRelErr="
-              << neumann_summary.leftRelErr << ", rightRelErr=" << neumann_summary.rightRelErr << '\n';
+    const ErrorSummary neumannSor =
+        run_case(baseSpec, 100.0, ScenarioSpec::BoundaryType::Neumann, sample_offset, max_probe_y,
+                 motorsim::SolverKind::SOR);
+    const ErrorSummary neumannCg =
+        run_case(baseSpec, 100.0, ScenarioSpec::BoundaryType::Neumann, sample_offset, max_probe_y,
+                 motorsim::SolverKind::CG);
+    std::cout << "line_current_interface_test: mu_r_right=100.0, boundary=Neumann (SOR) leftRelErr="
+              << neumannSor.leftRelErr << ", rightRelErr=" << neumannSor.rightRelErr << '\n';
+    std::cout << "line_current_interface_test: mu_r_right=100.0, boundary=Neumann (CG) leftRelErr="
+              << neumannCg.leftRelErr << ", rightRelErr=" << neumannCg.rightRelErr << '\n';
 
-    if (!(neumann_summary.relResidual < 2e-1)) {
-        std::cerr << "line_current_interface_test: Neumann solver residual=" << neumann_summary.relResidual
+    if (!(neumannSor.relResidual < 2e-1)) {
+        std::cerr << "line_current_interface_test: Neumann solver residual=" << neumannSor.relResidual
                   << " exceeds guard 0.2\n";
         return 1;
     }
-    if (!(neumann_summary.leftRelErr < 0.25)) {
-        std::cerr << "line_current_interface_test: Neumann left error " << neumann_summary.leftRelErr
+    if (!(neumannSor.leftRelErr < 0.25)) {
+        std::cerr << "line_current_interface_test: Neumann left error " << neumannSor.leftRelErr
                   << " exceeds tolerance 0.25\n";
         return 1;
     }
-    if (!(neumann_summary.rightRelErr < referenceDirichlet.rightRelErr)) {
+    if (!(neumannSor.rightRelErr < referenceDirichletSor.rightRelErr)) {
         std::cerr << "line_current_interface_test: Neumann right error did not improve ("
-                  << neumann_summary.rightRelErr << " vs " << referenceDirichlet.rightRelErr << ")\n";
+                  << neumannSor.rightRelErr << " vs " << referenceDirichletSor.rightRelErr << ")\n";
+        return 1;
+    }
+    if (!(neumannCg.relResidual <= neumannSor.relResidual * 1.1 + 1e-12)) {
+        std::cerr << "line_current_interface_test: Neumann CG residual=" << neumannCg.relResidual
+                  << " exceeds parity bound relative to SOR " << neumannSor.relResidual << "\n";
+        return 1;
+    }
+    if (!(neumannCg.leftRelErr <= neumannSor.leftRelErr + 0.02)) {
+        std::cerr << "line_current_interface_test: Neumann CG left relErr=" << neumannCg.leftRelErr
+                  << " exceeds parity slack relative to SOR " << neumannSor.leftRelErr << "\n";
+        return 1;
+    }
+    if (!(neumannCg.rightRelErr <= neumannSor.rightRelErr + 0.02)) {
+        std::cerr << "line_current_interface_test: Neumann CG right relErr=" << neumannCg.rightRelErr
+                  << " exceeds parity slack relative to SOR " << neumannSor.rightRelErr << "\n";
         return 1;
     }
 

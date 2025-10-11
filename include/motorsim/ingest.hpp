@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -217,6 +218,23 @@ struct ScenarioSpec {
     BoundaryType boundaryType{BoundaryType::Dirichlet};
     Outputs outputs;
     std::vector<TimelineFrame> timeline;
+
+    struct SolverSettings {
+        bool solverSpecified{false};
+        std::string solverId{"sor"};
+        bool warmStartSpecified{false};
+        bool warmStart{false};
+        bool prolongationSpecified{false};
+        bool prolongationEnabled{false};
+        std::optional<std::size_t> prolongationNx;
+        std::optional<std::size_t> prolongationNy;
+        bool progressEverySecSpecified{false};
+        double progressEverySec{0.0};
+        bool snapshotEveryItersSpecified{false};
+        std::size_t snapshotEveryIters{0};
+        bool quietSpecified{false};
+        bool quiet{false};
+    } solverSettings;
 };
 
 ScenarioSpec loadScenarioFromJson(const std::string& path);

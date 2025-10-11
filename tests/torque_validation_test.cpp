@@ -4,6 +4,7 @@
 #include "motorsim/solver.hpp"
 #include "motorsim/types.hpp"
 
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -15,8 +16,7 @@ constexpr double kPi = 3.14159265358979323846;
 
 struct SolveOutcome {
     motorsim::Grid2D grid;
-    bool converged{false};
-    double relResidual{0.0};
+    motorsim::SolveResult result{};
 };
 
 motorsim::ScenarioSpec rotate_magnet(const motorsim::ScenarioSpec& base, double angleDeg) {
@@ -33,7 +33,7 @@ motorsim::ScenarioSpec rotate_magnet(const motorsim::ScenarioSpec& base, double 
     return rotated;
 }
 
-SolveOutcome solve_scenario(const motorsim::ScenarioSpec& spec) {
+SolveOutcome solve_scenario(const motorsim::ScenarioSpec& spec, motorsim::SolverKind solverKind) {
     motorsim::Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
     rasterizeScenarioToGrid(spec, grid);
 
@@ -43,13 +43,14 @@ SolveOutcome solve_scenario(const motorsim::ScenarioSpec& spec) {
     options.omega = 1.7;
     options.verbose = false;
 
-    const motorsim::SolveReport report = solveAz_GS_SOR(grid, options);
-    SolveOutcome outcome{std::move(grid), report.converged, report.relResidual};
-    if (!report.converged || !(report.relResidual < options.tol)) {
-        return outcome;
+    options.kind = solverKind;
+
+    SolveOutcome outcome{std::move(grid), {}};
+    outcome.result = solveAz(outcome.grid, options);
+    if (outcome.result.converged && outcome.result.relResidual < options.tol) {
+        computeB(outcome.grid);
+        computeH(outcome.grid);
     }
-    computeB(outcome.grid);
-    computeH(outcome.grid);
     return outcome;
 }
 
@@ -97,12 +98,6 @@ int main() {
         return 1;
     }
 
-    SolveOutcome baseOutcome = solve_scenario(baseSpec);
-    if (!baseOutcome.converged || !(baseOutcome.relResidual < 2.5e-6)) {
-        std::cerr << "Base frame failed to converge (relResidual=" << baseOutcome.relResidual << ")" << '\n';
-        return 1;
-    }
-
     const double margin = 0.004;
     const double loopMinX = magnet.min_x - margin;
     const double loopMaxX = magnet.max_x + margin;
@@ -112,84 +107,143 @@ int main() {
     std::vector<double> loopXs{loopMinX, loopMaxX, loopMaxX, loopMinX};
     std::vector<double> loopYs{loopMinY, loopMinY, loopMaxY, loopMaxY};
 
-    StressTensorResult stress;
-    try {
-        stress = evaluate_maxwell_stress_probe(baseOutcome.grid, baseSpec.originX, baseSpec.originY,
-                                               baseSpec.dx, baseSpec.dy, loopXs, loopYs);
-    } catch (const std::exception& ex) {
-        std::cerr << "Failed to evaluate Maxwell stress probe: " << ex.what() << '\n';
-        return 1;
-    }
+    struct SolverMetrics {
+        SolveOutcome base;
+        SolveOutcome minus;
+        SolveOutcome plus;
+        double mstTorque{0.0};
+        double dipoleTorque{0.0};
+        double relDiffDipole{0.0};
+        double virtualTorque{0.0};
+        double relDiffVirtual{0.0};
+    };
 
-    double sumBy = 0.0;
-    std::size_t magnetSamples = 0;
-    for (std::size_t j = 0; j < baseSpec.ny; ++j) {
-        const double y = baseSpec.originY + static_cast<double>(j) * baseSpec.dy;
-        if (y < magnet.min_y || y > magnet.max_y) {
-            continue;
-        }
-        for (std::size_t i = 0; i < baseSpec.nx; ++i) {
-            const double x = baseSpec.originX + static_cast<double>(i) * baseSpec.dx;
-            if (x < magnet.min_x || x > magnet.max_x) {
-                continue;
-            }
-            const std::size_t idx = baseOutcome.grid.idx(i, j);
-            sumBy += baseOutcome.grid.By[idx];
-            ++magnetSamples;
-        }
-    }
-    if (magnetSamples == 0) {
-        std::cerr << "No grid samples found inside magnet" << '\n';
-        return 1;
-    }
+    const std::array<std::pair<SolverKind, const char*>, 2> solverCases = {
+        std::make_pair(SolverKind::SOR, "SOR"),
+        std::make_pair(SolverKind::CG, "CG")};
 
-    const double avgBy = sumBy / static_cast<double>(magnetSamples);
-    const double dipoleTorque = magnetArea * magnet.Mx * avgBy;
-    if (!(dipoleTorque > 0.0)) {
-        std::cerr << "Expected positive dipole torque estimate, got " << dipoleTorque << '\n';
-        return 1;
-    }
-
-    const double mstTorque = stress.torqueZ;
-    if (!(mstTorque > 0.0)) {
-        std::cerr << "Expected positive Maxwell stress torque, got " << mstTorque << '\n';
-        return 1;
-    }
-
-    const double relDiffDipole = std::abs(mstTorque - dipoleTorque) / dipoleTorque;
-    if (!(relDiffDipole < 0.2)) {
-        std::cerr << "MST torque " << mstTorque << " differs from dipole estimate " << dipoleTorque
-                  << " by relDiff=" << relDiffDipole << '\n';
-        return 1;
-    }
+    std::array<SolverMetrics, 2> metrics{};
 
     const double deltaAngleDeg = 5.0;
     const ScenarioSpec specMinus = rotate_magnet(baseSpec, -deltaAngleDeg);
     const ScenarioSpec specPlus = rotate_magnet(baseSpec, deltaAngleDeg);
-
-    SolveOutcome minusOutcome = solve_scenario(specMinus);
-    SolveOutcome plusOutcome = solve_scenario(specPlus);
-    if (!minusOutcome.converged || !(minusOutcome.relResidual < 2.5e-6) || !plusOutcome.converged ||
-        !(plusOutcome.relResidual < 2.5e-6)) {
-        std::cerr << "Virtual-work frames failed to converge" << '\n';
-        return 1;
-    }
-
-    const double energyMinus = compute_interaction_energy(minusOutcome.grid, specMinus);
-    const double energyPlus = compute_interaction_energy(plusOutcome.grid, specPlus);
     const double deltaAngleRad = deltaAngleDeg * kPi / 180.0;
-    const double virtualTorque = -(energyPlus - energyMinus) / (2.0 * deltaAngleRad);
 
-    const double relDiffVirtual = std::abs(mstTorque - virtualTorque) / std::max(1e-9, std::abs(virtualTorque));
-    if (!(relDiffVirtual < 0.25)) {
-        std::cerr << "Virtual-work torque " << virtualTorque << " differs from MST torque " << mstTorque
-                  << " by relDiff=" << relDiffVirtual << '\n';
+    for (std::size_t idx = 0; idx < solverCases.size(); ++idx) {
+        const auto [solverKind, label] = solverCases[idx];
+        SolverMetrics& m = metrics[idx];
+
+        m.base = solve_scenario(baseSpec, solverKind);
+        if (!m.base.result.converged || !(m.base.result.relResidual < 2.5e-6)) {
+            std::cerr << label << " base frame failed to converge (relResidual=" << m.base.result.relResidual
+                      << ")" << '\n';
+            return 1;
+        }
+
+        StressTensorResult stress;
+        try {
+            stress = evaluate_maxwell_stress_probe(m.base.grid, baseSpec.originX, baseSpec.originY,
+                                                   baseSpec.dx, baseSpec.dy, loopXs, loopYs);
+        } catch (const std::exception& ex) {
+            std::cerr << label << ": failed to evaluate Maxwell stress probe: " << ex.what() << '\n';
+            return 1;
+        }
+
+        double sumBy = 0.0;
+        std::size_t magnetSamples = 0;
+        for (std::size_t j = 0; j < baseSpec.ny; ++j) {
+            const double y = baseSpec.originY + static_cast<double>(j) * baseSpec.dy;
+            if (y < magnet.min_y || y > magnet.max_y) {
+                continue;
+            }
+            for (std::size_t i = 0; i < baseSpec.nx; ++i) {
+                const double x = baseSpec.originX + static_cast<double>(i) * baseSpec.dx;
+                if (x < magnet.min_x || x > magnet.max_x) {
+                    continue;
+                }
+                const std::size_t gidx = m.base.grid.idx(i, j);
+                sumBy += m.base.grid.By[gidx];
+                ++magnetSamples;
+            }
+        }
+        if (magnetSamples == 0) {
+            std::cerr << label << ": no grid samples found inside magnet" << '\n';
+            return 1;
+        }
+
+        const double avgBy = sumBy / static_cast<double>(magnetSamples);
+        m.dipoleTorque = magnetArea * magnet.Mx * avgBy;
+        if (!(m.dipoleTorque > 0.0)) {
+            std::cerr << label << ": expected positive dipole torque estimate, got " << m.dipoleTorque << '\n';
+            return 1;
+        }
+
+        m.mstTorque = stress.torqueZ;
+        if (!(m.mstTorque > 0.0)) {
+            std::cerr << label << ": expected positive Maxwell stress torque, got " << m.mstTorque << '\n';
+            return 1;
+        }
+
+        m.relDiffDipole = std::abs(m.mstTorque - m.dipoleTorque) / m.dipoleTorque;
+        if (!(m.relDiffDipole < 0.2)) {
+            std::cerr << label << ": MST torque " << m.mstTorque << " differs from dipole estimate "
+                      << m.dipoleTorque << " by relDiff=" << m.relDiffDipole << '\n';
+            return 1;
+        }
+
+        m.minus = solve_scenario(specMinus, solverKind);
+        m.plus = solve_scenario(specPlus, solverKind);
+        if (!m.minus.result.converged || !(m.minus.result.relResidual < 2.5e-6) || !m.plus.result.converged ||
+            !(m.plus.result.relResidual < 2.5e-6)) {
+            std::cerr << label << ": virtual-work frames failed to converge" << '\n';
+            return 1;
+        }
+
+        const double energyMinus = compute_interaction_energy(m.minus.grid, specMinus);
+        const double energyPlus = compute_interaction_energy(m.plus.grid, specPlus);
+        m.virtualTorque = -(energyPlus - energyMinus) / (2.0 * deltaAngleRad);
+
+        m.relDiffVirtual = std::abs(m.mstTorque - m.virtualTorque) /
+                           std::max(1e-9, std::abs(m.virtualTorque));
+        if (!(m.relDiffVirtual < 0.25)) {
+            std::cerr << label << ": virtual-work torque " << m.virtualTorque
+                      << " differs from MST torque " << m.mstTorque
+                      << " by relDiff=" << m.relDiffVirtual << '\n';
+            return 1;
+        }
+    }
+
+    const SolverMetrics& sorMetrics = metrics[0];
+    const SolverMetrics& cgMetrics = metrics[1];
+
+    const double torqueDenom = std::max({std::abs(sorMetrics.mstTorque), 1.0, std::abs(cgMetrics.mstTorque)});
+    const double torqueRelDiff = std::abs(sorMetrics.mstTorque - cgMetrics.mstTorque) / torqueDenom;
+    if (torqueRelDiff > 0.02) {
+        std::cerr << "CG MST torque deviates from SOR (relDiff=" << torqueRelDiff << ")" << '\n';
         return 1;
     }
 
-    std::cout << "TorqueValidation: mst=" << mstTorque << " dipole=" << dipoleTorque
-              << " relDiffDipole=" << relDiffDipole << " virtual=" << virtualTorque
-              << " relDiffVirtual=" << relDiffVirtual << '\n';
+    const double dipoleDenom = std::max({std::abs(sorMetrics.dipoleTorque), 1.0, std::abs(cgMetrics.dipoleTorque)});
+    if (std::abs(sorMetrics.dipoleTorque - cgMetrics.dipoleTorque) / dipoleDenom > 0.02) {
+        std::cerr << "CG dipole torque deviates from SOR" << '\n';
+        return 1;
+    }
+
+    if (std::abs(sorMetrics.virtualTorque - cgMetrics.virtualTorque) /
+            std::max({std::abs(sorMetrics.virtualTorque), 1.0, std::abs(cgMetrics.virtualTorque)}) > 0.05) {
+        std::cerr << "CG virtual torque deviates from SOR" << '\n';
+        return 1;
+    }
+
+    const double sorResidualBound = sorMetrics.base.result.relResidual * 1.1 + 1e-12;
+    if (cgMetrics.base.result.relResidual > sorResidualBound) {
+        std::cerr << "CG residual exceeds SOR baseline" << '\n';
+        return 1;
+    }
+
+    std::cout << "TorqueValidation: mst=" << sorMetrics.mstTorque << " dipole=" << sorMetrics.dipoleTorque
+              << " relDiffDipole=" << sorMetrics.relDiffDipole << " virtual=" << sorMetrics.virtualTorque
+              << " relDiffVirtual=" << sorMetrics.relDiffVirtual << '\n';
 
     return 0;
 }
