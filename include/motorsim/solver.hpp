@@ -6,7 +6,18 @@
 
 #include "grid.hpp"
 
+#include <chrono>
+#include <functional>
+
 namespace motorsim {
+
+/**
+ * @brief Snapshot of the iterative solver's progress.
+ */
+struct SolverProgress {
+    std::size_t iteration{0};
+    double relResidual{0.0};
+};
 
 /**
  * @brief Solver options controlling the Gauss–Seidel / SOR iteration.
@@ -16,6 +27,8 @@ struct SolveOptions {
     double tol{1e-6};
     double omega{1.7};
     bool verbose{false};
+    std::chrono::steady_clock::duration progressInterval{std::chrono::steady_clock::duration::zero()};
+    std::function<void(const SolverProgress&)> progressCallback{};
 };
 
 /**

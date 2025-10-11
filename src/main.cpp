@@ -7,14 +7,17 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <sstream>
+#include <mutex>
 #include <system_error>
 #include <string>
 #include <unordered_map>
@@ -76,6 +79,226 @@ struct FrameRunResult {
     };
     std::vector<VtkSeriesFrame> vtkSeriesFrames;
     std::vector<BoreSample> boreSamples;
+};
+
+struct FrameProgressSnapshot {
+    std::size_t frameIndex{0};
+    double frameTime{0.0};
+    bool hasTime{false};
+    bool active{false};
+    bool completed{false};
+    bool success{false};
+    std::size_t lastIteration{0};
+    double lastResidual{0.0};
+    std::chrono::steady_clock::time_point lastUpdate{};
+};
+
+class FrameProgressState {
+public:
+    FrameProgressState(std::size_t index, double timeValue, bool hasTimeValue)
+        : frameIndex(index), frameTime(timeValue), hasTime(hasTimeValue), lastUpdate(Clock::now()) {}
+
+    void markStarted() {
+        std::lock_guard<std::mutex> lock(mutex);
+        active = true;
+        completed = false;
+        success = false;
+        lastIteration = 0;
+        lastResidual = 0.0;
+        lastUpdate = Clock::now();
+    }
+
+    void update(std::size_t iteration, double residual) {
+        std::lock_guard<std::mutex> lock(mutex);
+        active = true;
+        lastIteration = iteration;
+        lastResidual = residual;
+        lastUpdate = Clock::now();
+    }
+
+    void markFinished(std::size_t iteration, double residual, bool didSucceed) {
+        std::lock_guard<std::mutex> lock(mutex);
+        active = false;
+        completed = true;
+        success = didSucceed;
+        lastIteration = iteration;
+        lastResidual = residual;
+        lastUpdate = Clock::now();
+    }
+
+    FrameProgressSnapshot snapshot() const {
+        std::lock_guard<std::mutex> lock(mutex);
+        FrameProgressSnapshot snap{};
+        snap.frameIndex = frameIndex;
+        snap.frameTime = frameTime;
+        snap.hasTime = hasTime;
+        snap.active = active;
+        snap.completed = completed;
+        snap.success = success;
+        snap.lastIteration = lastIteration;
+        snap.lastResidual = lastResidual;
+        snap.lastUpdate = lastUpdate;
+        return snap;
+    }
+
+    const std::size_t frameIndex;
+    const double frameTime;
+    const bool hasTime;
+
+private:
+    using Clock = std::chrono::steady_clock;
+
+    mutable std::mutex mutex;
+    bool active{false};
+    bool completed{false};
+    bool success{false};
+    std::size_t lastIteration{0};
+    double lastResidual{0.0};
+    Clock::time_point lastUpdate;
+};
+
+class ProgressPrinter {
+public:
+    ProgressPrinter(std::vector<std::shared_ptr<FrameProgressState>> states,
+                    std::chrono::steady_clock::duration interval)
+        : states_(std::move(states)), interval_(interval) {
+        if (!states_.empty() && interval_ > std::chrono::steady_clock::duration::zero()) {
+            worker_ = std::thread([this]() { run(); });
+        }
+    }
+
+    ~ProgressPrinter() { stop(); }
+
+    void stop() {
+        const bool wasRunning = !stopped_.exchange(true);
+        if (wasRunning && worker_.joinable()) {
+            worker_.join();
+        }
+        if (!states_.empty() && !finalPrinted_.exchange(true)) {
+            printStatus(true);
+        }
+    }
+
+private:
+    void run() {
+        while (!stopped_.load()) {
+            std::this_thread::sleep_for(interval_);
+            if (stopped_.load()) {
+                break;
+            }
+            const bool finished = printStatus(false);
+            if (finished) {
+                finalPrinted_.store(true);
+                break;
+            }
+        }
+    }
+
+    bool printStatus(bool force) {
+        if (states_.empty()) {
+            return true;
+        }
+
+        std::vector<FrameProgressSnapshot> snapshots;
+        snapshots.reserve(states_.size());
+        for (const auto& state : states_) {
+            snapshots.push_back(state->snapshot());
+        }
+
+        std::size_t completed = 0;
+        std::size_t active = 0;
+        std::size_t failed = 0;
+        for (const auto& snap : snapshots) {
+            if (snap.completed) {
+                ++completed;
+                if (!snap.success) {
+                    ++failed;
+                }
+            }
+            if (snap.active) {
+                ++active;
+            }
+        }
+
+        if (!force && completed == 0 && active == 0) {
+            return false;
+        }
+
+        const std::size_t total = snapshots.size();
+        const std::size_t queued = total > (completed + active) ? total - completed - active : 0;
+
+        std::ostringstream oss;
+        oss << "[progress] completed " << completed << "/" << total;
+        if (failed > 0) {
+            oss << " (failed: " << failed << ")";
+        }
+        oss << " frames; active: " << active << "; queued: " << queued << '\n';
+
+        const auto now = std::chrono::steady_clock::now();
+        for (const auto& snap : snapshots) {
+            if (!snap.active) {
+                continue;
+            }
+            oss << "    Frame " << snap.frameIndex;
+            if (snap.hasTime) {
+                oss << " (t=" << snap.frameTime << " s)";
+            }
+            oss << " iter=" << snap.lastIteration;
+            if (snap.lastIteration > 0) {
+                std::ostringstream residualStream;
+                residualStream.setf(std::ios::scientific, std::ios::floatfield);
+                residualStream << std::setprecision(3) << snap.lastResidual;
+                oss << " relResidual=" << residualStream.str();
+            }
+            const auto ageSeconds =
+                std::chrono::duration_cast<std::chrono::seconds>(now - snap.lastUpdate).count();
+            if (ageSeconds > 0) {
+                oss << " (updated " << ageSeconds << "s ago)";
+            }
+            oss << '\n';
+        }
+
+        std::cout << oss.str();
+        std::cout.flush();
+
+        return completed == total;
+    }
+
+    std::vector<std::shared_ptr<FrameProgressState>> states_;
+    std::chrono::steady_clock::duration interval_;
+    std::atomic<bool> stopped_{false};
+    std::atomic<bool> finalPrinted_{false};
+    std::thread worker_{};
+};
+
+class FrameProgressGuard {
+public:
+    explicit FrameProgressGuard(FrameProgressState* state) : state_(state) {
+        if (state_) {
+            state_->markStarted();
+        }
+    }
+
+    FrameProgressGuard(const FrameProgressGuard&) = delete;
+    FrameProgressGuard& operator=(const FrameProgressGuard&) = delete;
+
+    ~FrameProgressGuard() {
+        if (state_) {
+            state_->markFinished(finalIterations_, finalResidual_, success_);
+        }
+    }
+
+    void markFinal(std::size_t iterations, double residual, bool success) {
+        finalIterations_ = iterations;
+        finalResidual_ = residual;
+        success_ = success;
+    }
+
+private:
+    FrameProgressState* state_{nullptr};
+    std::size_t finalIterations_{0};
+    double finalResidual_{0.0};
+    bool success_{false};
 };
 
 std::filesystem::path makeFramePath(const std::string& basePath, bool timelineActive,
@@ -263,24 +486,34 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
 
 FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::SolveOptions& options,
                           const OutputFilter& filter, bool timelineActive, std::size_t frameDigits,
-                          bool writeMidline) {
+                          bool writeMidline, FrameProgressState* progressState) {
     FrameRunResult result{};
     std::ostringstream out;
     std::ostringstream err;
+    FrameProgressGuard progressGuard(progressState);
 
     motorsim::Grid2D grid(frame.spec.nx, frame.spec.ny, frame.spec.dx, frame.spec.dy);
     try {
         motorsim::rasterizeScenarioToGrid(frame.spec, grid);
     } catch (const std::exception& ex) {
         err << "Frame " << frame.index << ": rasterisation error: " << ex.what() << '\n';
+        progressGuard.markFinal(0, 0.0, false);
         result.stderrLog = err.str();
         return result;
     }
 
-    const motorsim::SolveReport report = motorsim::solveAz_GS_SOR(grid, options);
+    motorsim::SolveOptions solveOptions = options;
+    if (progressState) {
+        solveOptions.progressCallback = [progressState](const motorsim::SolverProgress& progress) {
+            progressState->update(progress.iteration, progress.relResidual);
+        };
+    }
+
+    const motorsim::SolveReport report = motorsim::solveAz_GS_SOR(grid, solveOptions);
     if (!report.converged) {
         err << "Frame " << frame.index
             << ": solver did not converge. relResidual=" << report.relResidual << '\n';
+        progressGuard.markFinal(report.iters, report.relResidual, false);
         result.stderrLog = err.str();
         return result;
     }
@@ -810,6 +1043,7 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     result.outputError = outputError;
     result.stdoutLog = out.str();
     result.stderrLog = err.str();
+    progressGuard.markFinal(report.iters, report.relResidual, true);
     return result;
 }
 
@@ -1098,6 +1332,7 @@ int main(int argc, char** argv) {
     options.maxIters = maxItersOverride.value_or(20000);
     options.tol = tolOverride.value_or(1e-6);
     options.omega = omegaOverride.value_or(1.7);
+    options.progressInterval = std::chrono::seconds(2);
 
     OutputFilter filter{};
     filter.restrict = restrictOutputs;
@@ -1128,6 +1363,19 @@ int main(int argc, char** argv) {
         }
     }
 
+    std::vector<std::shared_ptr<FrameProgressState>> progressStates;
+    progressStates.reserve(frames.size());
+    for (const auto& frame : frames) {
+        const double frameTime = timelineActive ? frame.time : 0.0;
+        progressStates.push_back(
+            std::make_shared<FrameProgressState>(frame.index, frameTime, timelineActive));
+    }
+    auto printerInterval = options.progressInterval;
+    if (printerInterval <= std::chrono::steady_clock::duration::zero()) {
+        printerInterval = std::chrono::seconds(2);
+    }
+    ProgressPrinter progressPrinter(progressStates, printerInterval);
+
     if (runParallel) {
         std::cout << "Solving " << frames.size() << " frames with " << threadCount
                   << " worker threads\n";
@@ -1146,7 +1394,7 @@ int main(int argc, char** argv) {
                         break;
                     }
                     results[idx] = solveFrame(frames[idx], options, filter, timelineActive,
-                                              frameDigits, writeMidline);
+                                              frameDigits, writeMidline, progressStates[idx].get());
                 }
             });
         }
@@ -1155,10 +1403,12 @@ int main(int argc, char** argv) {
         }
     } else {
         for (std::size_t idx = 0; idx < frames.size(); ++idx) {
-            results[idx] =
-                solveFrame(frames[idx], options, filter, timelineActive, frameDigits, writeMidline);
+            results[idx] = solveFrame(frames[idx], options, filter, timelineActive, frameDigits,
+                                      writeMidline, progressStates[idx].get());
         }
     }
+
+    progressPrinter.stop();
 
     for (const auto& result : results) {
         if (!result.stdoutLog.empty()) {

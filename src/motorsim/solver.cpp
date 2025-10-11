@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <chrono>
 
 namespace motorsim {
 namespace {
@@ -37,6 +38,11 @@ SolveReport solveAz_GS_SOR(Grid2D& grid, const SolveOptions& options) {
         sumJ2 += value * value;
     }
     const double denom = std::sqrt(sumJ2 + 1e-30);
+
+    const auto interval = options.progressInterval;
+    const bool haveCallback = static_cast<bool>(options.progressCallback);
+    auto lastCallback = std::chrono::steady_clock::now();
+    bool firstCallback = true;
 
     for (std::size_t iter = 0; iter < options.maxIters; ++iter) {
         double residualNorm2 = 0.0;
@@ -95,6 +101,16 @@ SolveReport solveAz_GS_SOR(Grid2D& grid, const SolveOptions& options) {
         const double relResidual = std::sqrt(residualNorm2) / denom;
         report.relResidual = relResidual;
         report.iters = iter + 1;
+
+        if (haveCallback) {
+            const auto now = std::chrono::steady_clock::now();
+            if (firstCallback || interval.count() == 0 || now - lastCallback >= interval) {
+                options.progressCallback(SolverProgress{report.iters, relResidual});
+                lastCallback = now;
+                firstCallback = false;
+            }
+        }
+
         if (options.verbose) {
             std::cout << "Iteration " << report.iters << ": relResidual=" << relResidual << '\n';
         }
