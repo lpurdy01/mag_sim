@@ -86,6 +86,18 @@ std::string requireNonEmpty(const std::string& field, const std::string& value) 
     }
     return value;
 }
+
+double polygonArea(const std::vector<double>& xs, const std::vector<double>& ys) {
+    if (xs.size() != ys.size() || xs.size() < 3) {
+        return 0.0;
+    }
+    double area = 0.0;
+    const std::size_t count = xs.size();
+    for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
+        area += (xs[j] + xs[i]) * (ys[j] - ys[i]);
+    }
+    return 0.5 * std::abs(area);
+}
 }  // namespace
 
 ScenarioSpec loadScenarioFromJson(const std::string& path) {
@@ -272,18 +284,76 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     }
 
     spec.wires.clear();
+    spec.currentRegions.clear();
     spec.wires.reserve(sources.size());
+    spec.currentRegions.reserve(sources.size());
+    std::unordered_map<std::string, std::size_t> currentRegionIdToIndex;
+    std::unordered_map<std::string, std::vector<std::size_t>> phaseToCurrentRegions;
     for (const auto& source : sources) {
         const std::string type = source.at("type").get<std::string>();
-        if (type != "wire") {
+        if (type == "wire") {
+            ScenarioSpec::Wire wire{};
+            wire.x = source.at("x").get<double>();
+            wire.y = source.at("y").get<double>();
+            wire.radius = requirePositive("wire.radius", source.at("radius").get<double>());
+            wire.current = source.value("I", source.value("current", 0.0));
+            spec.wires.push_back(wire);
+        } else if (type == "current_region" || type == "current-region") {
+            ScenarioSpec::CurrentRegion region{};
+            if (source.contains("id")) {
+                region.id = requireNonEmpty("current_region.id", source.at("id").get<std::string>());
+                if (currentRegionIdToIndex.find(region.id) != currentRegionIdToIndex.end()) {
+                    throw std::runtime_error("Duplicate current_region id: " + region.id);
+                }
+            }
+            region.phase = source.value("phase", std::string{});
+            region.orientation = source.value("orientation", source.value("polarity", 1.0));
+            if (!(std::abs(region.orientation) > 0.0)) {
+                throw std::runtime_error("current_region orientation must be non-zero");
+            }
+            const auto& vertices = source.at("vertices");
+            if (!vertices.is_array() || vertices.size() < 3) {
+                throw std::runtime_error("current_region requires an array of at least three vertices");
+            }
+            region.xs.reserve(vertices.size());
+            region.ys.reserve(vertices.size());
+            double minX = std::numeric_limits<double>::infinity();
+            double maxX = -std::numeric_limits<double>::infinity();
+            double minY = std::numeric_limits<double>::infinity();
+            double maxY = -std::numeric_limits<double>::infinity();
+            for (const auto& vertex : vertices) {
+                if (!vertex.is_array() || vertex.size() != 2) {
+                    throw std::runtime_error("current_region vertices must be [x, y] arrays");
+                }
+                const double vx = vertex.at(0).get<double>();
+                const double vy = vertex.at(1).get<double>();
+                region.xs.push_back(vx);
+                region.ys.push_back(vy);
+                minX = std::min(minX, vx);
+                maxX = std::max(maxX, vx);
+                minY = std::min(minY, vy);
+                maxY = std::max(maxY, vy);
+            }
+            region.min_x = minX;
+            region.max_x = maxX;
+            region.min_y = minY;
+            region.max_y = maxY;
+            region.area = polygonArea(region.xs, region.ys);
+            if (!(region.area > kTiny)) {
+                throw std::runtime_error("current_region polygon area must be positive");
+            }
+            region.current = source.value("I", source.value("current", 0.0));
+            const std::size_t index = spec.currentRegions.size();
+            spec.currentRegions.push_back(region);
+            if (!region.id.empty()) {
+                currentRegionIdToIndex.emplace(region.id, index);
+            }
+            if (!region.phase.empty()) {
+                phaseToCurrentRegions[region.phase].push_back(index);
+            }
+        } else {
             throw std::runtime_error("Unsupported source type: " + type);
         }
-        ScenarioSpec::Wire wire{};
-        wire.x = source.at("x").get<double>();
-        wire.y = source.at("y").get<double>();
-        wire.radius = requirePositive("wire.radius", source.at("radius").get<double>());
-        wire.current = source.at("I").get<double>();
-        spec.wires.push_back(wire);
     }
 
     spec.magnetRegions.clear();
@@ -513,6 +583,49 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path = "outputs/" + id + (request.format == "csv" ? ".csv" : ".vti");
                 }
                 spec.outputs.fieldMaps.push_back(std::move(request));
+            } else if (type == "vtk_field_series") {
+                ScenarioSpec::Outputs::VtkSeries request{};
+                request.id = id;
+                request.directory = output.value("dir", std::string{"outputs"});
+                request.basename = output.value("basename", id);
+                if (request.basename.empty()) {
+                    throw std::runtime_error("vtk_field_series basename must be non-empty for output '" + id + "'");
+                }
+                bool includeB = false;
+                bool includeH = false;
+                bool includeEnergy = false;
+                if (output.contains("quantities")) {
+                    const auto& quantities = output.at("quantities");
+                    if (!quantities.is_array() || quantities.empty()) {
+                        throw std::runtime_error(
+                            "vtk_field_series quantities must be a non-empty array for output '" + id + "'");
+                    }
+                    for (const auto& quantity : quantities) {
+                        const std::string value = quantity.get<std::string>();
+                        if (value == "B") {
+                            includeB = true;
+                        } else if (value == "H") {
+                            includeH = true;
+                        } else if (value == "BH") {
+                            includeB = true;
+                            includeH = true;
+                        } else if (value == "energy" || value == "energy_density" || value == "BH_energy") {
+                            includeEnergy = true;
+                            includeB = true;
+                            includeH = true;
+                        } else {
+                            throw std::runtime_error(
+                                "Unsupported vtk_field_series quantity for output '" + id + "': " + value);
+                        }
+                    }
+                } else {
+                    includeB = true;
+                    includeH = true;
+                }
+                request.includeB = includeB;
+                request.includeH = includeH;
+                request.includeEnergy = includeEnergy;
+                spec.outputs.vtkSeries.push_back(std::move(request));
             } else if (type == "line_probe") {
                 ScenarioSpec::Outputs::LineProbe request{};
                 request.id = id;
@@ -783,6 +896,66 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 }
 
                 spec.outputs.backEmfProbes.push_back(std::move(request));
+            } else if (type == "polyline_outlines") {
+                ScenarioSpec::Outputs::PolylineOutlines request{};
+                request.id = id;
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    std::string dir = output.value("dir", std::string{"outputs"});
+                    if (!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
+                        dir.push_back('/');
+                    }
+                    const std::string filename = output.value("filename", id + "_outlines.vtp");
+                    request.path = dir + filename;
+                }
+                spec.outputs.polylineOutlines.push_back(std::move(request));
+            } else if (type == "bore_avg_B" || type == "bore_avg_b") {
+                ScenarioSpec::Outputs::BoreAverageProbe request{};
+                request.id = id;
+                const auto parseVertices = [&](const nlohmann::json& vertices) {
+                    if (!vertices.is_array() || vertices.size() < 3) {
+                        throw std::runtime_error(
+                            "bore_avg_B vertices must contain at least three entries for output '" + id + "'");
+                    }
+                    request.xs.clear();
+                    request.ys.clear();
+                    request.xs.reserve(vertices.size());
+                    request.ys.reserve(vertices.size());
+                    for (const auto& vertex : vertices) {
+                        if (!vertex.is_array() || vertex.size() != 2) {
+                            throw std::runtime_error(
+                                "bore_avg_B vertices must be [x, y] pairs for output '" + id + "'");
+                        }
+                        request.xs.push_back(vertex.at(0).get<double>());
+                        request.ys.push_back(vertex.at(1).get<double>());
+                    }
+                };
+                if (output.contains("vertices")) {
+                    parseVertices(output.at("vertices"));
+                } else if (output.contains("polygon")) {
+                    const auto& node = output.at("polygon");
+                    if (node.is_array()) {
+                        parseVertices(node);
+                    } else if (node.is_object() && node.contains("vertices")) {
+                        parseVertices(node.at("vertices"));
+                    } else {
+                        throw std::runtime_error(
+                            "bore_avg_B polygon definition must be an array or object with vertices for output '" + id + "'");
+                    }
+                } else {
+                    throw std::runtime_error(
+                        "bore_avg_B output '" + id + "' requires 'vertices' or 'polygon' definition");
+                }
+                if (request.xs.size() != request.ys.size() || request.xs.size() < 3) {
+                    throw std::runtime_error("bore_avg_B output '" + id + "' requires a valid polygon region");
+                }
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + "_bore.csv";
+                }
+                spec.outputs.boreProbes.push_back(std::move(request));
             } else {
                 throw std::runtime_error("Unsupported output type: " + type);
             }
@@ -957,6 +1130,102 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 parseWireOverrides(frame.at("wires"));
             }
 
+            const auto parseCurrentRegionOverrides = [&](const nlohmann::json& regionsNode) {
+                if (!regionsNode.is_array()) {
+                    throw std::runtime_error("timeline current_regions entry must be an array");
+                }
+                if (spec.currentRegions.empty()) {
+                    throw std::runtime_error(
+                        "timeline current region overrides require the scenario to define current_regions");
+                }
+                if (regionsNode.empty()) {
+                    return;
+                }
+                if (regionsNode.front().is_number()) {
+                    if (regionsNode.size() != spec.currentRegions.size()) {
+                        throw std::runtime_error(
+                            "timeline current region array must match number of current_regions in scenario");
+                    }
+                    for (std::size_t i = 0; i < regionsNode.size(); ++i) {
+                        ScenarioSpec::TimelineFrame::CurrentRegionOverride override{};
+                        override.index = i;
+                        override.current = regionsNode.at(i).get<double>();
+                        entry.currentRegionOverrides.push_back(override);
+                    }
+                    return;
+                }
+
+                for (const auto& regionEntry : regionsNode) {
+                    if (!regionEntry.is_object()) {
+                        throw std::runtime_error(
+                            "timeline current region overrides must be numeric array or objects with index/id");
+                    }
+                    ScenarioSpec::TimelineFrame::CurrentRegionOverride override{};
+                    if (regionEntry.contains("index")) {
+                        override.index = regionEntry.at("index").get<std::size_t>();
+                    } else if (regionEntry.contains("idx")) {
+                        override.index = regionEntry.at("idx").get<std::size_t>();
+                    } else if (regionEntry.contains("id")) {
+                        const std::string regionId = regionEntry.at("id").get<std::string>();
+                        const auto it = currentRegionIdToIndex.find(regionId);
+                        if (it == currentRegionIdToIndex.end()) {
+                            throw std::runtime_error(
+                                "timeline current region override references unknown id: " + regionId);
+                        }
+                        override.index = it->second;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline current region overrides must specify 'index', 'idx', or 'id'");
+                    }
+                    if (override.index >= spec.currentRegions.size()) {
+                        throw std::runtime_error("timeline current region override index out of range");
+                    }
+                    if (regionEntry.contains("current")) {
+                        override.current = regionEntry.at("current").get<double>();
+                    } else if (regionEntry.contains("I")) {
+                        override.current = regionEntry.at("I").get<double>();
+                    } else if (regionEntry.contains("scale")) {
+                        const double scale = regionEntry.at("scale").get<double>();
+                        override.current = spec.currentRegions[override.index].current * scale;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline current region override must provide 'current', 'I', or 'scale'");
+                    }
+                    entry.currentRegionOverrides.push_back(override);
+                }
+            };
+
+            if (frame.contains("current_regions")) {
+                parseCurrentRegionOverrides(frame.at("current_regions"));
+            }
+            if (frame.contains("slot_currents")) {
+                parseCurrentRegionOverrides(frame.at("slot_currents"));
+            }
+
+            if (frame.contains("phase_currents")) {
+                if (phaseToCurrentRegions.empty()) {
+                    throw std::runtime_error(
+                        "timeline phase_currents provided but no current regions declare a phase label");
+                }
+                const auto& phasesNode = frame.at("phase_currents");
+                if (!phasesNode.is_object()) {
+                    throw std::runtime_error("timeline phase_currents must be an object mapping phase name to current");
+                }
+                for (const auto& item : phasesNode.items()) {
+                    const auto mapIt = phaseToCurrentRegions.find(item.key());
+                    if (mapIt == phaseToCurrentRegions.end()) {
+                        throw std::runtime_error("timeline phase_currents references unknown phase: " + item.key());
+                    }
+                    const double value = item.value().get<double>();
+                    for (std::size_t index : mapIt->second) {
+                        ScenarioSpec::TimelineFrame::CurrentRegionOverride override{};
+                        override.index = index;
+                        override.current = spec.currentRegions[index].orientation * value;
+                        entry.currentRegionOverrides.push_back(override);
+                    }
+                }
+            }
+
             const auto parseMagnetOverrides = [&](const nlohmann::json& magnetNode) {
                 if (spec.magnetRegions.empty()) {
                     throw std::runtime_error(
@@ -1100,6 +1369,37 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                             grid.Mx[idx] += region.Mx;
                             grid.My[idx] += region.My;
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!spec.currentRegions.empty()) {
+        for (const auto& region : spec.currentRegions) {
+            if (!(region.area > kTiny)) {
+                continue;
+            }
+            const double density = region.current / region.area;
+            if (std::abs(density) < kTiny) {
+                continue;
+            }
+            const double minX = region.min_x - 1e-12;
+            const double maxX = region.max_x + 1e-12;
+            const double minY = region.min_y - 1e-12;
+            const double maxY = region.max_y + 1e-12;
+            for (std::size_t j = 0; j < grid.ny; ++j) {
+                const double y = y0 + static_cast<double>(j) * spec.dy;
+                if (y < minY || y > maxY) {
+                    continue;
+                }
+                for (std::size_t i = 0; i < grid.nx; ++i) {
+                    const double x = x0 + static_cast<double>(i) * spec.dx;
+                    if (x < minX || x > maxX) {
+                        continue;
+                    }
+                    if (pointInPolygonCoords(x, y, region.xs, region.ys)) {
+                        grid.Jz[grid.idx(i, j)] += density;
                     }
                 }
             }
@@ -1323,6 +1623,13 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
             throw std::runtime_error("timeline wire override index out of range");
         }
         workingSpec.wires[override.index].current = override.current;
+    }
+
+    for (const auto& override : frame.currentRegionOverrides) {
+        if (override.index >= workingSpec.currentRegions.size()) {
+            throw std::runtime_error("timeline current region override index out of range");
+        }
+        workingSpec.currentRegions[override.index].current = override.current;
     }
 }
 

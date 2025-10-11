@@ -27,7 +27,7 @@ namespace {
 void printUsage() {
     std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
                  " [--list-outputs] [--outputs IDs] [--max-iters N] [--tol VALUE]"
-                 " [--omega VALUE] [--parallel-frames]\n";
+                 " [--omega VALUE] [--parallel-frames] [--vtk-series PATH]\n";
 }
 
 std::vector<std::string> splitCommaSeparated(const std::string& text) {
@@ -62,6 +62,20 @@ struct FrameRunResult {
     std::string stdoutLog;
     std::string stderrLog;
     std::unordered_map<std::string, double> backEmfFluxes;
+    struct VtkSeriesFrame {
+        std::string id;
+        std::string path;
+        double time{0.0};
+    };
+    struct BoreSample {
+        std::string id;
+        double time{0.0};
+        double bx{0.0};
+        double by{0.0};
+        double magnitude{0.0};
+    };
+    std::vector<VtkSeriesFrame> vtkSeriesFrames;
+    std::vector<BoreSample> boreSamples;
 };
 
 std::filesystem::path makeFramePath(const std::string& basePath, bool timelineActive,
@@ -76,6 +90,26 @@ std::filesystem::path makeFramePath(const std::string& basePath, bool timelineAc
     stem << std::setfill('0') << std::setw(static_cast<int>(digits)) << frameIndex;
     const std::string extension = base.extension().string();
     return dir / (stem.str() + extension);
+}
+
+bool pointInPolygon(double x, double y, const std::vector<double>& xs, const std::vector<double>& ys) {
+    const std::size_t count = xs.size();
+    if (count == 0 || count != ys.size()) {
+        return false;
+    }
+    bool inside = false;
+    for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
+        const double xi = xs[i];
+        const double yi = ys[i];
+        const double xj = xs[j];
+        const double yj = ys[j];
+        const bool intersect = ((yi > y) != (yj > y)) &&
+                               (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) {
+            inside = !inside;
+        }
+    }
+    return inside;
 }
 
 motorsim::VtkOutlineLoop makeRectangleLoop(motorsim::VtkOutlineLoop::Kind kind,
@@ -206,6 +240,24 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
         loops.push_back(std::move(loop));
     }
 
+    for (std::size_t i = 0; i < spec.currentRegions.size(); ++i) {
+        const auto& region = spec.currentRegions[i];
+        if (region.xs.size() != region.ys.size() || region.xs.size() < 3) {
+            continue;
+        }
+        VtkOutlineLoop loop;
+        loop.kind = VtkOutlineLoop::Kind::CurrentRegion;
+        if (!region.id.empty()) {
+            loop.label = region.id;
+        } else {
+            loop.label = "current_region_" + std::to_string(i);
+        }
+        loop.groupLabel = region.phase;
+        loop.xs = region.xs;
+        loop.ys = region.ys;
+        loops.push_back(std::move(loop));
+    }
+
     return loops;
 }
 
@@ -238,7 +290,9 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     const bool scenarioHasOutputs = !frame.spec.outputs.fieldMaps.empty() ||
                                     !frame.spec.outputs.lineProbes.empty() ||
                                     !frame.spec.outputs.probes.empty() ||
-                                    !frame.spec.outputs.backEmfProbes.empty();
+                                    !frame.spec.outputs.backEmfProbes.empty() ||
+                                    !frame.spec.outputs.vtkSeries.empty() ||
+                                    !frame.spec.outputs.boreProbes.empty();
 
     const auto shouldEmit = [&](const std::string& id) {
         if (filter.skip) {
@@ -257,6 +311,8 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     bool fieldMapNeedsEnergy = false;
     bool lineProbeNeedsH = false;
     bool lineProbeNeedsEnergy = false;
+    bool vtkSeriesNeedsH = false;
+    bool vtkSeriesNeedsEnergy = false;
 
     std::vector<motorsim::VtkOutlineLoop> outlineLoops;
     bool outlinesPrepared = false;
@@ -297,10 +353,22 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
             }
         }
 
+        for (const auto& request : frame.spec.outputs.vtkSeries) {
+            if (!shouldEmit(request.id)) {
+                continue;
+            }
+            if (request.includeEnergy) {
+                vtkSeriesNeedsEnergy = true;
+                vtkSeriesNeedsH = true;
+            } else if (request.includeH) {
+                vtkSeriesNeedsH = true;
+            }
+        }
+
     }
 
     const bool needHField = fieldMapNeedsH || fieldMapNeedsEnergy || lineProbeNeedsH ||
-                            lineProbeNeedsEnergy;
+                            lineProbeNeedsEnergy || vtkSeriesNeedsH || vtkSeriesNeedsEnergy;
     if (needHField) {
         motorsim::computeH(grid);
     }
@@ -425,6 +493,87 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
                     << "': " << ex.what() << '\n';
                 outputError = true;
             }
+        }
+
+        for (const auto& request : frame.spec.outputs.vtkSeries) {
+            if (!shouldEmit(request.id)) {
+                continue;
+            }
+            if (!request.includeB) {
+                err << "Frame " << frame.index << ": vtk_series '" << request.id
+                    << "' must include B field" << '\n';
+                outputError = true;
+                continue;
+            }
+
+            std::filesystem::path basePath;
+            if (request.directory.empty()) {
+                basePath = std::filesystem::path(request.basename + ".vti");
+            } else {
+                basePath = std::filesystem::path(request.directory) / (request.basename + ".vti");
+            }
+            const std::filesystem::path outPath =
+                makeFramePath(basePath.string(), timelineActive, frame.index, frameDigits);
+            ensureParentDirectory(outPath);
+            try {
+                const bool includeH = request.includeH || request.includeEnergy;
+                const bool includeEnergy = request.includeEnergy;
+                const std::vector<double>* hxPtr = includeH ? &grid.Hx : nullptr;
+                const std::vector<double>* hyPtr = includeH ? &grid.Hy : nullptr;
+                motorsim::write_vti_field_map(outPath.string(), frame.spec.nx, frame.spec.ny,
+                                              frame.spec.originX, frame.spec.originY, frame.spec.dx,
+                                              frame.spec.dy, grid.Bx, grid.By, hxPtr, hyPtr, includeH,
+                                              includeEnergy);
+                result.vtkSeriesFrames.push_back(
+                    FrameRunResult::VtkSeriesFrame{request.id, outPath.string(), frame.time});
+                out << "Frame " << frame.index << ": wrote vtk_series '" << request.id << "' to " << outPath
+                    << '\n';
+            } catch (const std::exception& ex) {
+                err << "Frame " << frame.index << ": failed to write vtk_series '" << request.id
+                    << "': " << ex.what() << '\n';
+                outputError = true;
+            }
+        }
+
+        for (const auto& request : frame.spec.outputs.boreProbes) {
+            if (!shouldEmit(request.id)) {
+                continue;
+            }
+            if (request.xs.size() != request.ys.size() || request.xs.size() < 3) {
+                err << "Frame " << frame.index << ": bore probe '" << request.id
+                    << "' polygon is invalid" << '\n';
+                outputError = true;
+                continue;
+            }
+            double sumBx = 0.0;
+            double sumBy = 0.0;
+            double count = 0.0;
+            for (std::size_t j = 0; j < frame.spec.ny; ++j) {
+                const double y = frame.spec.originY + static_cast<double>(j) * frame.spec.dy;
+                for (std::size_t i = 0; i < frame.spec.nx; ++i) {
+                    const double x = frame.spec.originX + static_cast<double>(i) * frame.spec.dx;
+                    if (!pointInPolygon(x, y, request.xs, request.ys)) {
+                        continue;
+                    }
+                    const std::size_t idx = grid.idx(i, j);
+                    sumBx += grid.Bx[idx];
+                    sumBy += grid.By[idx];
+                    count += 1.0;
+                }
+            }
+            if (!(count > 0.0)) {
+                err << "Frame " << frame.index << ": bore probe '" << request.id
+                    << "' contains no grid points" << '\n';
+                outputError = true;
+                continue;
+            }
+            const double avgBx = sumBx / count;
+            const double avgBy = sumBy / count;
+            const double magnitude = std::hypot(avgBx, avgBy);
+            result.boreSamples.push_back(
+                FrameRunResult::BoreSample{request.id, frame.time, avgBx, avgBy, magnitude});
+            out << "Frame " << frame.index << ": bore probe '" << request.id << "' avg|B|=" << magnitude
+                << '\n';
         }
 
         for (const auto& request : frame.spec.outputs.lineProbes) {
@@ -678,6 +827,7 @@ int main(int argc, char** argv) {
     std::optional<int> maxItersOverride;
     std::optional<double> tolOverride;
     std::optional<double> omegaOverride;
+    std::optional<std::string> vtkSeriesPath;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -703,6 +853,13 @@ int main(int argc, char** argv) {
             outputsFilterArg = std::string(argv[++i]);
         } else if (arg == "--parallel-frames") {
             parallelFramesFlag = true;
+        } else if (arg == "--vtk-series") {
+            if (i + 1 >= argc) {
+                std::cerr << "--vtk-series requires a path argument\n";
+                printUsage();
+                return 1;
+            }
+            vtkSeriesPath = std::string(argv[++i]);
         } else if (arg == "--max-iters") {
             if (i + 1 >= argc) {
                 std::cerr << "--max-iters requires an integer argument\n";
@@ -780,10 +937,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (vtkSeriesPath && spec.outputs.vtkSeries.empty()) {
+        std::cerr << "--vtk-series specified but scenario defines no vtk_field_series outputs\n";
+        return 1;
+    }
+
     std::unordered_set<std::string> availableOutputIds;
     availableOutputIds.reserve(spec.outputs.fieldMaps.size() + spec.outputs.lineProbes.size() +
                               spec.outputs.probes.size() + spec.outputs.backEmfProbes.size());
     for (const auto& request : spec.outputs.fieldMaps) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.vtkSeries) {
         availableOutputIds.insert(request.id);
     }
     for (const auto& request : spec.outputs.lineProbes) {
@@ -793,6 +958,12 @@ int main(int argc, char** argv) {
         availableOutputIds.insert(request.id);
     }
     for (const auto& request : spec.outputs.backEmfProbes) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.polylineOutlines) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.boreProbes) {
         availableOutputIds.insert(request.id);
     }
 
@@ -1101,6 +1272,124 @@ int main(int argc, char** argv) {
             ofs.close();
             std::cout << "Back-EMF '" << request.id << "' wrote " << samples.size()
                       << " interval(s) to " << outPath << '\n';
+        }
+    }
+
+    if (!solverFailure && !filter.skip && !frames.front().spec.outputs.boreProbes.empty()) {
+        std::unordered_map<std::string, std::vector<FrameRunResult::BoreSample>> boreSeries;
+        for (const auto& result : results) {
+            for (const auto& sample : result.boreSamples) {
+                if (!shouldEmitId(sample.id)) {
+                    continue;
+                }
+                boreSeries[sample.id].push_back(sample);
+            }
+        }
+        for (const auto& request : frames.front().spec.outputs.boreProbes) {
+            if (!shouldEmitId(request.id)) {
+                continue;
+            }
+            auto seriesIt = boreSeries.find(request.id);
+            if (seriesIt == boreSeries.end() || seriesIt->second.empty()) {
+                std::cerr << "Bore probe '" << request.id << "' produced no samples\n";
+                outputFailure = true;
+                continue;
+            }
+            auto& samples = seriesIt->second;
+            std::sort(samples.begin(), samples.end(),
+                      [](const FrameRunResult::BoreSample& a, const FrameRunResult::BoreSample& b) {
+                          return a.time < b.time;
+                      });
+            const std::filesystem::path outPath(request.path);
+            ensureParentDirectory(outPath);
+            std::ofstream ofs(outPath);
+            if (!ofs.is_open()) {
+                std::cerr << "Failed to open bore probe output path " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+            ofs << "time,bx,by,bmag,angle_deg\n";
+            ofs << std::scientific << std::setprecision(12);
+            for (const auto& sample : samples) {
+                const double angle = std::atan2(sample.by, sample.bx) * 180.0 / 3.14159265358979323846;
+                ofs << sample.time << ',' << sample.bx << ',' << sample.by << ',' << sample.magnitude << ','
+                    << angle << '\n';
+            }
+            ofs.close();
+            if (!ofs) {
+                std::cerr << "Failed while writing bore probe output " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+            std::cout << "Bore probe '" << request.id << "' wrote " << samples.size() << " samples to "
+                      << outPath << '\n';
+        }
+    }
+
+    if (!filter.skip && !frames.front().spec.outputs.polylineOutlines.empty()) {
+        const auto loops = buildOutlineLoops(frames.front().spec);
+        for (const auto& request : frames.front().spec.outputs.polylineOutlines) {
+            if (!shouldEmitId(request.id)) {
+                continue;
+            }
+            try {
+                const std::filesystem::path outPath(request.path);
+                ensureParentDirectory(outPath);
+                motorsim::write_vtp_outlines(outPath.string(), loops);
+                std::cout << "Polyline outlines '" << request.id << "' wrote to " << outPath << '\n';
+            } catch (const std::exception& ex) {
+                std::cerr << "Failed to write polyline outlines '" << request.id << "': " << ex.what()
+                          << '\n';
+                outputFailure = true;
+            }
+        }
+    }
+
+    if (!solverFailure && vtkSeriesPath) {
+        std::unordered_map<std::string, std::vector<motorsim::PvdDataSet>> seriesData;
+        for (std::size_t idx = 0; idx < results.size(); ++idx) {
+            const auto& frameResult = results[idx];
+            for (const auto& frameEntry : frameResult.vtkSeriesFrames) {
+                if (!shouldEmitId(frameEntry.id)) {
+                    continue;
+                }
+                seriesData[frameEntry.id].push_back(
+                    motorsim::PvdDataSet{frameEntry.time, frameEntry.path});
+            }
+        }
+        if (seriesData.empty()) {
+            std::cerr << "--vtk-series specified but no VTK series frames were recorded\n";
+            outputFailure = true;
+        } else if (seriesData.size() > 1) {
+            std::cerr << "--vtk-series currently supports a single VTK series output; scenario provided "
+                      << seriesData.size() << '\n';
+            outputFailure = true;
+        } else {
+            const auto& pair = *seriesData.begin();
+            auto datasets = pair.second;
+            std::sort(datasets.begin(), datasets.end(), [](const motorsim::PvdDataSet& a,
+                                                           const motorsim::PvdDataSet& b) {
+                return a.time < b.time;
+            });
+            std::filesystem::path pvdPath(*vtkSeriesPath);
+            ensureParentDirectory(pvdPath);
+            const std::filesystem::path baseDir = pvdPath.parent_path();
+            for (auto& dataset : datasets) {
+                std::filesystem::path filePath(dataset.file);
+                try {
+                    dataset.file = std::filesystem::relative(filePath, baseDir).string();
+                } catch (const std::exception&) {
+                    dataset.file = filePath.string();
+                }
+            }
+            try {
+                motorsim::write_pvd_series(pvdPath.string(), datasets);
+                std::cout << "VTK series '" << pair.first << "' wrote " << datasets.size()
+                          << " timesteps to " << pvdPath << '\n';
+            } catch (const std::exception& ex) {
+                std::cerr << "Failed to write VTK series index: " << ex.what() << '\n';
+                outputFailure = true;
+            }
         }
     }
 

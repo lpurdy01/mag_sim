@@ -12,6 +12,7 @@ struct VtkOutlineLoop {
         Material = 1,
         Magnet = 2,
         Wire = 3,
+        CurrentRegion = 4,
     };
 
     Kind kind{Kind::Domain};
@@ -46,6 +47,13 @@ void write_vti_field_map(const std::string& path,
 // groupings (e.g. rotor assemblies) can be reconstructed without relying on
 // VTK string arrays.
 void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoop>& loops);
+
+struct PvdDataSet {
+    double time{0.0};
+    std::string file;
+};
+
+void write_pvd_series(const std::string& path, const std::vector<PvdDataSet>& datasets);
 
 }  // namespace motorsim
 

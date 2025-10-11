@@ -19,6 +19,20 @@ struct ScenarioSpec {
         double current{0.0};
     };
 
+    struct CurrentRegion {
+        std::string id;
+        std::string phase;
+        double orientation{1.0};
+        std::vector<double> xs;
+        std::vector<double> ys;
+        double min_x{0.0};
+        double max_x{0.0};
+        double min_y{0.0};
+        double max_y{0.0};
+        double area{0.0};
+        double current{0.0};
+    };
+
     struct Rotor {
         std::string name;
         double pivotX{0.0};
@@ -81,6 +95,15 @@ struct ScenarioSpec {
             std::string format;    // e.g., "csv"
         };
 
+        struct VtkSeries {
+            std::string id;
+            std::string directory;
+            std::string basename;
+            bool includeB{true};
+            bool includeH{true};
+            bool includeEnergy{false};
+        };
+
         struct LineProbe {
             std::string id;
             std::string path;
@@ -118,14 +141,34 @@ struct ScenarioSpec {
             std::vector<std::size_t> frameIndices;
         };
 
+        struct PolylineOutlines {
+            std::string id;
+            std::string path;
+        };
+
+        struct BoreAverageProbe {
+            std::string id;
+            std::vector<double> xs;
+            std::vector<double> ys;
+            std::string path;
+        };
+
         std::vector<FieldMap> fieldMaps;
+        std::vector<VtkSeries> vtkSeries;
         std::vector<LineProbe> lineProbes;
         std::vector<Probe> probes;
         std::vector<BackEmfProbe> backEmfProbes;
+        std::vector<PolylineOutlines> polylineOutlines;
+        std::vector<BoreAverageProbe> boreProbes;
     };
 
     struct TimelineFrame {
         struct WireOverride {
+            std::size_t index{0};
+            double current{0.0};
+        };
+
+        struct CurrentRegionOverride {
             std::size_t index{0};
             double current{0.0};
         };
@@ -149,6 +192,7 @@ struct ScenarioSpec {
         double rotorAngleDeg{0.0};
         std::vector<RotorAngleOverride> rotorAngles;
         std::vector<WireOverride> wireOverrides;
+        std::vector<CurrentRegionOverride> currentRegionOverrides;
         std::vector<MagnetOverride> magnetOverrides;
     };
 
@@ -167,6 +211,7 @@ struct ScenarioSpec {
     std::vector<PolygonRegion> polygons;
     std::vector<RegionMask> regionMasks;
     std::vector<Wire> wires;
+    std::vector<CurrentRegion> currentRegions;
     std::vector<Rotor> rotors;
     std::vector<MagnetRegion> magnetRegions;
     BoundaryType boundaryType{BoundaryType::Dirichlet};

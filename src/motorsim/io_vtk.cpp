@@ -349,5 +349,28 @@ void write_vtp_outlines(const std::string& path, const std::vector<VtkOutlineLoo
     }
 }
 
+void write_pvd_series(const std::string& path, const std::vector<PvdDataSet>& datasets) {
+    std::ofstream ofs(path);
+    if (!ofs.is_open()) {
+        throw std::runtime_error("Failed to open VTK series output: " + path);
+    }
+
+    const bool littleEndian = isLittleEndian();
+    ofs << "<?xml version=\"1.0\"?>\n";
+    ofs << "<VTKFile type=\"Collection\" version=\"0.1\" byte_order=\""
+        << (littleEndian ? "LittleEndian" : "BigEndian") << "\">\n";
+    ofs << "  <Collection>\n";
+    for (const auto& entry : datasets) {
+        ofs << "    <DataSet timestep=\"" << entry.time << "\" part=\"0\" file=\""
+            << entry.file << "\"/>\n";
+    }
+    ofs << "  </Collection>\n";
+    ofs << "</VTKFile>\n";
+    ofs.flush();
+    if (!ofs) {
+        throw std::runtime_error("Failed while writing VTK series output: " + path);
+    }
+}
+
 }  // namespace motorsim
 
