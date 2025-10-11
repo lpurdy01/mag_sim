@@ -1,0 +1,35 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {
+    "Lx": 0.2,
+    "Ly": 0.2,
+    "nx": 21,
+    "ny": 21
+  },
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "sources": [],
+  "outputs": [
+    {
+      "type": "probe",
+      "id": "lift_probe",
+      "probe_type": "force_and_torque",
+      "method": "stress_tensor",
+      "loop": {
+        "type": "polygon",
+        "vertices": [
+          [-0.03, -0.02],
+          [0.03, -0.02],
+          [0.03, 0.02],
+          [-0.03, 0.02]
+        ]
+      },
+      "path": "outputs/lift_probe.csv"
+    }
+  ]
+}

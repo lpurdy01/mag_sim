@@ -3,6 +3,7 @@
 #include "motorsim/types.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -356,11 +357,122 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 if (!(region.min_x < region.max_x) || !(region.min_y < region.max_y)) {
                     throw std::runtime_error("rect magnet region requires min < max in both ranges");
                 }
+                region.xs = {region.min_x, region.max_x, region.max_x, region.min_x};
+                region.ys = {region.min_y, region.min_y, region.max_y, region.max_y};
             } else {
                 throw std::runtime_error("Unsupported magnet region type: " + shape);
             }
 
             spec.magnetRegions.push_back(std::move(region));
+        }
+    }
+
+    spec.rotors.clear();
+    std::unordered_map<std::string, std::size_t> rotorNameToIndex;
+    if (json.contains("rotors")) {
+        const auto& rotorsNode = json.at("rotors");
+        if (!rotorsNode.is_array()) {
+            throw std::runtime_error("rotors must be an array when provided");
+        }
+        spec.rotors.reserve(rotorsNode.size());
+
+        const auto parsePivot = [](const nlohmann::json& node, double& px, double& py) {
+            if (node.is_array()) {
+                if (node.size() != 2) {
+                    throw std::runtime_error("rotor pivot array must contain exactly two values");
+                }
+                px = node.at(0).get<double>();
+                py = node.at(1).get<double>();
+            } else if (node.is_object()) {
+                px = node.value("x", node.value("px", 0.0));
+                py = node.value("y", node.value("py", 0.0));
+            } else {
+                throw std::runtime_error("rotor pivot must be an array [x, y] or object with x/y fields");
+            }
+        };
+
+        for (const auto& rotorNode : rotorsNode) {
+            if (!rotorNode.is_object()) {
+                throw std::runtime_error("rotor entries must be JSON objects");
+            }
+            ScenarioSpec::Rotor rotor{};
+            rotor.name = rotorNode.value("name", std::string{});
+            if (rotor.name.empty()) {
+                rotor.name = "rotor_" + std::to_string(spec.rotors.size());
+            }
+            if (!rotorNameToIndex.emplace(rotor.name, spec.rotors.size()).second) {
+                throw std::runtime_error("Duplicate rotor name: " + rotor.name);
+            }
+
+            if (rotorNode.contains("pivot")) {
+                parsePivot(rotorNode.at("pivot"), rotor.pivotX, rotor.pivotY);
+            } else if (rotorNode.contains("center")) {
+                parsePivot(rotorNode.at("center"), rotor.pivotX, rotor.pivotY);
+            } else {
+                rotor.pivotX = rotorNode.value("pivot_x", rotorNode.value("center_x", 0.0));
+                rotor.pivotY = rotorNode.value("pivot_y", rotorNode.value("center_y", 0.0));
+            }
+
+            const auto parseIndexList = [&](const nlohmann::json& arr, std::size_t count,
+                                            const std::string& field, std::vector<std::size_t>& dest) {
+                if (count == 0) {
+                    throw std::runtime_error("rotor '" + rotor.name + "' references " + field +
+                                             " but scenario defines none");
+                }
+                if (!arr.is_array()) {
+                    throw std::runtime_error("rotor field '" + field + "' must be an array");
+                }
+                for (const auto& value : arr) {
+                    std::size_t index = 0;
+                    if (value.is_number_integer()) {
+                        index = value.get<std::size_t>();
+                    } else if (value.is_number_unsigned()) {
+                        index = value.get<std::size_t>();
+                    } else if (value.is_object()) {
+                        if (value.contains("index")) {
+                            index = value.at("index").get<std::size_t>();
+                        } else if (value.contains("idx")) {
+                            index = value.at("idx").get<std::size_t>();
+                        } else {
+                            throw std::runtime_error(
+                                "rotor field '" + field + "' object entries must include 'index' or 'idx'");
+                        }
+                    } else {
+                        throw std::runtime_error("rotor field '" + field + "' entries must be indices or objects");
+                    }
+                    if (index >= count) {
+                        throw std::runtime_error("rotor field '" + field + "' index out of range");
+                    }
+                    dest.push_back(index);
+                }
+            };
+
+            if (rotorNode.contains("polygon_indices")) {
+                parseIndexList(rotorNode.at("polygon_indices"), spec.polygons.size(), "polygon_indices",
+                               rotor.polygonIndices);
+            }
+            if (rotorNode.contains("polygons")) {
+                parseIndexList(rotorNode.at("polygons"), spec.polygons.size(), "polygons", rotor.polygonIndices);
+            }
+
+            if (rotorNode.contains("magnet_indices")) {
+                parseIndexList(rotorNode.at("magnet_indices"), spec.magnetRegions.size(), "magnet_indices",
+                               rotor.magnetIndices);
+            }
+            if (rotorNode.contains("magnets")) {
+                parseIndexList(rotorNode.at("magnets"), spec.magnetRegions.size(), "magnets",
+                               rotor.magnetIndices);
+            }
+
+            if (rotorNode.contains("wire_indices")) {
+                parseIndexList(rotorNode.at("wire_indices"), spec.wires.size(), "wire_indices",
+                               rotor.wireIndices);
+            }
+            if (rotorNode.contains("wires")) {
+                parseIndexList(rotorNode.at("wires"), spec.wires.size(), "wires", rotor.wireIndices);
+            }
+
+            spec.rotors.push_back(std::move(rotor));
         }
     }
 
@@ -390,7 +502,7 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                         "Unsupported field_map quantity for output '" + id + "': " + request.quantity);
                 }
                 request.format = output.value("format", std::string{"csv"});
-                if (request.format != "csv") {
+                if (request.format != "csv" && request.format != "vti") {
                     throw std::runtime_error(
                         "Unsupported field_map format for output '" + id + "': " + request.format);
                 }
@@ -398,7 +510,7 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path =
                         requireNonEmpty("outputs.path", output.at("path").get<std::string>());
                 } else {
-                    request.path = "outputs/" + id + ".csv";
+                    request.path = "outputs/" + id + (request.format == "csv" ? ".csv" : ".vti");
                 }
                 spec.outputs.fieldMaps.push_back(std::move(request));
             } else if (type == "line_probe") {
@@ -430,9 +542,478 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path = "outputs/" + id + ".csv";
                 }
                 spec.outputs.lineProbes.push_back(std::move(request));
+            } else if (type == "probe") {
+                ScenarioSpec::Outputs::Probe request{};
+                request.id = id;
+                const std::string quantity = output.value("probe_type", std::string{"torque"});
+                if (quantity == "torque") {
+                    request.quantity = ScenarioSpec::Outputs::Probe::Quantity::Torque;
+                } else if (quantity == "force") {
+                    request.quantity = ScenarioSpec::Outputs::Probe::Quantity::Force;
+                } else if (quantity == "force_and_torque") {
+                    request.quantity = ScenarioSpec::Outputs::Probe::Quantity::ForceAndTorque;
+                } else {
+                    throw std::runtime_error("Unsupported probe_type for output '" + id + "': " + quantity);
+                }
+
+                const std::string method = output.value("method", std::string{"stress_tensor"});
+                if (method == "stress_tensor") {
+                    request.method = ScenarioSpec::Outputs::Probe::Method::StressTensor;
+                } else {
+                    throw std::runtime_error("Unsupported probe method for output '" + id + "': " + method);
+                }
+
+                const auto parseVertices = [&](const nlohmann::json& vertices) {
+                    if (!vertices.is_array() || vertices.size() < 3) {
+                        throw std::runtime_error("Probe loop for output '" + id + "' requires at least three vertices");
+                    }
+                    request.loopXs.clear();
+                    request.loopYs.clear();
+                    request.loopXs.reserve(vertices.size());
+                    request.loopYs.reserve(vertices.size());
+                    for (const auto& vertex : vertices) {
+                        if (!vertex.is_array() || vertex.size() != 2) {
+                            throw std::runtime_error(
+                                "Probe loop vertices must be [x, y] pairs for output '" + id + "'");
+                        }
+                        request.loopXs.push_back(vertex.at(0).get<double>());
+                        request.loopYs.push_back(vertex.at(1).get<double>());
+                    }
+                };
+
+                if (!output.contains("loop")) {
+                    throw std::runtime_error("Probe output '" + id + "' is missing required loop definition");
+                }
+                const auto& loop = output.at("loop");
+                if (loop.is_array()) {
+                    parseVertices(loop);
+                } else if (loop.is_object()) {
+                    const std::string loopType = loop.value("type", std::string{"polygon"});
+                    if (loopType != "polygon") {
+                        throw std::runtime_error(
+                            "Unsupported probe loop type for output '" + id + "': " + loopType);
+                    }
+                    if (!loop.contains("vertices")) {
+                        throw std::runtime_error(
+                            "Probe loop object for output '" + id + "' must contain a 'vertices' array");
+                    }
+                    parseVertices(loop.at("vertices"));
+                } else {
+                    throw std::runtime_error("Probe loop for output '" + id + "' must be an array or object");
+                }
+
+                if (output.contains("path")) {
+                    request.path =
+                        requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + ".csv";
+                }
+
+                spec.outputs.probes.push_back(std::move(request));
+            } else if (type == "back_emf_probe") {
+                ScenarioSpec::Outputs::BackEmfProbe request{};
+                request.id = id;
+
+                std::string component = output.value("component", std::string{"Bmag"});
+                std::transform(component.begin(), component.end(), component.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (component == "bx") {
+                    request.component = FluxComponent::Bx;
+                } else if (component == "by") {
+                    request.component = FluxComponent::By;
+                } else if (component == "b" || component == "bmag" || component == "mag") {
+                    request.component = FluxComponent::Bmag;
+                } else {
+                    throw std::runtime_error("Unsupported back_emf_probe component for output '" + id +
+                                             "': " + component);
+                }
+
+                const auto parseFrames = [&](const nlohmann::json& frameNode) {
+                    if (!frameNode.is_array()) {
+                        throw std::runtime_error(
+                            "back_emf_probe frames must be an array of frame indices for output '" + id + "'");
+                    }
+                    request.frameIndices.clear();
+                    request.frameIndices.reserve(frameNode.size());
+                    for (const auto& entry : frameNode) {
+                        if (!entry.is_number_integer()) {
+                            throw std::runtime_error(
+                                "back_emf_probe frames entries must be integers for output '" + id + "'");
+                        }
+                        const int value = entry.get<int>();
+                        if (value < 0) {
+                            throw std::runtime_error(
+                                "back_emf_probe frames entries must be non-negative for output '" + id + "'");
+                        }
+                        request.frameIndices.push_back(static_cast<std::size_t>(value));
+                    }
+                    if (request.frameIndices.size() < 2) {
+                        throw std::runtime_error(
+                            "back_emf_probe output '" + id + "' requires at least two frame indices");
+                    }
+                };
+
+                if (output.contains("frames")) {
+                    parseFrames(output.at("frames"));
+                } else if (output.contains("frame_indices")) {
+                    parseFrames(output.at("frame_indices"));
+                }
+
+                const auto parsePolygonVertices = [&](const nlohmann::json& vertices) {
+                    if (!vertices.is_array() || vertices.size() < 3) {
+                        throw std::runtime_error("back_emf_probe region for output '" + id +
+                                                 "' requires at least three vertices");
+                    }
+                    request.shape = ScenarioSpec::Outputs::BackEmfProbe::RegionShape::Polygon;
+                    request.xs.clear();
+                    request.ys.clear();
+                    request.xs.reserve(vertices.size());
+                    request.ys.reserve(vertices.size());
+                    double minX = std::numeric_limits<double>::infinity();
+                    double maxX = -std::numeric_limits<double>::infinity();
+                    double minY = std::numeric_limits<double>::infinity();
+                    double maxY = -std::numeric_limits<double>::infinity();
+                    for (const auto& vertex : vertices) {
+                        if (!vertex.is_array() || vertex.size() != 2) {
+                            throw std::runtime_error(
+                                "back_emf_probe vertices must be [x, y] pairs for output '" + id + "'");
+                        }
+                        const double vx = vertex.at(0).get<double>();
+                        const double vy = vertex.at(1).get<double>();
+                        request.xs.push_back(vx);
+                        request.ys.push_back(vy);
+                        minX = std::min(minX, vx);
+                        maxX = std::max(maxX, vx);
+                        minY = std::min(minY, vy);
+                        maxY = std::max(maxY, vy);
+                    }
+                    request.minX = minX;
+                    request.maxX = maxX;
+                    request.minY = minY;
+                    request.maxY = maxY;
+                };
+
+                const auto parseRect = [&](const nlohmann::json& region) {
+                    if (!region.contains("x_range") || !region.contains("y_range")) {
+                        throw std::runtime_error(
+                            "back_emf_probe rect region requires x_range and y_range for output '" + id + "'");
+                    }
+                    const auto& xr = region.at("x_range");
+                    const auto& yr = region.at("y_range");
+                    if (!xr.is_array() || xr.size() != 2 || !yr.is_array() || yr.size() != 2) {
+                        throw std::runtime_error(
+                            "back_emf_probe rect ranges must contain two entries for output '" + id + "'");
+                    }
+                    const double x0 = xr.at(0).get<double>();
+                    const double x1 = xr.at(1).get<double>();
+                    const double y0 = yr.at(0).get<double>();
+                    const double y1 = yr.at(1).get<double>();
+                    const double minX = std::min(x0, x1);
+                    const double maxX = std::max(x0, x1);
+                    const double minY = std::min(y0, y1);
+                    const double maxY = std::max(y0, y1);
+                    if (!(maxX > minX) || !(maxY > minY)) {
+                        throw std::runtime_error("back_emf_probe rect ranges must span a positive area for output '" + id +
+                                                 "'");
+                    }
+                    request.shape = ScenarioSpec::Outputs::BackEmfProbe::RegionShape::Rect;
+                    request.minX = minX;
+                    request.maxX = maxX;
+                    request.minY = minY;
+                    request.maxY = maxY;
+                    request.xs.clear();
+                    request.ys.clear();
+                };
+
+                bool regionParsed = false;
+                if (output.contains("region")) {
+                    const auto& region = output.at("region");
+                    if (!region.is_object()) {
+                        throw std::runtime_error("back_emf_probe region must be an object for output '" + id + "'");
+                    }
+                    const std::string regionType = region.value("type", std::string{"polygon"});
+                    if (regionType == "polygon") {
+                        if (!region.contains("vertices")) {
+                            throw std::runtime_error(
+                                "back_emf_probe polygon region requires vertices for output '" + id + "'");
+                        }
+                        parsePolygonVertices(region.at("vertices"));
+                        regionParsed = true;
+                    } else if (regionType == "rect" || regionType == "rectangle") {
+                        parseRect(region);
+                        regionParsed = true;
+                    } else {
+                        throw std::runtime_error("Unsupported back_emf_probe region type for output '" + id +
+                                                 "': " + regionType);
+                    }
+                }
+
+                if (!regionParsed && output.contains("loop")) {
+                    const auto& loop = output.at("loop");
+                    if (loop.is_array()) {
+                        parsePolygonVertices(loop);
+                        regionParsed = true;
+                    } else if (loop.is_object()) {
+                        const std::string loopType = loop.value("type", std::string{"polygon"});
+                        if (loopType != "polygon") {
+                            throw std::runtime_error(
+                                "Unsupported back_emf_probe loop type for output '" + id + "': " + loopType);
+                        }
+                        if (!loop.contains("vertices")) {
+                            throw std::runtime_error(
+                                "back_emf_probe loop object for output '" + id + "' requires vertices");
+                        }
+                        parsePolygonVertices(loop.at("vertices"));
+                        regionParsed = true;
+                    } else {
+                        throw std::runtime_error(
+                            "back_emf_probe loop must be an array or object for output '" + id + "'");
+                    }
+                }
+
+                if (!regionParsed) {
+                    throw std::runtime_error(
+                        "back_emf_probe output '" + id + "' requires a region or loop definition");
+                }
+
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + "_emf.csv";
+                }
+
+                spec.outputs.backEmfProbes.push_back(std::move(request));
             } else {
                 throw std::runtime_error("Unsupported output type: " + type);
             }
+        }
+    }
+
+    spec.timeline.clear();
+    if (json.contains("timeline")) {
+        const auto& timeline = json.at("timeline");
+        if (!timeline.is_array() || timeline.empty()) {
+            throw std::runtime_error("timeline must be a non-empty array when provided");
+        }
+        spec.timeline.reserve(timeline.size());
+        std::size_t frameIndex = 0;
+        for (const auto& frame : timeline) {
+            if (!frame.is_object()) {
+                throw std::runtime_error("timeline entries must be JSON objects");
+            }
+            ScenarioSpec::TimelineFrame entry{};
+            if (frame.contains("t")) {
+                entry.time = frame.at("t").get<double>();
+            } else if (frame.contains("time")) {
+                entry.time = frame.at("time").get<double>();
+            } else {
+                entry.time = static_cast<double>(frameIndex);
+            }
+
+            if (frame.contains("rotor_angle")) {
+                entry.hasRotorAngle = true;
+                entry.rotorAngleDeg = frame.at("rotor_angle").get<double>();
+            } else if (frame.contains("rotor_angle_deg")) {
+                entry.hasRotorAngle = true;
+                entry.rotorAngleDeg = frame.at("rotor_angle_deg").get<double>();
+            }
+
+            const auto addRotorAngle = [&](std::size_t rotorIndex, double angleDeg) {
+                if (rotorIndex >= spec.rotors.size()) {
+                    throw std::runtime_error("timeline rotor angle index out of range");
+                }
+                ScenarioSpec::TimelineFrame::RotorAngleOverride override{};
+                override.index = rotorIndex;
+                override.angleDegrees = angleDeg;
+                entry.rotorAngles.push_back(override);
+            };
+
+            if (frame.contains("rotor_angles")) {
+                if (spec.rotors.empty()) {
+                    throw std::runtime_error(
+                        "timeline rotor_angles provided but scenario defines no rotors");
+                }
+                const auto& rotorAnglesNode = frame.at("rotor_angles");
+                if (rotorAnglesNode.is_array()) {
+                    if (!rotorAnglesNode.empty() && rotorAnglesNode.front().is_number()) {
+                        const std::size_t count =
+                            std::min<std::size_t>(rotorAnglesNode.size(), spec.rotors.size());
+                        for (std::size_t i = 0; i < count; ++i) {
+                            addRotorAngle(i, rotorAnglesNode.at(i).get<double>());
+                        }
+                    } else {
+                        for (const auto& item : rotorAnglesNode) {
+                            if (!item.is_object()) {
+                                throw std::runtime_error(
+                                    "timeline rotor_angles array entries must be objects when not numeric");
+                            }
+                            std::size_t rotorIndex = 0;
+                            if (item.contains("index")) {
+                                rotorIndex = item.at("index").get<std::size_t>();
+                            } else if (item.contains("idx")) {
+                                rotorIndex = item.at("idx").get<std::size_t>();
+                            } else if (item.contains("name")) {
+                                const std::string name = item.at("name").get<std::string>();
+                                const auto it = rotorNameToIndex.find(name);
+                                if (it == rotorNameToIndex.end()) {
+                                    throw std::runtime_error(
+                                        "timeline rotor_angles references unknown rotor name: " + name);
+                                }
+                                rotorIndex = it->second;
+                            } else {
+                                throw std::runtime_error(
+                                    "timeline rotor_angles entries must include 'index', 'idx', or 'name'");
+                            }
+
+                            double angleDeg = 0.0;
+                            if (item.contains("angle_deg")) {
+                                angleDeg = item.at("angle_deg").get<double>();
+                            } else if (item.contains("angle")) {
+                                angleDeg = item.at("angle").get<double>();
+                            } else if (item.contains("degrees")) {
+                                angleDeg = item.at("degrees").get<double>();
+                            } else if (item.contains("value")) {
+                                angleDeg = item.at("value").get<double>();
+                            } else {
+                                throw std::runtime_error(
+                                    "timeline rotor_angles entries must include an angle field");
+                            }
+                            addRotorAngle(rotorIndex, angleDeg);
+                        }
+                    }
+                } else if (rotorAnglesNode.is_object()) {
+                    for (const auto& kv : rotorAnglesNode.items()) {
+                        const auto it = rotorNameToIndex.find(kv.key());
+                        if (it == rotorNameToIndex.end()) {
+                            throw std::runtime_error("timeline rotor_angles references unknown rotor name: " +
+                                                     kv.key());
+                        }
+                        if (!kv.value().is_number()) {
+                            throw std::runtime_error(
+                                "timeline rotor_angles object values must be numeric angles in degrees");
+                        }
+                        addRotorAngle(it->second, kv.value().get<double>());
+                    }
+                } else {
+                    throw std::runtime_error("timeline rotor_angles must be an array or object");
+                }
+            }
+
+            const auto parseWireOverrides = [&](const nlohmann::json& wiresNode) {
+                if (!wiresNode.is_array()) {
+                    throw std::runtime_error("timeline wires entry must be an array");
+                }
+                if (spec.wires.empty()) {
+                    throw std::runtime_error(
+                        "timeline wires overrides require the scenario to define wires");
+                }
+                if (wiresNode.empty()) {
+                    return;
+                }
+
+                if (wiresNode.front().is_number()) {
+                    if (wiresNode.size() != spec.wires.size()) {
+                        throw std::runtime_error(
+                            "timeline wire_currents array must match the number of wires in the scenario");
+                    }
+                    for (std::size_t i = 0; i < wiresNode.size(); ++i) {
+                        ScenarioSpec::TimelineFrame::WireOverride override{};
+                        override.index = i;
+                        override.current = wiresNode.at(i).get<double>();
+                        entry.wireOverrides.push_back(override);
+                    }
+                    return;
+                }
+
+                for (const auto& wireEntry : wiresNode) {
+                    if (!wireEntry.is_object()) {
+                        throw std::runtime_error(
+                            "timeline wires overrides must be numeric array or objects with index/current");
+                    }
+                    ScenarioSpec::TimelineFrame::WireOverride override{};
+                    override.index = wireEntry.at("index").get<std::size_t>();
+                    if (override.index >= spec.wires.size()) {
+                        throw std::runtime_error("timeline wire override index out of range");
+                    }
+                    if (wireEntry.contains("current")) {
+                        override.current = wireEntry.at("current").get<double>();
+                    } else if (wireEntry.contains("I")) {
+                        override.current = wireEntry.at("I").get<double>();
+                    } else if (wireEntry.contains("scale")) {
+                        const double scale = wireEntry.at("scale").get<double>();
+                        override.current = spec.wires[override.index].current * scale;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline wire override must provide 'current', 'I', or 'scale'");
+                    }
+                    entry.wireOverrides.push_back(override);
+                }
+            };
+
+            if (frame.contains("wire_currents")) {
+                parseWireOverrides(frame.at("wire_currents"));
+            }
+            if (frame.contains("wires")) {
+                parseWireOverrides(frame.at("wires"));
+            }
+
+            const auto parseMagnetOverrides = [&](const nlohmann::json& magnetNode) {
+                if (spec.magnetRegions.empty()) {
+                    throw std::runtime_error(
+                        "timeline magnet overrides require the scenario to define magnet_regions");
+                }
+                if (!magnetNode.is_array()) {
+                    throw std::runtime_error("timeline magnets entry must be an array");
+                }
+                for (const auto& magnetEntry : magnetNode) {
+                    if (!magnetEntry.is_object()) {
+                        throw std::runtime_error(
+                            "timeline magnets overrides must be objects with index/angle/magnetization");
+                    }
+                    ScenarioSpec::TimelineFrame::MagnetOverride override{};
+                    override.index = magnetEntry.at("index").get<std::size_t>();
+                    if (override.index >= spec.magnetRegions.size()) {
+                        throw std::runtime_error("timeline magnet override index out of range");
+                    }
+                    if (magnetEntry.contains("angle_deg")) {
+                        override.hasAngle = true;
+                        override.angleDegrees = magnetEntry.at("angle_deg").get<double>();
+                    } else if (magnetEntry.contains("angle")) {
+                        override.hasAngle = true;
+                        override.angleDegrees = magnetEntry.at("angle").get<double>();
+                    }
+                    if (magnetEntry.contains("magnetization")) {
+                        const auto& mag = magnetEntry.at("magnetization");
+                        if (mag.is_array()) {
+                            if (mag.size() != 2) {
+                                throw std::runtime_error(
+                                    "timeline magnetization array must contain exactly two entries");
+                            }
+                            override.hasVector = true;
+                            override.magnetizationX = mag.at(0).get<double>();
+                            override.magnetizationY = mag.at(1).get<double>();
+                        } else if (mag.is_object()) {
+                            override.hasVector = true;
+                            override.magnetizationX = mag.value("Mx", 0.0);
+                            override.magnetizationY = mag.value("My", 0.0);
+                        } else {
+                            throw std::runtime_error(
+                                "timeline magnetization must be an array or object with Mx/My");
+                        }
+                    }
+                    entry.magnetOverrides.push_back(override);
+                }
+            };
+
+            if (frame.contains("magnets")) {
+                parseMagnetOverrides(frame.at("magnets"));
+            }
+            if (frame.contains("magnet_overrides")) {
+                parseMagnetOverrides(frame.at("magnet_overrides"));
+            }
+
+            spec.timeline.push_back(std::move(entry));
+            ++frameIndex;
         }
     }
 
@@ -505,12 +1086,12 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                 const double x = x0 + static_cast<double>(i) * spec.dx;
                 const std::size_t idx = grid.idx(i, j);
                 for (const auto& region : spec.magnetRegions) {
-                    if (region.shape == ScenarioSpec::MagnetRegion::Shape::Polygon) {
+                    const bool hasPolygon = region.xs.size() == region.ys.size() && region.xs.size() >= 3;
+                    if (hasPolygon) {
                         if (x < region.min_x || x > region.max_x || y < region.min_y || y > region.max_y) {
                             continue;
                         }
-                        if (pointInRect(x, y, region.min_x, region.max_x, region.min_y, region.max_y) &&
-                            pointInPolygonCoords(x, y, region.xs, region.ys)) {
+                        if (pointInPolygonCoords(x, y, region.xs, region.ys)) {
                             grid.Mx[idx] += region.Mx;
                             grid.My[idx] += region.My;
                         }
@@ -578,6 +1159,199 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
             }
         }
     }
+}
+
+namespace {
+
+void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::TimelineFrame& frame,
+                            ScenarioSpec& workingSpec) {
+    if (!baseSpec.rotors.empty()) {
+        std::vector<double> rotorAngles(baseSpec.rotors.size(), 0.0);
+        std::vector<bool> rotorActive(baseSpec.rotors.size(), false);
+
+        if (frame.hasRotorAngle && !baseSpec.rotors.empty()) {
+            rotorAngles[0] = frame.rotorAngleDeg;
+            rotorActive[0] = true;
+        }
+
+        for (const auto& override : frame.rotorAngles) {
+            if (override.index >= baseSpec.rotors.size()) {
+                throw std::runtime_error("timeline rotor angle index out of range");
+            }
+            rotorAngles[override.index] = override.angleDegrees;
+            rotorActive[override.index] = true;
+        }
+
+        for (std::size_t r = 0; r < baseSpec.rotors.size(); ++r) {
+            if (!rotorActive[r]) {
+                continue;
+            }
+            const auto& rotor = baseSpec.rotors[r];
+            const double angleRad = rotorAngles[r] * kPi / 180.0;
+            const double cosA = std::cos(angleRad);
+            const double sinA = std::sin(angleRad);
+
+            for (std::size_t idx : rotor.polygonIndices) {
+                if (idx >= baseSpec.polygons.size() || idx >= workingSpec.polygons.size()) {
+                    throw std::runtime_error("rotor polygon index out of range");
+                }
+                const auto& basePoly = baseSpec.polygons[idx];
+                auto& poly = workingSpec.polygons[idx];
+                if (basePoly.xs.size() != basePoly.ys.size() || basePoly.xs.empty()) {
+                    continue;
+                }
+                poly.xs.resize(basePoly.xs.size());
+                poly.ys.resize(basePoly.ys.size());
+                double minX = std::numeric_limits<double>::infinity();
+                double maxX = -std::numeric_limits<double>::infinity();
+                double minY = std::numeric_limits<double>::infinity();
+                double maxY = -std::numeric_limits<double>::infinity();
+                for (std::size_t v = 0; v < basePoly.xs.size(); ++v) {
+                    const double baseX = basePoly.xs[v];
+                    const double baseY = basePoly.ys[v];
+                    const double dx = baseX - rotor.pivotX;
+                    const double dy = baseY - rotor.pivotY;
+                    const double rx = rotor.pivotX + dx * cosA - dy * sinA;
+                    const double ry = rotor.pivotY + dx * sinA + dy * cosA;
+                    poly.xs[v] = rx;
+                    poly.ys[v] = ry;
+                    minX = std::min(minX, rx);
+                    maxX = std::max(maxX, rx);
+                    minY = std::min(minY, ry);
+                    maxY = std::max(maxY, ry);
+                }
+                poly.min_x = minX;
+                poly.max_x = maxX;
+                poly.min_y = minY;
+                poly.max_y = maxY;
+            }
+
+            for (std::size_t idx : rotor.magnetIndices) {
+                if (idx >= baseSpec.magnetRegions.size() || idx >= workingSpec.magnetRegions.size()) {
+                    throw std::runtime_error("rotor magnet index out of range");
+                }
+                const auto& baseMagnet = baseSpec.magnetRegions[idx];
+                auto& magnet = workingSpec.magnetRegions[idx];
+
+                std::vector<double> baseXs = baseMagnet.xs;
+                std::vector<double> baseYs = baseMagnet.ys;
+                if (baseXs.size() != baseYs.size() || baseXs.size() < 3) {
+                    baseXs = {baseMagnet.min_x, baseMagnet.max_x, baseMagnet.max_x, baseMagnet.min_x};
+                    baseYs = {baseMagnet.min_y, baseMagnet.min_y, baseMagnet.max_y, baseMagnet.max_y};
+                }
+                magnet.xs.resize(baseXs.size());
+                magnet.ys.resize(baseYs.size());
+                double minX = std::numeric_limits<double>::infinity();
+                double maxX = -std::numeric_limits<double>::infinity();
+                double minY = std::numeric_limits<double>::infinity();
+                double maxY = -std::numeric_limits<double>::infinity();
+                for (std::size_t v = 0; v < baseXs.size(); ++v) {
+                    const double dx = baseXs[v] - rotor.pivotX;
+                    const double dy = baseYs[v] - rotor.pivotY;
+                    const double rx = rotor.pivotX + dx * cosA - dy * sinA;
+                    const double ry = rotor.pivotY + dx * sinA + dy * cosA;
+                    magnet.xs[v] = rx;
+                    magnet.ys[v] = ry;
+                    minX = std::min(minX, rx);
+                    maxX = std::max(maxX, rx);
+                    minY = std::min(minY, ry);
+                    maxY = std::max(maxY, ry);
+                }
+                magnet.min_x = minX;
+                magnet.max_x = maxX;
+                magnet.min_y = minY;
+                magnet.max_y = maxY;
+
+                double mx = baseMagnet.Mx;
+                double my = baseMagnet.My;
+                magnet.Mx = mx * cosA - my * sinA;
+                magnet.My = mx * sinA + my * cosA;
+            }
+
+            for (std::size_t idx : rotor.wireIndices) {
+                if (idx >= baseSpec.wires.size() || idx >= workingSpec.wires.size()) {
+                    throw std::runtime_error("rotor wire index out of range");
+                }
+                const auto& baseWire = baseSpec.wires[idx];
+                auto& wire = workingSpec.wires[idx];
+                const double dx = baseWire.x - rotor.pivotX;
+                const double dy = baseWire.y - rotor.pivotY;
+                wire.x = rotor.pivotX + dx * cosA - dy * sinA;
+                wire.y = rotor.pivotY + dx * sinA + dy * cosA;
+            }
+        }
+    } else if (frame.hasRotorAngle) {
+        if (baseSpec.magnetRegions.empty()) {
+            throw std::runtime_error(
+                "timeline rotor_angle specified but scenario defines no magnet_regions");
+        }
+        const double angleRad = frame.rotorAngleDeg * kPi / 180.0;
+        const double cosA = std::cos(angleRad);
+        const double sinA = std::sin(angleRad);
+        for (std::size_t i = 0; i < workingSpec.magnetRegions.size(); ++i) {
+            const auto& baseRegion = baseSpec.magnetRegions[i];
+            double mx = baseRegion.Mx;
+            double my = baseRegion.My;
+            workingSpec.magnetRegions[i].Mx = mx * cosA - my * sinA;
+            workingSpec.magnetRegions[i].My = mx * sinA + my * cosA;
+        }
+    }
+
+    for (const auto& override : frame.magnetOverrides) {
+        if (override.index >= workingSpec.magnetRegions.size()) {
+            throw std::runtime_error("timeline magnet override index out of range");
+        }
+        auto& region = workingSpec.magnetRegions[override.index];
+        const auto& baseRegion = baseSpec.magnetRegions[override.index];
+        if (override.hasVector) {
+            region.Mx = override.magnetizationX;
+            region.My = override.magnetizationY;
+        }
+        if (override.hasAngle) {
+            const double angleRad = override.angleDegrees * kPi / 180.0;
+            const double cosA = std::cos(angleRad);
+            const double sinA = std::sin(angleRad);
+            double mx = baseRegion.Mx;
+            double my = baseRegion.My;
+            region.Mx = mx * cosA - my * sinA;
+            region.My = mx * sinA + my * cosA;
+        }
+    }
+
+    for (const auto& override : frame.wireOverrides) {
+        if (override.index >= workingSpec.wires.size()) {
+            throw std::runtime_error("timeline wire override index out of range");
+        }
+        workingSpec.wires[override.index].current = override.current;
+    }
+}
+
+}  // namespace
+
+std::vector<ScenarioFrame> expandScenarioTimeline(const ScenarioSpec& spec) {
+    std::vector<ScenarioFrame> frames;
+    if (spec.timeline.empty()) {
+        ScenarioFrame frame{};
+        frame.index = 0;
+        frame.time = 0.0;
+        frame.spec = spec;
+        frame.spec.timeline.clear();
+        frames.push_back(std::move(frame));
+        return frames;
+    }
+
+    frames.reserve(spec.timeline.size());
+    for (std::size_t idx = 0; idx < spec.timeline.size(); ++idx) {
+        ScenarioFrame frame{};
+        frame.index = idx;
+        frame.time = spec.timeline[idx].time;
+        frame.spec = spec;
+        frame.spec.timeline.clear();
+        applyTimelineOverrides(spec, spec.timeline[idx], frame.spec);
+        frames.push_back(std::move(frame));
+    }
+
+    return frames;
 }
 
 }  // namespace motorsim

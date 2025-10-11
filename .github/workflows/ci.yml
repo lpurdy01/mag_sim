@@ -14,11 +14,11 @@ jobs:
       - name: Build
         run: cmake --build build -j
       - name: Test (full suite)
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --parallel $(nproc)
       - name: Analytic wire regression test
         run: cd build && ctest --output-on-failure -R analytic_wire
       - name: Install visualization dependencies
-        run: python3 -m pip install --user numpy matplotlib
+        run: python3 -m pip install --user numpy matplotlib vtk
       - name: Prepare artifact directories
         run: |
           rm -rf outputs ci_artifacts
@@ -30,6 +30,10 @@ jobs:
           ./build/two_wire_cancel_test 2>&1 | tee ci_artifacts/two_wire_cancel_test.txt
           ./build/line_current_interface_test 2>&1 | tee ci_artifacts/line_current_interface_test.txt
           ./build/magnet_strip_test 2>&1 | tee ci_artifacts/magnet_strip_test.txt
+          ./build/probe_output_test 2>&1 | tee ci_artifacts/probe_output_test.txt
+          ./build/torque_validation_test 2>&1 | tee ci_artifacts/torque_validation_test.txt
+          ./build/back_emf_probe_test 2>&1 | tee ci_artifacts/back_emf_probe_test.txt
+          ./build/rotor_ripple_test 2>&1 | tee ci_artifacts/rotor_ripple_test.txt
           {
             echo "# Regression accuracy summary"
             echo
@@ -37,7 +41,11 @@ jobs:
               ci_artifacts/analytic_wire_test.txt \
               ci_artifacts/two_wire_cancel_test.txt \
               ci_artifacts/line_current_interface_test.txt \
-              ci_artifacts/magnet_strip_test.txt; do
+              ci_artifacts/magnet_strip_test.txt \
+              ci_artifacts/probe_output_test.txt \
+              ci_artifacts/torque_validation_test.txt \
+              ci_artifacts/back_emf_probe_test.txt \
+              ci_artifacts/rotor_ripple_test.txt; do
               name=$(basename "${report%.txt}")
               echo "## ${name}"
               cat "$report"
@@ -51,6 +59,9 @@ jobs:
           ./build/motor_sim --scenario inputs/line_current_interface.json --solve --outputs all
           ./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all --tol 5e-6 --max-iters 40000
           ./build/motor_sim --scenario inputs/tests/magnet_strip_test.json --solve --outputs all
+          ./build/motor_sim --scenario inputs/tests/rotor_ripple_test.json --solve --outputs all --parallel-frames --max-iters 40000 --tol 2.5e-6
+      - name: Verify VTK export
+        run: python3 python/verify_vtk.py outputs/rotor_ripple_field_frame_000.vti
       - name: Render visualisations
         env:
           MPLBACKEND: Agg
@@ -68,7 +79,7 @@ jobs:
             --save ci_artifacts/line_current_interface_field.png \
             --draw-boundaries \
             --streamlines \
-            --overlay-analytic-interface \
+            --overlay-analytic interface \
             --analytic-contours 10
           python3 python/visualize_scenario_field.py \
             --scenario inputs/iron_ring_demo.json \
@@ -84,16 +95,34 @@ jobs:
             --draw-boundaries \
             --streamlines \
             --color-scale log
+          python3 python/visualize_scenario_field.py \
+            --scenario inputs/tests/rotor_ripple_test.json \
+            --field-map outputs/rotor_ripple_field_frame_000.csv \
+            --save ci_artifacts/rotor_ripple_frame0.png \
+            --outline-vtp outputs/rotor_ripple_field_frame_000_outlines.vtp \
+            --draw-boundaries \
+            --streamlines \
+            --color-scale log \
+            --vector-mode log
+          python3 python/visualize_scenario_field.py \
+            --scenario inputs/tests/rotor_ripple_test.json \
+            --field-map outputs/rotor_ripple_field_frame_002.csv \
+            --save ci_artifacts/rotor_ripple_frame2.png \
+            --outline-vtp outputs/rotor_ripple_field_frame_002_outlines.vtp \
+            --draw-boundaries \
+            --streamlines \
+            --color-scale log \
+            --vector-mode log
           python3 python/visualize_wire.py \
             --csv outputs/validation_wire_line.csv \
             --save ci_artifacts/analytic_wire_line.png \
             --no-show
-      - name: Collect CSV artifacts
+      - name: Collect solver artifacts
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for csv in outputs/*.csv; do
-            cp "$csv" ci_artifacts/
+          for file in outputs/*.csv outputs/*.vti outputs/*_outlines.vtp outputs/*_outlines_labels.csv; do
+            cp "$file" ci_artifacts/
           done
       - name: Upload simulation artifacts
         uses: actions/upload-artifact@v4

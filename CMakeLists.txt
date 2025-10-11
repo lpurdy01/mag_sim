@@ -72,11 +72,58 @@ add_test(NAME polygon_region COMMAND polygon_region_test)
 add_executable(output_quantity_test
     tests/output_quantity_test.cpp
     src/motorsim/ingest.cpp
-    src/motorsim/io_csv.cpp)
+    src/motorsim/io_csv.cpp
+    src/motorsim/io_vtk.cpp)
 target_include_directories(output_quantity_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME output_quantity COMMAND output_quantity_test)
+
+add_executable(timeline_frames_test
+    tests/timeline_frames_test.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(timeline_frames_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME timeline_frames COMMAND timeline_frames_test)
+
+add_executable(probe_output_test
+    tests/probe_output_test.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(probe_output_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME probe_output COMMAND probe_output_test)
+
+add_executable(back_emf_probe_test
+    tests/back_emf_probe_test.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(back_emf_probe_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME back_emf_probe COMMAND back_emf_probe_test)
+
+add_executable(torque_validation_test
+    tests/torque_validation_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(torque_validation_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME torque_validation COMMAND torque_validation_test)
+
+add_executable(rotor_ripple_test
+    tests/rotor_ripple_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(rotor_ripple_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME rotor_ripple COMMAND rotor_ripple_test)
 
 add_test(
     NAME scenario_python_emit

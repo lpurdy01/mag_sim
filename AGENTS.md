@@ -49,9 +49,10 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
   caught early.
 - The field visualiser exposes extra switches to aid debugging: use
   `--draw-boundaries` to overlay material and magnet outlines, `--streamlines`
-  to trace the flow, and `--overlay-analytic-interface` to compare against the
+  to trace the flow, and `--overlay-analytic interface` to compare against the
   method-of-images solution for planar interface scenarios. Pair with
-  `--hide-vectors` if the quiver clutter is distracting.
+  `--vector-mode log` to compress dynamic range or `--vector-mode off` to hide
+  the quiver field entirely.
 - The iron-ring demo requires a slightly looser nonlinear solve than the other
   regressions; the CI workflow invokes `motor_sim` with
   `--tol 5e-6 --max-iters 40000` for that scenario so the artefact rendering

@@ -17,6 +17,7 @@
   "outputs": [
     {"type": "field_map", "id": "combined", "quantity": "BH"},
     {"type": "field_map", "id": "energy", "quantity": "energy_density"},
+    {"type": "field_map", "id": "vtk_map", "quantity": "B", "format": "vti"},
     {"type": "line_probe", "id": "probe_h", "axis": "x", "value": 0.0, "quantity": "Hmag"}
   ]
 }
