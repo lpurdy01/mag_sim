@@ -46,8 +46,9 @@ animation command on the new JSON.
 
 ## Animation
 
-`python/animate_three_phase.py` renders a two-panel animation that combines the
-bore-averaged field direction with the driving phase currents. The CLI accepts:
+`python/animate_three_phase.py` renders a full-field animation that overlays the
+cell-centred |B| map, quiver arrows, bore compass, and the driving phase
+currents. The CLI accepts:
 
 - `--pvd`: VTK time-series index produced by `motor_sim --vtk-series`.
 - `--scenario`: scenario JSON (required to extract timeline currents and bore
@@ -55,6 +56,11 @@ bore-averaged field direction with the driving phase currents. The CLI accepts:
 - `--save`: output path (MP4/GIF; binaries are uploaded as CI artefacts rather
   than committed).
 - `--fps` and `--width`: tune playback speed and output resolution.
+- `--html`: emit an interactive HTML player (uses the same data as the MP4).
+- `--frame-png`: write a static render of the first frame (handy for docs or
+  quick inspection).
+- `--log-scale`: switch the |B| colour map to logarithmic scaling to emphasise
+  the field in low-magnitude regions.
 
 The animation is designed for the CI demo case and remains lightweight enough
 for larger offline runs.

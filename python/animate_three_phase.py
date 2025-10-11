@@ -7,12 +7,13 @@ import json
 import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import vtk  # type: ignore
+from matplotlib.colors import LogNorm
 from matplotlib.patches import FancyArrowPatch
 from vtk.util.numpy_support import vtk_to_numpy  # type: ignore
 
@@ -95,7 +96,9 @@ def load_phase_currents(scenario: Dict[str, object]) -> Tuple[np.ndarray, np.nda
     )
 
 
-def compute_bore_series(datasets: List[Tuple[float, Path]], bore_polygon: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def compute_bore_series(
+    datasets: List[Tuple[float, Path]], bore_polygon: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     times = []
     bx_values = []
     by_values = []
@@ -135,8 +138,46 @@ def compute_bore_series(datasets: List[Tuple[float, Path]], bore_polygon: np.nda
     return np.asarray(times, dtype=float), np.asarray(bx_values, dtype=float), np.asarray(by_values, dtype=float)
 
 
+def load_field_frames(
+    datasets: List[Tuple[float, Path]]
+) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, np.ndarray]]]:
+    frames: List[Dict[str, np.ndarray]] = []
+    x_coords: Optional[np.ndarray] = None
+    y_coords: Optional[np.ndarray] = None
+    for _, vti_path in datasets:
+        reader = vtk.vtkXMLImageDataReader()
+        reader.SetFileName(str(vti_path))
+        reader.Update()
+        data = reader.GetOutput()
+        cell_data = data.GetCellData()
+        bx_array = cell_data.GetArray("Bx")
+        by_array = cell_data.GetArray("By")
+        if bx_array is None or by_array is None:
+            raise RuntimeError(f"VTK file {vti_path} is missing Bx/By arrays")
+        bx = vtk_to_numpy(bx_array)
+        by = vtk_to_numpy(by_array)
+        dims = data.GetDimensions()
+        spacing = data.GetSpacing()
+        origin = data.GetOrigin()
+        cell_nx = max(dims[0] - 1, 1)
+        cell_ny = max(dims[1] - 1, 1)
+        bx = bx.reshape((cell_ny, cell_nx))
+        by = by.reshape((cell_ny, cell_nx))
+        mag = np.hypot(bx, by)
+        if x_coords is None or y_coords is None:
+            x_centers = origin[0] + (np.arange(cell_nx) + 0.5) * spacing[0]
+            y_centers = origin[1] + (np.arange(cell_ny) + 0.5) * spacing[1]
+            x_coords, y_coords = np.meshgrid(x_centers, y_centers)
+        frames.append({"bx": bx, "by": by, "mag": mag})
+    if x_coords is None or y_coords is None:
+        raise RuntimeError("No field frames could be loaded")
+    return x_coords, y_coords, frames
+
+
 def build_animation(
     save_path: Path,
+    html_path: Optional[Path],
+    still_path: Optional[Path],
     datasets: List[Tuple[float, Path]],
     phase_times: np.ndarray,
     currents_a: np.ndarray,
@@ -148,22 +189,77 @@ def build_animation(
     bore_polygon: np.ndarray,
     fps: int,
     width: int,
+    log_scale: bool,
 ) -> None:
+    x_coords, y_coords, field_frames = load_field_frames(datasets)
     bore_magnitude = np.hypot(bore_bx, bore_by)
     max_mag = float(np.max(bore_magnitude)) if bore_magnitude.size > 0 else 1.0
     bore_angles = np.arctan2(bore_by, bore_bx)
 
     fig_width_in = width / 100.0
-    fig_height_in = fig_width_in * 0.75
-    fig, (ax_compass, ax_currents) = plt.subplots(
-        2,
-        1,
-        figsize=(fig_width_in, fig_height_in),
-        gridspec_kw={"height_ratios": [2, 1]},
+    fig_height_in = fig_width_in * 0.9
+    fig = plt.figure(figsize=(fig_width_in, fig_height_in))
+    gs = fig.add_gridspec(3, 2, height_ratios=[6, 2, 2], width_ratios=[20, 1], hspace=0.3, wspace=0.05)
+
+    ax_field = fig.add_subplot(gs[0, 0])
+    ax_field.set_aspect("equal")
+    extent = [x_coords.min(), x_coords.max(), y_coords.min(), y_coords.max()]
+    all_mags = [frame["mag"] for frame in field_frames]
+    mag_max = max(float(np.max(mag)) for mag in all_mags)
+    mag_min = min(float(np.min(mag)) for mag in all_mags)
+    if log_scale:
+        positive_samples = [mag[mag > 0.0] for mag in all_mags]
+        positives = (
+            np.concatenate([sample for sample in positive_samples if sample.size])
+            if any(sample.size for sample in positive_samples)
+            else np.array([], dtype=float)
+        )
+        if positives.size:
+            vmin = float(np.percentile(positives, 5))
+            vmax = float(np.max(positives))
+        else:
+            vmin, vmax = 1e-6, 1.0
+        norm = LogNorm(vmin=max(vmin, 1e-9), vmax=max(vmax, vmin * 10.0))
+        field_to_display = lambda mag: np.maximum(mag, norm.vmin)  # noqa: E731
+    else:
+        norm = None
+        field_to_display = lambda mag: mag  # noqa: E731
+    first_mag = all_mags[0]
+    im = ax_field.imshow(
+        field_to_display(first_mag),
+        origin="lower",
+        extent=extent,
+        cmap="viridis",
+        norm=norm,
+        vmin=None if log_scale else mag_min,
+        vmax=None if log_scale else mag_max,
+    )
+    ax_field.set_xlabel("x [m]")
+    ax_field.set_ylabel("y [m]")
+
+    quiver_step = max(1, int(max(first_mag.shape) / 30))
+    quiver = ax_field.quiver(
+        x_coords[::quiver_step, ::quiver_step],
+        y_coords[::quiver_step, ::quiver_step],
+        field_frames[0]["bx"][::quiver_step, ::quiver_step],
+        field_frames[0]["by"][::quiver_step, ::quiver_step],
+        color="white",
+        scale=None,
+        width=0.005,
     )
 
+    if bore_polygon.size:
+        ax_field.plot(bore_polygon[:, 0], bore_polygon[:, 1], color="tab:orange", lw=1.5)
+
+    ax_field.set_title("Magnetic flux density magnitude")
+    cbar = fig.colorbar(im, cax=fig.add_subplot(gs[0, 1]))
+    cbar.set_label("|B| [T]")
+
+    fig.add_subplot(gs[1, 1]).axis("off")
+
+    ax_compass = fig.add_subplot(gs[1, 0])
     bore_radius = np.max(np.linalg.norm(bore_polygon, axis=1)) if bore_polygon.size else 1.0
-    circle = plt.Circle((0.0, 0.0), bore_radius, fill=False, color="tab:gray", lw=1.5)
+    circle = plt.Circle((0.0, 0.0), bore_radius, fill=False, color="tab:gray", lw=1.2)
     ax_compass.add_patch(circle)
     ax_compass.set_aspect("equal", adjustable="datalim")
     padding = bore_radius * 1.2
@@ -172,7 +268,10 @@ def build_animation(
     ax_compass.axis("off")
     arrow = FancyArrowPatch((0.0, 0.0), (0.0, 0.0), color="tab:orange", arrowstyle="->", linewidth=2.0)
     ax_compass.add_patch(arrow)
-    angle_text = ax_compass.text(0.02, 0.95, "", transform=ax_compass.transAxes, ha="left", va="top")
+    angle_text = ax_compass.text(0.02, 0.9, "", transform=ax_compass.transAxes, ha="left", va="top")
+
+    ax_currents = fig.add_subplot(gs[2, 0])
+    fig.add_subplot(gs[2, 1]).axis("off")
 
     ax_currents.plot(phase_times, currents_a, label="Ia", color="tab:red")
     ax_currents.plot(phase_times, currents_b, label="Ib", color="tab:green")
@@ -184,6 +283,12 @@ def build_animation(
     marker_line = ax_currents.axvline(phase_times[0] if phase_times.size else 0.0, color="k", linestyle="--")
 
     def update(frame_idx: int) -> List[object]:
+        field = field_frames[frame_idx]
+        im.set_data(field_to_display(field["mag"]))
+        quiver.set_UVC(
+            field["bx"][::quiver_step, ::quiver_step],
+            field["by"][::quiver_step, ::quiver_step],
+        )
         time = bore_times[frame_idx]
         magnitude = bore_magnitude[frame_idx]
         angle = bore_angles[frame_idx]
@@ -194,7 +299,9 @@ def build_animation(
         angle_deg = math.degrees(angle)
         angle_text.set_text(f"t={time:.4f} s\n|B|={magnitude:.3f} T\nangle={angle_deg:.1f}°")
         marker_line.set_xdata([time, time])
-        return [arrow, angle_text, marker_line]
+        return [im, quiver, arrow, angle_text, marker_line]
+
+    update(0)
 
     anim = animation.FuncAnimation(
         fig,
@@ -212,6 +319,31 @@ def build_animation(
         writer = animation.FFMpegWriter(fps=fps)
     anim.save(str(save_path), writer=writer)
 
+    if still_path is not None:
+        still_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(still_path, dpi=150)
+
+    if html_path is not None:
+        html_path.parent.mkdir(parents=True, exist_ok=True)
+        video_html = anim.to_jshtml(fps=fps)
+        phase_info = """
+<details>
+<summary>How to read this animation</summary>
+<p>The top panel shows the spatial magnetic flux density magnitude with field vectors.
+The middle gauge indicates the dominant bore field direction, while the bottom plot overlays the three balanced phase currents.</p>
+</details>
+"""
+        html_path.write_text(
+            "<html><head><meta charset='utf-8'><title>Three-phase stator field animation</title></head><body>"
+            + "<h1>Three-phase stator rotating field</h1>"
+            + phase_info
+            + video_html
+            + "</body></html>",
+            encoding="utf-8",
+        )
+
+    plt.close(fig)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -220,6 +352,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save", type=Path, required=True, help="Output animation path (e.g. MP4)")
     parser.add_argument("--fps", type=int, default=24, help="Animation frames per second (default: 24)")
     parser.add_argument("--width", type=int, default=640, help="Figure width in pixels (default: 640)")
+    parser.add_argument("--html", type=Path, help="Optional HTML output embedding an interactive player")
+    parser.add_argument("--frame-png", type=Path, help="Optional path for saving the first frame as a PNG image")
+    parser.add_argument("--log-scale", action="store_true", help="Render |B| with a logarithmic color scale")
     return parser.parse_args()
 
 
@@ -236,6 +371,8 @@ def main() -> None:
         raise RuntimeError("Timeline length and VTK frame count mismatch")
     build_animation(
         args.save,
+        args.html,
+        args.frame_png,
         datasets,
         phase_times,
         ia,
@@ -247,6 +384,7 @@ def main() -> None:
         bore_polygon,
         fps=args.fps,
         width=args.width,
+        log_scale=args.log_scale,
     )
 
 
