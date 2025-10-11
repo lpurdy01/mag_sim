@@ -7,40 +7,72 @@
 #include "grid.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <functional>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace motorsim {
 
 /**
  * @brief Snapshot of the iterative solver's progress.
  */
-struct SolverProgress {
-    std::size_t iteration{0};
-    double relResidual{0.0};
+enum class SolverKind { SOR, CG };
+
+struct InitialGuess {
+    const std::vector<double>* Az0{nullptr};
 };
 
-/**
- * @brief Solver options controlling the Gauss–Seidel / SOR iteration.
- */
+struct ProgressSample {
+    std::size_t iter{0};
+    double relResidual{0.0};
+    double elapsedSeconds{0.0};
+};
+
+struct ProgressSink {
+    virtual ~ProgressSink() = default;
+    virtual bool onProgress(const ProgressSample& sample) = 0;
+    virtual std::optional<std::string> requestFieldDump(const ProgressSample& sample) {
+        (void)sample;
+        return std::nullopt;
+    }
+};
+
 struct SolveOptions {
-    std::size_t maxIters{2000};
+    SolverKind kind{SolverKind::SOR};
+    std::size_t maxIters{20000};
     double tol{1e-6};
     double omega{1.7};
+    std::size_t snapshotEveryIters{0};
+    double progressEverySec{2.0};
+    bool warmStart{false};
+    bool useProlongation{false};
+    std::size_t coarseNx{0};
+    std::size_t coarseNy{0};
     bool verbose{false};
-    std::chrono::steady_clock::duration progressInterval{std::chrono::steady_clock::duration::zero()};
-    std::function<void(const SolverProgress&)> progressCallback{};
 };
 
-/**
- * @brief Reports the outcome of the magnetostatic solve.
- */
-struct SolveReport {
+struct SolveResult {
     std::size_t iters{0};
     double relResidual{0.0};
     bool converged{false};
 };
 
-SolveReport solveAz_GS_SOR(Grid2D& grid, const SolveOptions& options);
+SolveResult solveAz(Grid2D& grid,
+                    const SolveOptions& options,
+                    const InitialGuess* initialGuess = nullptr,
+                    ProgressSink* progress = nullptr);
+
+SolveResult solveAz_GS_SOR(Grid2D& grid,
+                           const SolveOptions& options,
+                           const InitialGuess* initialGuess = nullptr,
+                           ProgressSink* progress = nullptr);
+
+SolveResult solveAz_CG(Grid2D& grid,
+                       const SolveOptions& options,
+                       const InitialGuess* initialGuess = nullptr,
+                       ProgressSink* progress = nullptr);
 
 /**
  * @brief Compute magnetic flux density components from the solved vector potential.
@@ -54,11 +86,5 @@ void computeB(Grid2D& grid);
  * @param grid Grid with populated Bx/By and magnetisation vectors.
  */
 void computeH(Grid2D& grid);
-
-/**
- * @brief Placeholder for a future conjugate gradient solver.
- * @note Currently unimplemented; returns a non-converged report.
- */
-SolveReport solveAz_CG(Grid2D& grid, const SolveOptions& options);
 
 }  // namespace motorsim

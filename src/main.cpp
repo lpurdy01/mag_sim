@@ -9,7 +9,9 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cctype>
 #include <filesystem>
+#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -30,7 +32,10 @@ namespace {
 void printUsage() {
     std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
                  " [--list-outputs] [--outputs IDs] [--max-iters N] [--tol VALUE]"
-                 " [--omega VALUE] [--parallel-frames] [--vtk-series PATH]\n";
+                 " [--omega VALUE] [--parallel-frames] [--vtk-series PATH]"
+                 " [--solver {sor|cg}] [--warm-start] [--no-warm-start] [--use-prolongation]"
+                 " [--no-prolongation] [--coarse-nx N] [--coarse-ny N]"
+                 " [--progress-every SEC] [--snapshot-every N] [--quiet] [--no-quiet]\n";
 }
 
 std::vector<std::string> splitCommaSeparated(const std::string& text) {
@@ -65,6 +70,7 @@ struct FrameRunResult {
     std::string stdoutLog;
     std::string stderrLog;
     std::unordered_map<std::string, double> backEmfFluxes;
+    std::vector<double> AzSolution;
     struct VtkSeriesFrame {
         std::string id;
         std::string path;
@@ -91,12 +97,15 @@ struct FrameProgressSnapshot {
     std::size_t lastIteration{0};
     double lastResidual{0.0};
     std::chrono::steady_clock::time_point lastUpdate{};
+    double targetTol{1e-6};
+    double etaSeconds{-1.0};
 };
 
 class FrameProgressState {
 public:
-    FrameProgressState(std::size_t index, double timeValue, bool hasTimeValue)
-        : frameIndex(index), frameTime(timeValue), hasTime(hasTimeValue), lastUpdate(Clock::now()) {}
+    FrameProgressState(std::size_t index, double timeValue, bool hasTimeValue, double tol)
+        : frameIndex(index), frameTime(timeValue), hasTime(hasTimeValue), targetTol(tol),
+          lastUpdate(Clock::now()) {}
 
     void markStarted() {
         std::lock_guard<std::mutex> lock(mutex);
@@ -106,6 +115,7 @@ public:
         lastIteration = 0;
         lastResidual = 0.0;
         lastUpdate = Clock::now();
+        history.clear();
     }
 
     void update(std::size_t iteration, double residual) {
@@ -113,7 +123,12 @@ public:
         active = true;
         lastIteration = iteration;
         lastResidual = residual;
-        lastUpdate = Clock::now();
+        const auto now = Clock::now();
+        lastUpdate = now;
+        history.push_back({iteration, residual, now});
+        if (history.size() > maxHistory) {
+            history.pop_front();
+        }
     }
 
     void markFinished(std::size_t iteration, double residual, bool didSucceed) {
@@ -124,6 +139,10 @@ public:
         lastIteration = iteration;
         lastResidual = residual;
         lastUpdate = Clock::now();
+        history.push_back({iteration, residual, lastUpdate});
+        if (history.size() > maxHistory) {
+            history.pop_front();
+        }
     }
 
     FrameProgressSnapshot snapshot() const {
@@ -138,15 +157,69 @@ public:
         snap.lastIteration = lastIteration;
         snap.lastResidual = lastResidual;
         snap.lastUpdate = lastUpdate;
+        snap.targetTol = targetTol;
+        snap.etaSeconds = estimateEtaSeconds();
         return snap;
     }
 
     const std::size_t frameIndex;
     const double frameTime;
     const bool hasTime;
+    const double targetTol;
 
 private:
     using Clock = std::chrono::steady_clock;
+
+    struct HistorySample {
+        std::size_t iteration{0};
+        double residual{0.0};
+        Clock::time_point time{};
+    };
+
+    double estimateEtaSeconds() const {
+        if (history.size() < 2 || !(targetTol > 0.0)) {
+            return -1.0;
+        }
+        const HistorySample& latest = history.back();
+        if (latest.residual <= targetTol) {
+            return 0.0;
+        }
+        for (auto it = history.rbegin() + 1; it != history.rend(); ++it) {
+            if (it->iteration == latest.iteration) {
+                continue;
+            }
+            if (!(it->residual > 0.0) || !(latest.residual > 0.0)) {
+                continue;
+            }
+            const std::size_t deltaIter = latest.iteration - it->iteration;
+            if (deltaIter == 0) {
+                continue;
+            }
+            const double deltaLog = std::log(it->residual) - std::log(latest.residual);
+            if (!(deltaLog > 0.0)) {
+                continue;
+            }
+            const double decayPerIter = deltaLog / static_cast<double>(deltaIter);
+            if (!(decayPerIter > 0.0)) {
+                continue;
+            }
+            const double remainingLog = std::log(latest.residual) - std::log(targetTol);
+            if (!(remainingLog > 0.0)) {
+                return 0.0;
+            }
+            const double remainingIter = remainingLog / decayPerIter;
+            if (!(remainingIter > 0.0)) {
+                continue;
+            }
+            const double deltaTime = std::chrono::duration<double>(latest.time - it->time).count();
+            if (!(deltaTime > 0.0)) {
+                continue;
+            }
+            const double secondsPerIter = deltaTime / static_cast<double>(deltaIter);
+            return remainingIter * secondsPerIter;
+        }
+        return -1.0;
+    }
 
     mutable std::mutex mutex;
     bool active{false};
@@ -155,14 +228,17 @@ private:
     std::size_t lastIteration{0};
     double lastResidual{0.0};
     Clock::time_point lastUpdate;
+    std::deque<HistorySample> history;
+    static constexpr std::size_t maxHistory = 6;
 };
 
 class ProgressPrinter {
 public:
     ProgressPrinter(std::vector<std::shared_ptr<FrameProgressState>> states,
-                    std::chrono::steady_clock::duration interval)
-        : states_(std::move(states)), interval_(interval) {
-        if (!states_.empty() && interval_ > std::chrono::steady_clock::duration::zero()) {
+                    double intervalSec,
+                    bool quiet)
+        : states_(std::move(states)), intervalSec_(intervalSec), quiet_(quiet), start_(Clock::now()) {
+        if (!quiet_ && !states_.empty() && intervalSec_ > 0.0) {
             worker_ = std::thread([this]() { run(); });
         }
     }
@@ -174,15 +250,17 @@ public:
         if (wasRunning && worker_.joinable()) {
             worker_.join();
         }
-        if (!states_.empty() && !finalPrinted_.exchange(true)) {
+        if (!quiet_ && !states_.empty() && !finalPrinted_.exchange(true)) {
             printStatus(true);
         }
     }
 
 private:
+    using Clock = std::chrono::steady_clock;
+
     void run() {
         while (!stopped_.load()) {
-            std::this_thread::sleep_for(interval_);
+            std::this_thread::sleep_for(std::chrono::duration<double>(intervalSec_));
             if (stopped_.load()) {
                 break;
             }
@@ -194,8 +272,17 @@ private:
         }
     }
 
+    static std::string formatElapsed(double seconds) {
+        const int totalSeconds = static_cast<int>(seconds);
+        const int minutes = totalSeconds / 60;
+        const int remSeconds = totalSeconds % 60;
+        std::ostringstream oss;
+        oss << std::setfill('0') << std::setw(2) << minutes << ':' << std::setw(2) << remSeconds;
+        return oss.str();
+    }
+
     bool printStatus(bool force) {
-        if (states_.empty()) {
+        if (states_.empty() || quiet_) {
             return true;
         }
 
@@ -227,33 +314,41 @@ private:
         const std::size_t total = snapshots.size();
         const std::size_t queued = total > (completed + active) ? total - completed - active : 0;
 
-        std::ostringstream oss;
-        oss << "[progress] completed " << completed << "/" << total;
-        if (failed > 0) {
-            oss << " (failed: " << failed << ")";
-        }
-        oss << " frames; active: " << active << "; queued: " << queued << '\n';
+        const double elapsed = std::chrono::duration<double>(Clock::now() - start_).count();
 
-        const auto now = std::chrono::steady_clock::now();
-        for (const auto& snap : snapshots) {
-            if (!snap.active) {
-                continue;
-            }
-            oss << "    Frame " << snap.frameIndex;
-            if (snap.hasTime) {
-                oss << " (t=" << snap.frameTime << " s)";
-            }
-            oss << " iter=" << snap.lastIteration;
-            if (snap.lastIteration > 0) {
-                std::ostringstream residualStream;
-                residualStream.setf(std::ios::scientific, std::ios::floatfield);
-                residualStream << std::setprecision(3) << snap.lastResidual;
-                oss << " relResidual=" << residualStream.str();
-            }
-            const auto ageSeconds =
-                std::chrono::duration_cast<std::chrono::seconds>(now - snap.lastUpdate).count();
-            if (ageSeconds > 0) {
-                oss << " (updated " << ageSeconds << "s ago)";
+        std::ostringstream oss;
+        oss << '[' << formatElapsed(elapsed) << "] frames: " << completed << '/' << total
+            << " done | active: " << active << " | queued: " << queued;
+        if (failed > 0) {
+            oss << " | failed: " << failed;
+        }
+        oss << '\n';
+
+        if (active > 0) {
+            oss << "        ";
+            bool first = true;
+            for (const auto& snap : snapshots) {
+                if (!snap.active) {
+                    continue;
+                }
+                if (!first) {
+                    oss << " | ";
+                }
+                first = false;
+                oss << 'F' << snap.frameIndex << " iter=" << std::setw(6) << snap.lastIteration
+                    << " relRes=";
+                oss << std::scientific << std::setprecision(3) << snap.lastResidual;
+                oss << std::defaultfloat;
+                double progressRatio = 0.0;
+                if (snap.lastIteration > 0 && snap.lastResidual > 0.0 && snap.targetTol > 0.0) {
+                    progressRatio = std::clamp(snap.targetTol / snap.lastResidual, 0.0, 1.0);
+                }
+                oss << " prog=" << std::fixed << std::setprecision(0) << progressRatio * 100.0 << '%';
+                oss << std::defaultfloat;
+                if (snap.etaSeconds >= 0.0) {
+                    oss << " eta≈" << std::fixed << std::setprecision(1) << snap.etaSeconds << 's';
+                    oss << std::defaultfloat;
+                }
             }
             oss << '\n';
         }
@@ -265,7 +360,9 @@ private:
     }
 
     std::vector<std::shared_ptr<FrameProgressState>> states_;
-    std::chrono::steady_clock::duration interval_;
+    double intervalSec_{0.0};
+    bool quiet_{false};
+    Clock::time_point start_;
     std::atomic<bool> stopped_{false};
     std::atomic<bool> finalPrinted_{false};
     std::thread worker_{};
@@ -484,9 +581,53 @@ std::vector<motorsim::VtkOutlineLoop> buildOutlineLoops(const motorsim::Scenario
     return loops;
 }
 
+bool tryParseSolverKind(const std::string& text, motorsim::SolverKind& out) {
+    std::string lower;
+    lower.reserve(text.size());
+    for (unsigned char ch : text) {
+        lower.push_back(static_cast<char>(std::tolower(ch)));
+    }
+    if (lower == "sor") {
+        out = motorsim::SolverKind::SOR;
+        return true;
+    }
+    if (lower == "cg") {
+        out = motorsim::SolverKind::CG;
+        return true;
+    }
+    return false;
+}
+
+class FrameProgressSinkImpl : public motorsim::ProgressSink {
+public:
+    using SnapshotProvider = std::function<std::optional<std::string>(const motorsim::ProgressSample&)>;
+
+    FrameProgressSinkImpl(FrameProgressState* state, SnapshotProvider provider)
+        : state_(state), provider_(std::move(provider)) {}
+
+    bool onProgress(const motorsim::ProgressSample& sample) override {
+        if (state_) {
+            state_->update(sample.iter, sample.relResidual);
+        }
+        return true;
+    }
+
+    std::optional<std::string> requestFieldDump(const motorsim::ProgressSample& sample) override {
+        if (!provider_) {
+            return std::nullopt;
+        }
+        return provider_(sample);
+    }
+
+private:
+    FrameProgressState* state_{nullptr};
+    SnapshotProvider provider_{};
+};
+
 FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::SolveOptions& options,
                           const OutputFilter& filter, bool timelineActive, std::size_t frameDigits,
-                          bool writeMidline, FrameProgressState* progressState) {
+                          bool writeMidline, FrameProgressState* progressState,
+                          const std::vector<double>* warmStartGuess) {
     FrameRunResult result{};
     std::ostringstream out;
     std::ostringstream err;
@@ -503,13 +644,31 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     }
 
     motorsim::SolveOptions solveOptions = options;
-    if (progressState) {
-        solveOptions.progressCallback = [progressState](const motorsim::SolverProgress& progress) {
-            progressState->update(progress.iteration, progress.relResidual);
+
+    FrameProgressSinkImpl::SnapshotProvider snapshotProvider;
+    if (progressState && options.snapshotEveryIters > 0) {
+        snapshotProvider = [timelineActive, frameDigits, frame](const motorsim::ProgressSample& sample) {
+            std::ostringstream name;
+            name << "outputs/snapshots/frame_";
+            if (timelineActive) {
+                name << std::setfill('0') << std::setw(static_cast<int>(frameDigits)) << frame.index;
+            } else {
+                name << std::setw(3) << std::setfill('0') << frame.index;
+            }
+            name << "_iter_" << std::setw(6) << std::setfill('0') << sample.iter << ".csv";
+            return std::optional<std::string>(name.str());
         };
     }
+    FrameProgressSinkImpl sink(progressState, snapshotProvider);
 
-    const motorsim::SolveReport report = motorsim::solveAz_GS_SOR(grid, solveOptions);
+    motorsim::InitialGuess guess{};
+    const motorsim::InitialGuess* guessPtr = nullptr;
+    if (warmStartGuess && warmStartGuess->size() == grid.Az.size()) {
+        guess.Az0 = warmStartGuess;
+        guessPtr = &guess;
+    }
+
+    const motorsim::SolveResult report = motorsim::solveAz(grid, solveOptions, guessPtr, progressState ? &sink : nullptr);
     if (!report.converged) {
         err << "Frame " << frame.index
             << ": solver did not converge. relResidual=" << report.relResidual << '\n';
@@ -1043,6 +1202,7 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     result.outputError = outputError;
     result.stdoutLog = out.str();
     result.stderrLog = err.str();
+    result.AzSolution = grid.Az;
     progressGuard.markFinal(report.iters, report.relResidual, true);
     return result;
 }
@@ -1062,6 +1222,14 @@ int main(int argc, char** argv) {
     std::optional<double> tolOverride;
     std::optional<double> omegaOverride;
     std::optional<std::string> vtkSeriesPath;
+    std::optional<std::string> solverOverride;
+    std::optional<bool> warmStartOverride;
+    std::optional<bool> prolongationOverride;
+    std::optional<std::size_t> coarseNxOverride;
+    std::optional<std::size_t> coarseNyOverride;
+    std::optional<double> progressEveryOverride;
+    std::optional<std::size_t> snapshotEveryOverride;
+    std::optional<bool> quietOverride;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -1148,6 +1316,94 @@ int main(int argc, char** argv) {
                 return 1;
             }
             omegaOverride = value;
+        } else if (arg == "--solver") {
+            if (i + 1 >= argc) {
+                std::cerr << "--solver requires an argument (sor or cg)\n";
+                printUsage();
+                return 1;
+            }
+            const std::string value = argv[++i];
+            if (value != "sor" && value != "cg") {
+                std::cerr << "--solver must be 'sor' or 'cg'\n";
+                return 1;
+            }
+            solverOverride = value;
+        } else if (arg == "--warm-start") {
+            warmStartOverride = true;
+        } else if (arg == "--no-warm-start") {
+            warmStartOverride = false;
+        } else if (arg == "--use-prolongation") {
+            prolongationOverride = true;
+        } else if (arg == "--no-prolongation") {
+            prolongationOverride = false;
+        } else if (arg == "--coarse-nx") {
+            if (i + 1 >= argc) {
+                std::cerr << "--coarse-nx requires an integer argument\n";
+                return 1;
+            }
+            std::size_t value = 0;
+            try {
+                value = static_cast<std::size_t>(std::stoul(argv[++i]));
+            } catch (const std::exception&) {
+                std::cerr << "--coarse-nx requires a valid integer argument\n";
+                return 1;
+            }
+            if (value < 3) {
+                std::cerr << "--coarse-nx must be at least 3\n";
+                return 1;
+            }
+            coarseNxOverride = value;
+        } else if (arg == "--coarse-ny") {
+            if (i + 1 >= argc) {
+                std::cerr << "--coarse-ny requires an integer argument\n";
+                return 1;
+            }
+            std::size_t value = 0;
+            try {
+                value = static_cast<std::size_t>(std::stoul(argv[++i]));
+            } catch (const std::exception&) {
+                std::cerr << "--coarse-ny requires a valid integer argument\n";
+                return 1;
+            }
+            if (value < 3) {
+                std::cerr << "--coarse-ny must be at least 3\n";
+                return 1;
+            }
+            coarseNyOverride = value;
+        } else if (arg == "--progress-every") {
+            if (i + 1 >= argc) {
+                std::cerr << "--progress-every requires a floating-point argument\n";
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--progress-every requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (value < 0.0) {
+                std::cerr << "--progress-every must be non-negative\n";
+                return 1;
+            }
+            progressEveryOverride = value;
+        } else if (arg == "--snapshot-every") {
+            if (i + 1 >= argc) {
+                std::cerr << "--snapshot-every requires an integer argument\n";
+                return 1;
+            }
+            std::size_t value = 0;
+            try {
+                value = static_cast<std::size_t>(std::stoul(argv[++i]));
+            } catch (const std::exception&) {
+                std::cerr << "--snapshot-every requires a valid integer argument\n";
+                return 1;
+            }
+            snapshotEveryOverride = value;
+        } else if (arg == "--quiet") {
+            quietOverride = true;
+        } else if (arg == "--no-quiet") {
+            quietOverride = false;
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             return 0;
@@ -1329,10 +1585,60 @@ int main(int argc, char** argv) {
     }
 
     SolveOptions options{};
-    options.maxIters = maxItersOverride.value_or(20000);
+    options.maxIters = maxItersOverride ? static_cast<std::size_t>(*maxItersOverride) : 20000;
     options.tol = tolOverride.value_or(1e-6);
     options.omega = omegaOverride.value_or(1.7);
-    options.progressInterval = std::chrono::seconds(2);
+
+    const std::string solverId = solverOverride.value_or(spec.solverSettings.solverId);
+    if (!tryParseSolverKind(solverId, options.kind)) {
+        std::cerr << "Unknown solver identifier: " << solverId << "\n";
+        return 1;
+    }
+
+    bool warmStart = spec.solverSettings.warmStartSpecified ? spec.solverSettings.warmStart : false;
+    if (warmStartOverride) {
+        warmStart = *warmStartOverride;
+    }
+    options.warmStart = warmStart;
+
+    bool useProlongation = spec.solverSettings.prolongationSpecified ? spec.solverSettings.prolongationEnabled : false;
+    if (prolongationOverride) {
+        useProlongation = *prolongationOverride;
+    }
+    options.useProlongation = useProlongation;
+    if (options.useProlongation) {
+        if (coarseNxOverride) {
+            options.coarseNx = *coarseNxOverride;
+        } else if (spec.solverSettings.prolongationNx) {
+            options.coarseNx = *spec.solverSettings.prolongationNx;
+        }
+        if (coarseNyOverride) {
+            options.coarseNy = *coarseNyOverride;
+        } else if (spec.solverSettings.prolongationNy) {
+            options.coarseNy = *spec.solverSettings.prolongationNy;
+        }
+    }
+
+    double progressEverySec = spec.solverSettings.progressEverySecSpecified ?
+                                 spec.solverSettings.progressEverySec :
+                                 2.0;
+    if (progressEveryOverride) {
+        progressEverySec = *progressEveryOverride;
+    }
+    options.progressEverySec = progressEverySec;
+
+    std::size_t snapshotEvery = spec.solverSettings.snapshotEveryItersSpecified ?
+                                    spec.solverSettings.snapshotEveryIters :
+                                    static_cast<std::size_t>(0);
+    if (snapshotEveryOverride) {
+        snapshotEvery = *snapshotEveryOverride;
+    }
+    options.snapshotEveryIters = snapshotEvery;
+
+    bool quiet = spec.solverSettings.quietSpecified ? spec.solverSettings.quiet : false;
+    if (quietOverride) {
+        quiet = *quietOverride;
+    }
 
     OutputFilter filter{};
     filter.restrict = restrictOutputs;
@@ -1363,20 +1669,25 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (options.warmStart && timelineActive && runParallel) {
+        if (!quiet) {
+            std::cout << "Warm start enabled; solving frames sequentially to preserve dependency order.\n";
+        }
+        runParallel = false;
+        threadCount = 1;
+    }
+
     std::vector<std::shared_ptr<FrameProgressState>> progressStates;
     progressStates.reserve(frames.size());
     for (const auto& frame : frames) {
         const double frameTime = timelineActive ? frame.time : 0.0;
         progressStates.push_back(
-            std::make_shared<FrameProgressState>(frame.index, frameTime, timelineActive));
+            std::make_shared<FrameProgressState>(frame.index, frameTime, timelineActive, options.tol));
     }
-    auto printerInterval = options.progressInterval;
-    if (printerInterval <= std::chrono::steady_clock::duration::zero()) {
-        printerInterval = std::chrono::seconds(2);
-    }
-    ProgressPrinter progressPrinter(progressStates, printerInterval);
+    double printerInterval = options.progressEverySec > 0.0 ? options.progressEverySec : 2.0;
+    ProgressPrinter progressPrinter(progressStates, printerInterval, quiet);
 
-    if (runParallel) {
+    if (runParallel && !quiet) {
         std::cout << "Solving " << frames.size() << " frames with " << threadCount
                   << " worker threads\n";
     }
@@ -1394,7 +1705,8 @@ int main(int argc, char** argv) {
                         break;
                     }
                     results[idx] = solveFrame(frames[idx], options, filter, timelineActive,
-                                              frameDigits, writeMidline, progressStates[idx].get());
+                                              frameDigits, writeMidline, progressStates[idx].get(),
+                                              nullptr);
                 }
             });
         }
@@ -1402,9 +1714,17 @@ int main(int argc, char** argv) {
             worker.join();
         }
     } else {
+        std::vector<double> previousAz;
+        bool havePrevious = false;
         for (std::size_t idx = 0; idx < frames.size(); ++idx) {
+            const std::vector<double>* guessPtr =
+                (options.warmStart && timelineActive && havePrevious) ? &previousAz : nullptr;
             results[idx] = solveFrame(frames[idx], options, filter, timelineActive, frameDigits,
-                                      writeMidline, progressStates[idx].get());
+                                      writeMidline, progressStates[idx].get(), guessPtr);
+            if (options.warmStart && timelineActive && results[idx].solverSuccess) {
+                previousAz = std::move(results[idx].AzSolution);
+                havePrevious = true;
+            }
         }
     }
 

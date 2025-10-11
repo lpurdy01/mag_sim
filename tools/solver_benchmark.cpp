@@ -36,6 +36,7 @@ struct BenchmarkConfig {
     bool verbose{false};
     bool writeCsv{false};
     std::string csvPath{};
+    std::string solver{"sor"};
 };
 
 void printUsage() {
@@ -52,6 +53,7 @@ void printUsage() {
               << "  --repeats <int>        Number of benchmark repeats (default 3)\n"
               << "  --compute-b            Include computeB() in timing\n"
               << "  --verbose              Print per-iteration residuals\n"
+              << "  --solver {sor|cg}      Choose solver backend (default sor)\n"
               << "  --csv <path>           Append benchmark results to CSV file\n"
               << "  --help                 Show this message\n";
 }
@@ -87,6 +89,8 @@ bool parseArgs(int argc, char** argv, BenchmarkConfig& cfg) {
                 cfg.computeB = true;
             } else if (arg == "--verbose") {
                 cfg.verbose = true;
+            } else if (arg == "--solver" && i + 1 < argc) {
+                cfg.solver = argv[++i];
             } else if (arg == "--csv" && i + 1 < argc) {
                 cfg.writeCsv = true;
                 cfg.csvPath = argv[++i];
@@ -104,7 +108,7 @@ bool parseArgs(int argc, char** argv, BenchmarkConfig& cfg) {
 
 void writeCsvResult(const BenchmarkConfig& cfg,
                     std::size_t cells,
-                    const motorsim::SolveReport& report,
+                    const motorsim::SolveResult& report,
                     double avgMs,
                     double minMs,
                     double maxMs,
@@ -166,16 +170,25 @@ int main(int argc, char** argv) {
     options.tol = cfg.tol;
     options.omega = cfg.omega;
     options.verbose = cfg.verbose;
+    if (cfg.solver == "cg") {
+        options.kind = motorsim::SolverKind::CG;
+    } else {
+        options.kind = motorsim::SolverKind::SOR;
+    }
 
     std::vector<double> durationsMs;
     durationsMs.reserve(cfg.repeats);
-    motorsim::SolveReport report{};
+    motorsim::SolveResult report{};
 
     for (std::size_t repeat = 0; repeat < cfg.repeats; ++repeat) {
         std::fill(grid.Az.begin(), grid.Az.end(), 0.0);
 
         const auto start = std::chrono::steady_clock::now();
-        report = motorsim::solveAz_GS_SOR(grid, options);
+        if (options.kind == motorsim::SolverKind::SOR) {
+            report = motorsim::solveAz_GS_SOR(grid, options);
+        } else {
+            report = motorsim::solveAz_CG(grid, options);
+        }
         if (cfg.computeB) {
             motorsim::computeB(grid);
         }

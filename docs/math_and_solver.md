@@ -75,7 +75,11 @@ The solver supports both Dirichlet and homogeneous Neumann boundary conditions o
 
 ## 5. Iterative solvers
 
-A Gauss–Seidel method with Successive Over-Relaxation (SOR) is implemented as the default solver. For every interior cell,
+The codebase exposes two matrix-free solvers that operate on the same discrete operator:
+
+### 5.1 Gauss–Seidel with SOR
+
+The legacy workhorse remains a Gauss–Seidel method with Successive Over-Relaxation (SOR). For every interior cell,
 \[
 A_{i,j}^{(\text{new})} = \frac{\tfrac{\nu_E}{\Delta x^2} A_{i+1,j} + \tfrac{\nu_W}{\Delta x^2} A_{i-1,j} + \tfrac{\nu_N}{\Delta y^2} A_{i,j+1} + \tfrac{\nu_S}{\Delta y^2} A_{i,j-1} + J_{i,j}}{\tfrac{\nu_E + \nu_W}{\Delta x^2} + \tfrac{\nu_N + \nu_S}{\Delta y^2}}.
 \]
@@ -83,7 +87,23 @@ Relaxation is applied as
 \[
 A_{i,j} \leftarrow (1 - \omega) A_{i,j} + \omega A_{i,j}^{(\text{new})}, \qquad 1 < \omega < 2.
 \]
-An (unimplemented) conjugate gradient solver is left as a future improvement for the symmetric positive definite system.
+SOR remains useful as a smoother and a robust fallback when diagnostics are required.
+
+### 5.2 Preconditioned Conjugate Gradient (PCG)
+
+For production runs the simulator now provides a preconditioned conjugate gradient solver tailored to the symmetric positive
+definite system. The PCG iteration is expressed in matrix-free form using the residual assembly routine shown earlier. A Jacobi
+preconditioner (diagonal inverse of the operator) is applied to each residual update. The update equations follow the standard
+PCG recurrence:
+\[
+\begin{aligned}
+r_k &= b - A x_k, & z_k &= M^{-1} r_k, & p_k &= z_k + \beta_{k-1} p_{k-1}, \\
+\alpha_k &= \frac{r_k^T z_k}{p_k^T A p_k}, & x_{k+1} &= x_k + \alpha_k p_k, & r_{k+1} &= r_k - \alpha_k A p_k,
+\end{aligned}
+\]
+with \(\beta_{k-1} = (r_k^T z_k) / (r_{k-1}^T z_{k-1})\). The implementation enforces Neumann symmetry by mirroring boundary
+values between iterations and monitors stagnation. If the relative residual fails to improve over a configurable window the
+solver emits guidance suggesting warm starts, prolongation, or falling back to SOR for inspection.
 
 ## 6. Convergence criteria
 

@@ -76,6 +76,15 @@ struct Grid2D {
         Hx.clear();
         Hy.clear();
     }
+
+    [[nodiscard]] inline double* azData() { return Az.data(); }
+    [[nodiscard]] inline const double* azData() const { return Az.data(); }
+    [[nodiscard]] inline double* jzData() { return Jz.data(); }
+    [[nodiscard]] inline const double* jzData() const { return Jz.data(); }
+    [[nodiscard]] inline double* invMuData() { return invMu.data(); }
+    [[nodiscard]] inline const double* invMuData() const { return invMu.data(); }
 };
+
+void prolongateAzBilinear(const Grid2D& coarse, Grid2D& fine);
 
 }  // namespace motorsim
