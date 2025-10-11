@@ -2,6 +2,7 @@
 #include "motorsim/solver.hpp"
 #include "motorsim/types.hpp"
 
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -54,22 +55,10 @@ int main() {
     }
     const ScenarioSpec::MagnetRegion magnet = spec.magnetRegions.front();
 
-    Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
-    rasterizeScenarioToGrid(spec, grid);
-
     SolveOptions options{};
     options.maxIters = 25000;
     options.tol = 5e-6;
     options.omega = 1.6;
-
-    const SolveReport report = solveAz_GS_SOR(grid, options);
-    if (!report.converged || !(report.relResidual < options.tol)) {
-        std::cerr << "magnet_strip_test: solver did not converge to tolerance\n";
-        return 1;
-    }
-
-    computeB(grid);
-    computeH(grid);
 
     const double sampleY = 0.0;
     const std::vector<double> sampleX = {-0.08, -0.06, -0.04, 0.0, 0.04, 0.06, 0.08};
@@ -80,35 +69,87 @@ int main() {
         return 1;
     }
 
-    double diff2 = 0.0;
-    double ref2 = 0.0;
-    for (double x : sampleX) {
-        const std::size_t i = static_cast<std::size_t>(std::llround((x - spec.originX) / spec.dx));
-        if (i >= spec.nx) {
-            std::cerr << "magnet_strip_test: sample column out of range\n";
+    double baselineResidual = 0.0;
+    double baselineRelErr = 0.0;
+    double baselineHy = 0.0;
+    bool baselineRecorded = false;
+
+    const std::array<std::pair<SolverKind, const char*>, 2> solverCases = {
+        std::make_pair(SolverKind::SOR, "SOR"), std::make_pair(SolverKind::CG, "CG")};
+
+    for (const auto& [solverKind, label] : solverCases) {
+        options.kind = solverKind;
+        Grid2D grid(spec.nx, spec.ny, spec.dx, spec.dy);
+        rasterizeScenarioToGrid(spec, grid);
+
+        const SolveResult report = solveAz(grid, options);
+        if (!report.converged || !(report.relResidual < options.tol)) {
+            std::cerr << "magnet_strip_test: " << label << " solver did not converge to tolerance\n";
             return 1;
         }
-        const std::size_t idx = grid.idx(i, j_center);
-        const auto ref = reference_field(x, sampleY, magnet.min_x, magnet.max_x, magnet.min_y, magnet.max_y, magnet.My);
-        const double by_num = grid.By[idx];
-        diff2 += (by_num - ref.second) * (by_num - ref.second);
-        ref2 += ref.second * ref.second;
+
+        computeB(grid);
+        computeH(grid);
+
+        double diff2 = 0.0;
+        double ref2 = 0.0;
+        for (double x : sampleX) {
+            const std::size_t i = static_cast<std::size_t>(std::llround((x - spec.originX) / spec.dx));
+            if (i >= spec.nx) {
+                std::cerr << "magnet_strip_test: sample column out of range\n";
+                return 1;
+            }
+            const std::size_t idx = grid.idx(i, j_center);
+            const auto ref =
+                reference_field(x, sampleY, magnet.min_x, magnet.max_x, magnet.min_y, magnet.max_y, magnet.My);
+            const double by_num = grid.By[idx];
+            diff2 += (by_num - ref.second) * (by_num - ref.second);
+            ref2 += ref.second * ref.second;
+        }
+
+        const double relErr = (ref2 > 0.0) ? std::sqrt(diff2 / ref2) : 0.0;
+        if (!(relErr < 0.15)) {
+            std::cerr << "magnet_strip_test (" << label << "): field RMS relErr=" << relErr
+                      << " exceeds tolerance\n";
+            return 1;
+        }
+
+        const std::size_t i_center = static_cast<std::size_t>(std::llround((-spec.originX) / spec.dx));
+        const std::size_t center_idx = grid.idx(i_center, j_center);
+        const double Hy_center = grid.Hy[center_idx];
+        if (!(std::abs(Hy_center) < 3.0e5)) {
+            std::cerr << "magnet_strip_test (" << label
+                      << "): Hy inside magnet expected near zero, got " << Hy_center << '\n';
+            return 1;
+        }
+
+        std::cout << "magnet_strip_test (" << label << "): relErr=" << relErr
+                  << ", Hy_center=" << Hy_center << ", iters=" << report.iters << '\n';
+
+        if (!baselineRecorded) {
+            baselineResidual = report.relResidual;
+            baselineRelErr = relErr;
+            baselineHy = std::abs(Hy_center);
+            baselineRecorded = true;
+        } else {
+            const double residualBound = baselineResidual * 1.1 + 1e-12;
+            if (report.relResidual > residualBound) {
+                std::cerr << "magnet_strip_test: CG residual " << report.relResidual
+                          << " exceeds parity bound " << residualBound << '\n';
+                return 1;
+            }
+            if (relErr > baselineRelErr + 0.02) {
+                std::cerr << "magnet_strip_test: CG relErr " << relErr
+                          << " exceeds parity slack relative to SOR " << baselineRelErr << '\n';
+                return 1;
+            }
+            if (std::abs(Hy_center) > baselineHy + 5.0e4) {
+                std::cerr << "magnet_strip_test: CG |Hy| " << std::abs(Hy_center)
+                          << " exceeds parity slack relative to SOR " << baselineHy << '\n';
+                return 1;
+            }
+        }
     }
 
-    const double relErr = (ref2 > 0.0) ? std::sqrt(diff2 / ref2) : 0.0;
-    if (!(relErr < 0.15)) {
-        std::cerr << "magnet_strip_test: field RMS relErr=" << relErr << " exceeds tolerance\n";
-        return 1;
-    }
-
-    const std::size_t i_center = static_cast<std::size_t>(std::llround((-spec.originX) / spec.dx));
-    const std::size_t center_idx = grid.idx(i_center, j_center);
-    const double Hy_center = grid.Hy[center_idx];
-    if (!(std::abs(Hy_center) < 3.0e5)) {
-        std::cerr << "magnet_strip_test: Hy inside magnet expected near zero, got " << Hy_center << '\n';
-        return 1;
-    }
-
-    std::cout << "magnet_strip_test: relErr=" << relErr << ", Hy_center=" << Hy_center << '\n';
     return 0;
 }

@@ -79,6 +79,14 @@ avoid overwriting results. Enable multi-threaded solving with:
 The solver launches up to `hardware_concurrency() - 1` worker threads, capped by
 the number of frames.
 
+### Warm starts and prolongation
+
+Timeline solves can reuse previous solutions to accelerate convergence. Passing `--warm-start` retains the final \(A_z\) field
+from the preceding frame and feeds it to the next CG call as the initial guess. For sudden changes (e.g., when switching from a
+coarse exploratory solve to a finer production grid), combine `--use-prolongation` with optional `--coarse-nx/--coarse-ny`
+overrides to seed the fine grid from a cheap coarse solve. These options materially reduce CG iteration counts while matching
+the SOR baseline to within the regression tolerances.
+
 ## Output Naming
 
 For single-frame scenarios (no `timeline` key), output paths are respected as

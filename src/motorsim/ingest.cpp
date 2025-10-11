@@ -1286,6 +1286,47 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         }
     }
 
+    if (json.contains("solver")) {
+        spec.solverSettings.solverSpecified = true;
+        spec.solverSettings.solverId = json.at("solver").get<std::string>();
+    }
+    if (json.contains("warm_start")) {
+        spec.solverSettings.warmStartSpecified = true;
+        spec.solverSettings.warmStart = json.at("warm_start").get<bool>();
+    }
+    if (json.contains("prolongation")) {
+        const auto& prolong = json.at("prolongation");
+        if (!prolong.is_object()) {
+            throw std::runtime_error("prolongation must be an object with enabled/size fields");
+        }
+        spec.solverSettings.prolongationSpecified = true;
+        spec.solverSettings.prolongationEnabled = prolong.value("enabled", false);
+        if (prolong.contains("coarse_nx")) {
+            spec.solverSettings.prolongationNx = prolong.at("coarse_nx").get<std::size_t>();
+        }
+        if (prolong.contains("coarse_ny")) {
+            spec.solverSettings.prolongationNy = prolong.at("coarse_ny").get<std::size_t>();
+        }
+    }
+    if (json.contains("progress")) {
+        const auto& progressNode = json.at("progress");
+        if (!progressNode.is_object()) {
+            throw std::runtime_error("progress must be an object");
+        }
+        if (progressNode.contains("every_sec")) {
+            spec.solverSettings.progressEverySecSpecified = true;
+            spec.solverSettings.progressEverySec = progressNode.at("every_sec").get<double>();
+        }
+        if (progressNode.contains("snapshot_every_iters")) {
+            spec.solverSettings.snapshotEveryItersSpecified = true;
+            spec.solverSettings.snapshotEveryIters = progressNode.at("snapshot_every_iters").get<std::size_t>();
+        }
+    }
+    if (json.contains("quiet")) {
+        spec.solverSettings.quietSpecified = true;
+        spec.solverSettings.quiet = json.at("quiet").get<bool>();
+    }
+
     return spec;
 }
 

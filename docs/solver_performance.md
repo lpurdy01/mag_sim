@@ -45,6 +45,15 @@ which stays remarkably constant as grids scale up. The dominant lever on runtime
 is the iteration count, which is reduced by using more aggressive relaxation
 factors (up to \(\omega \approx 1.9\) before instability).
 
+### CG solver notes
+
+The preconditioned CG solver operates on the same operator but converges in an order of magnitude fewer iterations on most
+problems. Two practical tips when benchmarking CG:
+
+* Warm-starting (`--warm-start`) on timeline runs typically halves the iteration count after the first frame.
+* Enabling coarse-to-fine prolongation (`--use-prolongation`) provides a high-quality initial guess for fine grids, keeping CG
+  iteration counts comparable to SOR while meeting tighter tolerances.
+
 ## 3. Benchmark workflow
 
 1. Build the tool: `cmake --build build --target solver_benchmark -j`.
