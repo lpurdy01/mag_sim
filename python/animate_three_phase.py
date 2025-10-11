@@ -13,6 +13,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import vtk  # type: ignore
+from matplotlib import patheffects
 from matplotlib.colors import LogNorm
 from matplotlib.patches import FancyArrowPatch
 from vtk.util.numpy_support import vtk_to_numpy  # type: ignore
@@ -29,6 +30,104 @@ def point_in_polygon(x: float, y: float, vertices: np.ndarray) -> bool:
         if intersect:
             inside = not inside
     return inside
+
+
+def polygon_area(vertices: np.ndarray) -> float:
+    if vertices.shape[0] < 3:
+        return 0.0
+    xs = vertices[:, 0]
+    ys = vertices[:, 1]
+    return 0.5 * float(np.dot(xs, np.roll(ys, -1)) - np.dot(ys, np.roll(xs, -1)))
+
+
+def polygon_centroid(vertices: np.ndarray) -> Tuple[float, float]:
+    if vertices.shape[0] < 3:
+        return float(np.mean(vertices[:, 0])), float(np.mean(vertices[:, 1]))
+    area = polygon_area(vertices)
+    if abs(area) < 1e-12:
+        return float(np.mean(vertices[:, 0])), float(np.mean(vertices[:, 1]))
+    xs = vertices[:, 0]
+    ys = vertices[:, 1]
+    cross = xs * np.roll(ys, -1) - ys * np.roll(xs, -1)
+    factor = 1.0 / (6.0 * area)
+    cx = float(np.sum((xs + np.roll(xs, -1)) * cross) * factor)
+    cy = float(np.sum((ys + np.roll(ys, -1)) * cross) * factor)
+    return cx, cy
+
+
+def extract_outline_polygons(scenario: Dict[str, object]) -> List[Dict[str, np.ndarray]]:
+    regions = scenario.get("regions", [])
+    polygons: List[Dict[str, object]] = []
+    for idx, region in enumerate(regions):
+        if not isinstance(region, dict):
+            continue
+        if region.get("type") != "polygon":
+            continue
+        vertices = region.get("vertices")
+        if not isinstance(vertices, list) or len(vertices) < 3:
+            continue
+        arr = np.asarray(vertices, dtype=float)
+        polygons.append(
+            {
+                "index": idx,
+                "material": region.get("material", ""),
+                "vertices": arr,
+                "area": abs(polygon_area(arr)),
+            }
+        )
+
+    if not polygons:
+        return []
+
+    outlines: List[Dict[str, np.ndarray]] = []
+    used_indices: set[int] = set()
+
+    def add_outline(category: str, poly: Dict[str, object]) -> None:
+        if poly["index"] in used_indices:
+            return
+        outlines.append({"category": category, "vertices": np.asarray(poly["vertices"], dtype=float)})
+        used_indices.add(poly["index"])
+
+    stator_candidates = [poly for poly in polygons if poly.get("material") not in {"", "air"}]
+    if stator_candidates:
+        stator_poly = max(stator_candidates, key=lambda poly: float(poly["area"]))
+    else:
+        stator_poly = max(polygons, key=lambda poly: float(poly["area"]))
+    add_outline("stator", stator_poly)
+
+    air_polys = [poly for poly in polygons if poly.get("material") == "air"]
+    bore_poly = None
+    if air_polys:
+        bore_poly = max(air_polys, key=lambda poly: float(poly["area"]))
+        add_outline("bore", bore_poly)
+
+    for poly in polygons:
+        if poly["index"] in used_indices:
+            continue
+        add_outline("slot", poly)
+
+    return outlines
+
+
+def extract_slot_annotations(scenario: Dict[str, object]) -> List[Dict[str, object]]:
+    slots: List[Dict[str, object]] = []
+    for source in scenario.get("sources", []):
+        if not isinstance(source, dict):
+            continue
+        if source.get("type") not in {"current_region", "current-region"}:
+            continue
+        vertices = source.get("vertices")
+        if not isinstance(vertices, list) or len(vertices) < 3:
+            continue
+        arr = np.asarray(vertices, dtype=float)
+        phase = str(source.get("phase", "")) if source.get("phase") is not None else ""
+        label = source.get("label") or source.get("id") or phase
+        orientation = float(source.get("orientation", 1.0))
+        if not source.get("label") and phase:
+            sign = "+" if orientation >= 0.0 else "-"
+            label = f"{phase}{sign}"
+        slots.append({"phase": phase, "label": label, "vertices": arr})
+    return slots
 
 
 def load_scenario(path: Path) -> Dict[str, object]:
@@ -178,6 +277,7 @@ def build_animation(
     save_path: Path,
     html_path: Optional[Path],
     still_path: Optional[Path],
+    scenario: Dict[str, object],
     datasets: List[Tuple[float, Path]],
     phase_times: np.ndarray,
     currents_a: np.ndarray,
@@ -195,6 +295,8 @@ def build_animation(
     bore_magnitude = np.hypot(bore_bx, bore_by)
     max_mag = float(np.max(bore_magnitude)) if bore_magnitude.size > 0 else 1.0
     bore_angles = np.arctan2(bore_by, bore_bx)
+    outlines = extract_outline_polygons(scenario)
+    slot_annotations = extract_slot_annotations(scenario)
 
     fig_width_in = width / 100.0
     fig_height_in = fig_width_in * 0.9
@@ -248,8 +350,49 @@ def build_animation(
         width=0.005,
     )
 
-    if bore_polygon.size:
-        ax_field.plot(bore_polygon[:, 0], bore_polygon[:, 1], color="tab:orange", lw=1.5)
+    outline_styles = {
+        "stator": {"color": "white", "linewidth": 2.0},
+        "bore": {"color": "tab:orange", "linewidth": 1.8},
+        "slot": {"color": "white", "linewidth": 1.2},
+    }
+    for outline in outlines:
+        vertices = outline.get("vertices")
+        if not isinstance(vertices, np.ndarray) or vertices.size == 0:
+            continue
+        closed = np.vstack([vertices, vertices[0]]) if vertices.shape[0] >= 2 else vertices
+        style = outline_styles.get(outline.get("category", "slot"), {"color": "white", "linewidth": 1.0})
+        line, = ax_field.plot(
+            closed[:, 0],
+            closed[:, 1],
+            color=style["color"],
+            lw=style["linewidth"],
+            zorder=5,
+        )
+        line.set_path_effects(
+            [
+                patheffects.Stroke(linewidth=style["linewidth"] + 1.0, foreground="black"),
+                patheffects.Normal(),
+            ]
+        )
+
+    phase_colors = {"A": "tab:red", "B": "tab:green", "C": "tab:blue"}
+    for slot in slot_annotations:
+        vertices = slot.get("vertices")
+        if not isinstance(vertices, np.ndarray) or vertices.size == 0:
+            continue
+        cx, cy = polygon_centroid(vertices)
+        text = ax_field.text(
+            cx,
+            cy,
+            str(slot.get("label", "")),
+            color=phase_colors.get(slot.get("phase", ""), "white"),
+            fontsize=9,
+            fontweight="bold",
+            ha="center",
+            va="center",
+            zorder=6,
+        )
+        text.set_path_effects([patheffects.withStroke(linewidth=3.0, foreground="black")])
 
     ax_field.set_title("Magnetic flux density magnitude")
     cbar = fig.colorbar(im, cax=fig.add_subplot(gs[0, 1]))
@@ -373,6 +516,7 @@ def main() -> None:
         args.save,
         args.html,
         args.frame_png,
+        scenario,
         datasets,
         phase_times,
         ia,

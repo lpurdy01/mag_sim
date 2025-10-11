@@ -9,7 +9,7 @@ case and a high-resolution configuration by tweaking a single profile flag.
 ```bash
 python3 python/gen_three_phase_stator.py --profile ci --out inputs/three_phase_stator_ci.json
 ./build/motor_sim --scenario inputs/three_phase_stator_ci.json --solve --parallel-frames --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000
-python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save three_phase_demo.mp4
+python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save three_phase_demo.mp4 --frame-png three_phase_demo.png
 ```
 
 The generated scenario exports cell-centred VTK frames, a bore-average CSV, and
@@ -47,8 +47,8 @@ animation command on the new JSON.
 ## Animation
 
 `python/animate_three_phase.py` renders a full-field animation that overlays the
-cell-centred |B| map, quiver arrows, bore compass, and the driving phase
-currents. The CLI accepts:
+cell-centred |B| map, quiver arrows, bore compass, labelled slot outlines, and
+the driving phase currents. The CLI accepts:
 
 - `--pvd`: VTK time-series index produced by `motor_sim --vtk-series`.
 - `--scenario`: scenario JSON (required to extract timeline currents and bore

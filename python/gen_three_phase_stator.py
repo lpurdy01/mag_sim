@@ -100,13 +100,14 @@ def generate_scenario(profile: str, output_path: Path) -> None:
 
     slot_polygons: List[List[List[float]]] = []
     sources = []
-    for phase, orientation, angle, label in slot_definitions:
+    for phase, orientation, angle, slot_id in slot_definitions:
         polygon = build_slot_polygon(angle, slot_inner_radius, slot_outer_radius, slot_width_deg)
         slot_polygons.append(polygon)
         sources.append(
             {
                 "type": "current_region",
-                "id": label,
+                "id": slot_id,
+                "label": f"Phase {phase}{'+' if orientation > 0 else '-'}",
                 "phase": phase,
                 "orientation": orientation,
                 "vertices": polygon,
