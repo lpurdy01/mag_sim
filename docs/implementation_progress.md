@@ -26,3 +26,5 @@ This log tracks completion of the 10-step plan for the CG solver stack. The entr
 - Rebuilt the automated test matrix to exercise both solvers, added warm-start/prolongation/progress fixtures, and relaxed iteration-ratio checks to reflect empirical convergence while still enforcing improvement.
 - Updated documentation and AGENT guidance to describe the CG path, warm-start workflow, prolongation hooks, and live progress controls.
 - Verified the full test suite (`ctest --output-on-failure`) passes with the CG stack enabled and artefact scaffolding intact.
+- Added a `solver_visualization_capture` utility plus a Python animation pipeline to illustrate warm starts and progress
+  snapshots for documentation-ready artefact generation.

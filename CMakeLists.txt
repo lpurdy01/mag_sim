@@ -169,6 +169,16 @@ add_executable(solver_benchmark
     src/motorsim/io_csv.cpp)
 target_include_directories(solver_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
+add_executable(solver_visualization_capture
+    tools/solver_visualization_capture.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/io_csv.cpp)
+target_include_directories(solver_visualization_capture PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+
 add_executable(warm_start_prolongation_test
     tests/warm_start_prolongation_test.cpp
     src/motorsim/solver.cpp
