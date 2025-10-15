@@ -14,30 +14,50 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-namespace {
+namespace
+{
 
 namespace fs = std::filesystem;
 
-struct CsvProgressSink : motorsim::ProgressSink {
-    explicit CsvProgressSink(fs::path historyPath, fs::path snapshotDir = {}, std::size_t maxSnapshots = 0)
-        : historyPath(std::move(historyPath)), snapshotDir(std::move(snapshotDir)), maxSnapshots(maxSnapshots) {}
+struct CsvProgressSink : motorsim::ProgressSink
+{
+    explicit CsvProgressSink(fs::path historyPath, fs::path snapshotDir = {},
+                             std::size_t maxSnapshots = 0)
+        : historyPath(std::move(historyPath)), snapshotDir(std::move(snapshotDir)),
+          maxSnapshots(maxSnapshots)
+    {
+    }
 
-    bool onProgress(const motorsim::ProgressSample& sample) override {
+    bool onProgress(const motorsim::ProgressSample &sample) override
+    {
         samples.push_back(sample);
         return true;
     }
 
-    std::optional<std::string> requestFieldDump(const motorsim::ProgressSample& sample) override {
-        if (snapshotDir.empty()) {
+    std::optional<std::string> requestFieldDump(const motorsim::ProgressSample &sample) override
+    {
+        if (snapshotDir.empty())
+        {
             return std::nullopt;
         }
-        if (maxSnapshots > 0 && snapshotsWritten >= maxSnapshots) {
+        if (maxSnapshots > 0 && snapshotsWritten >= maxSnapshots)
+        {
             return std::nullopt;
         }
-        if (!fs::exists(snapshotDir)) {
+
+        // Variable snapshot interval: every 5 iterations before 150, every 20 after
+        const std::size_t desiredInterval = (sample.iter < 150) ? 5 : 20;
+        if (sample.iter > 0 && sample.iter % desiredInterval != 0)
+        {
+            return std::nullopt;
+        }
+
+        if (!fs::exists(snapshotDir))
+        {
             std::error_code ec;
             fs::create_directories(snapshotDir, ec);
         }
@@ -48,19 +68,23 @@ struct CsvProgressSink : motorsim::ProgressSink {
         return (snapshotDir / name.str()).string();
     }
 
-    bool flush() const {
-        if (samples.empty()) {
+    bool flush() const
+    {
+        if (samples.empty())
+        {
             return false;
         }
         std::error_code ec;
         fs::create_directories(historyPath.parent_path(), ec);
         std::ofstream ofs(historyPath);
-        if (!ofs.is_open()) {
+        if (!ofs.is_open())
+        {
             std::cerr << "Failed to open history CSV: " << historyPath << '\n';
             return false;
         }
         ofs << "iter,rel_residual,elapsed_seconds\n";
-        for (const auto& sample : samples) {
+        for (const auto &sample : samples)
+        {
             ofs << sample.iter << ',' << sample.relResidual << ',' << sample.elapsedSeconds << '\n';
         }
         return true;
@@ -74,15 +98,16 @@ struct CsvProgressSink : motorsim::ProgressSink {
     mutable std::vector<std::size_t> snapshotIterations;
 };
 
-struct FrameSolveSummary {
+struct FrameSolveSummary
+{
     motorsim::SolveResult result{};
     std::vector<double> az;
 };
 
-FrameSolveSummary solveFrame(const motorsim::ScenarioFrame& frame,
-                             const motorsim::SolveOptions& options,
-                             const motorsim::InitialGuess* guess,
-                             CsvProgressSink& sink) {
+FrameSolveSummary solveFrame(const motorsim::ScenarioFrame &frame,
+                             const motorsim::SolveOptions &options,
+                             const motorsim::InitialGuess *guess, CsvProgressSink &sink)
+{
     motorsim::Grid2D grid(frame.spec.nx, frame.spec.ny, frame.spec.dx, frame.spec.dy);
     motorsim::rasterizeScenarioToGrid(frame.spec, grid);
     FrameSolveSummary summary{};
@@ -91,13 +116,17 @@ FrameSolveSummary solveFrame(const motorsim::ScenarioFrame& frame,
     return summary;
 }
 
-bool writeWarmStartRuns(const fs::path& outputRoot) {
+bool writeWarmStartRuns(const fs::path &outputRoot)
+{
     const fs::path scenarioPath =
         (fs::path("inputs") / "tests" / "magnet_strip_test.json").lexically_normal();
     motorsim::ScenarioSpec baseSpec;
-    try {
+    try
+    {
         baseSpec = motorsim::loadScenarioFromJson(scenarioPath.string());
-    } catch (const std::exception& ex) {
+    }
+    catch (const std::exception &ex)
+    {
         std::cerr << "Failed to load scenario for warm-start capture: " << ex.what() << '\n';
         return false;
     }
@@ -107,11 +136,13 @@ bool writeWarmStartRuns(const fs::path& outputRoot) {
     baseFrame.time = 0.0;
     baseFrame.spec = baseSpec;
 
-    auto makeMagnetFrame = [&](std::size_t index, double time, double scaleMy, double deltaMx) {
+    auto makeMagnetFrame = [&](std::size_t index, double time, double scaleMy, double deltaMx)
+    {
         motorsim::ScenarioFrame frame = baseFrame;
         frame.index = index;
         frame.time = time;
-        for (auto& magnet : frame.spec.magnetRegions) {
+        for (auto &magnet : frame.spec.magnetRegions)
+        {
             magnet.My *= scaleMy;
             magnet.Mx += deltaMx;
         }
@@ -137,11 +168,13 @@ bool writeWarmStartRuns(const fs::path& outputRoot) {
     fs::create_directories(coldDir, ec);
     fs::create_directories(seededDir, ec);
 
-    for (const auto& frame : frames) {
+    for (const auto &frame : frames)
+    {
         const fs::path historyPath = coldDir / ("frame_" + std::to_string(frame.index) + ".csv");
         CsvProgressSink sink(historyPath);
         FrameSolveSummary summary = solveFrame(frame, options, nullptr, sink);
-        if (!summary.result.converged) {
+        if (!summary.result.converged)
+        {
             std::cerr << "Cold solve failed for frame " << frame.index << '\n';
             return false;
         }
@@ -151,18 +184,21 @@ bool writeWarmStartRuns(const fs::path& outputRoot) {
     options.warmStart = true;
     std::vector<double> previousAz;
 
-    for (std::size_t idx = 0; idx < frames.size(); ++idx) {
-        const auto& frame = frames[idx];
+    for (std::size_t idx = 0; idx < frames.size(); ++idx)
+    {
+        const auto &frame = frames[idx];
         const fs::path historyPath = seededDir / ("frame_" + std::to_string(frame.index) + ".csv");
         CsvProgressSink sink(historyPath);
         motorsim::InitialGuess guess{};
-        const motorsim::InitialGuess* guessPtr = nullptr;
-        if (idx > 0) {
+        const motorsim::InitialGuess *guessPtr = nullptr;
+        if (idx > 0)
+        {
             guess.Az0 = &previousAz;
             guessPtr = &guess;
         }
         FrameSolveSummary summary = solveFrame(frame, options, guessPtr, sink);
-        if (!summary.result.converged) {
+        if (!summary.result.converged)
+        {
             std::cerr << "Warm solve failed for frame " << frame.index << '\n';
             return false;
         }
@@ -173,13 +209,18 @@ bool writeWarmStartRuns(const fs::path& outputRoot) {
     return true;
 }
 
-bool writeSnapshotRun(const fs::path& outputRoot) {
+bool writeSnapshotRun(const fs::path &outputRoot, motorsim::SolverKind solverKind,
+                      std::string_view label)
+{
     const fs::path scenarioPath =
-        (fs::path("inputs") / "tests" / "two_wire_cancel_test.json").lexically_normal();
+        (fs::path("inputs") / "iron_ring_magnet_viz.json").lexically_normal();
     motorsim::ScenarioSpec spec;
-    try {
+    try
+    {
         spec = motorsim::loadScenarioFromJson(scenarioPath.string());
-    } catch (const std::exception& ex) {
+    }
+    catch (const std::exception &ex)
+    {
         std::cerr << "Failed to load snapshot scenario: " << ex.what() << '\n';
         return false;
     }
@@ -188,47 +229,60 @@ bool writeSnapshotRun(const fs::path& outputRoot) {
     motorsim::rasterizeScenarioToGrid(spec, grid);
 
     motorsim::SolveOptions options{};
-    options.kind = motorsim::SolverKind::CG;
+    options.kind = solverKind;
     options.maxIters = 8000;
     options.tol = 1e-8;
     options.progressEverySec = 0.0;
-    options.snapshotEveryIters = 200;
+    options.snapshotEveryIters = 1; // Check every iteration (filtering done in sink)
+    if (solverKind == motorsim::SolverKind::SOR)
+    {
+        options.omega = 1.8;
+        options.maxIters = 60000;
+        options.tol = 5e-6;
+    }
 
-    const fs::path snapshotDir = outputRoot / "progress_snapshots" / "snapshots";
-    const fs::path historyPath = outputRoot / "progress_snapshots" / "history.csv";
+    fs::path snapshotDir = outputRoot / "progress_snapshots" / std::string(label) / "snapshots";
+    fs::path historyPath = outputRoot / "progress_snapshots" / std::string(label) / "history.csv";
 
-    CsvProgressSink sink(historyPath, snapshotDir, 20);
+    CsvProgressSink sink(historyPath, snapshotDir, 150); // Increased max snapshots
     motorsim::SolveResult result = motorsim::solveAz(grid, options, nullptr, &sink);
-    if (!result.converged) {
-        std::cerr << "Snapshot solve did not converge (residual=" << result.relResidual << ")\n";
+    if (!result.converged)
+    {
+        std::cerr << "Snapshot solve (" << label
+                  << ") did not converge (residual=" << result.relResidual << ")\n";
         return false;
     }
     sink.flush();
     return true;
 }
 
-}  // namespace
+} // namespace
 
-int main() {
-    try {
+int main()
+{
+    try
+    {
         const fs::path outputRoot = fs::path("outputs") / "visualization";
         std::error_code ec;
         fs::remove_all(outputRoot, ec);
         fs::create_directories(outputRoot, ec);
 
         bool ok = writeWarmStartRuns(outputRoot);
-        ok = writeSnapshotRun(outputRoot) && ok;
+        ok = writeSnapshotRun(outputRoot, motorsim::SolverKind::CG, "cg") && ok;
+        ok = writeSnapshotRun(outputRoot, motorsim::SolverKind::SOR, "sor") && ok;
 
-        if (!ok) {
+        if (!ok)
+        {
             std::cerr << "Failed to generate solver visualization datasets." << '\n';
             return 1;
         }
 
         std::cout << "Solver visualization datasets written to " << outputRoot << '\n';
         return 0;
-    } catch (const std::exception& ex) {
+    }
+    catch (const std::exception &ex)
+    {
         std::cerr << "Unhandled exception: " << ex.what() << '\n';
         return 1;
     }
 }
-
