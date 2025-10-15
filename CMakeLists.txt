@@ -28,7 +28,8 @@ add_executable(analytic_wire_test
     tests/analytic_wire_test.cpp
     src/motorsim/solver.cpp
     src/motorsim/io_csv.cpp
-    src/motorsim/ingest.cpp)
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp)
 target_include_directories(analytic_wire_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -37,7 +38,9 @@ add_test(NAME analytic_wire COMMAND analytic_wire_test)
 add_executable(two_wire_cancel_test
     tests/two_wire_cancel_test.cpp
     src/motorsim/solver.cpp
-    src/motorsim/ingest.cpp)
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
 target_include_directories(two_wire_cancel_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -46,7 +49,9 @@ add_test(NAME two_wire_cancel COMMAND two_wire_cancel_test)
 add_executable(line_current_interface_test
     tests/line_current_interface_test.cpp
     src/motorsim/solver.cpp
-    src/motorsim/ingest.cpp)
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
 target_include_directories(line_current_interface_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -55,7 +60,9 @@ add_test(NAME line_current_interface COMMAND line_current_interface_test)
 add_executable(magnet_strip_test
     tests/magnet_strip_test.cpp
     src/motorsim/solver.cpp
-    src/motorsim/ingest.cpp)
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
 target_include_directories(magnet_strip_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -109,7 +116,9 @@ add_executable(torque_validation_test
     tests/torque_validation_test.cpp
     src/motorsim/solver.cpp
     src/motorsim/ingest.cpp
-    src/motorsim/probes.cpp)
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
 target_include_directories(torque_validation_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -119,7 +128,9 @@ add_executable(rotor_ripple_test
     tests/rotor_ripple_test.cpp
     src/motorsim/solver.cpp
     src/motorsim/ingest.cpp
-    src/motorsim/probes.cpp)
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
 target_include_directories(rotor_ripple_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -153,5 +164,39 @@ set_tests_properties(scenario_cli_solve PROPERTIES DEPENDS scenario_json_diff)
 
 add_executable(solver_benchmark
     tools/solver_benchmark.cpp
-    src/motorsim/solver.cpp)
+    src/motorsim/solver.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/io_csv.cpp)
 target_include_directories(solver_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_executable(solver_visualization_capture
+    tools/solver_visualization_capture.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/io_csv.cpp)
+target_include_directories(solver_visualization_capture PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+
+add_executable(warm_start_prolongation_test
+    tests/warm_start_prolongation_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
+target_include_directories(warm_start_prolongation_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME warm_start_prolongation COMMAND warm_start_prolongation_test)
+
+add_executable(progress_snapshot_test
+    tests/progress_snapshot_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/io_csv.cpp)
+target_include_directories(progress_snapshot_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME progress_snapshot COMMAND progress_snapshot_test)

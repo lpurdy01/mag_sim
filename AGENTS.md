@@ -57,3 +57,10 @@ Check for additional nested `AGENTS.md` files in subdirectories when you work wi
   regressions; the CI workflow invokes `motor_sim` with
   `--tol 5e-6 --max-iters 40000` for that scenario so the artefact rendering
   succeeds without manual intervention.
+
+## Solver configuration tips
+- Prefer `--solver cg` for production solves; retain `--solver sor` when debugging residual behaviour or generating baseline numbers.
+- Enable `--warm-start` when stepping through timeline frames so the CG solve reuses the previous field and converges faster.
+- Use `--use-prolongation` (optionally with `--coarse-nx/--coarse-ny`) when upsampling meshes; this seeds the fine solve with a coarse-grid approximation.
+- Progress output defaults to every 2 seconds. Tighten the cadence via `--progress-every` or silence it completely with `--quiet` when scripting in CI.
+- Snapshot diagnostics are opt-in via `--snapshot-every`; progress sinks will request downsampled field dumps at those iteration multiples.
