@@ -45,6 +45,9 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   overrides step the coupled mechanics. `tests/mechanical_spinup_test.cpp`
   verifies the integrator against a constant-torque spin-up, and
   `docs/three_phase_stator.md` covers the new voltage + mechanical workflow.
+  Follow-up fixes ensure timeline exporters respect basenames that already end
+  in `_frame`, restoring the expected `three_phase_frame_000.vti` artefact that
+  CI archives for the rotating-field demo.
 
 ## Completed Milestones
 - **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` with regression coverage in `tests/output_quantity_test.cpp` and exercised in CI through the rotor ripple timeline artefacts. Exports now bundle combined `B`/`H` vector arrays plus geometry outline polydata companions to streamline ParaView workflows. The `python/verify_vtk.py` utility (documented in `docs/vtk_output.md`) runs during CI to sanity-check the generated `.vti` files.

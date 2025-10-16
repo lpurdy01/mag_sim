@@ -17,6 +17,26 @@ The build directory is never committed (`.gitignore` keeps it clean). Tests live
 under `tests/` and are surfaced through CTest so they can be executed both from
 the terminal and IDE integrations.
 
+### 1.1 Iteration-friendly test cadence
+
+For day-to-day work, favour the smallest slice of the suite that exercises your
+changes before falling back to the full battery:
+
+* Use `ctest --output-on-failure -R <regex>` (or invoke an individual binary
+  such as `./build/torque_validation_test`) while iterating on a specific
+  feature. This keeps turnaround low and mirrors the CI harness.
+* When touching the solver or scenario ingestion, rerun the relevant timeline
+  with `./build/motor_sim ...` to double-check CSV/VTK outputs without waiting
+  for unrelated regressions.
+* Before publishing a branch or opening a PR, always follow up with
+  `ctest --output-on-failure --parallel $(nproc)` (or
+  `scripts/run_ci_checks.sh`) so the code you push matches the CI matrix.
+
+`ctest --parallel` honours the `CTEST_PARALLEL_LEVEL` environment variable; the
+CI helper script defaults it to `$(nproc)` so local runs use all available
+hardware. Set it explicitly (e.g. `CTEST_PARALLEL_LEVEL=4`) if you need to
+reserve cores for other tasks.
+
 Key runtime flags for `motor_sim`:
 
 * `--solver {sor|cg}` toggles between the legacy Gauss–Seidel solver and the new preconditioned conjugate gradient (default is

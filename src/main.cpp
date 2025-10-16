@@ -21,6 +21,7 @@
 #include <numeric>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <mutex>
 #include <system_error>
 #include <string>
@@ -413,7 +414,14 @@ std::filesystem::path makeFramePath(const std::string& basePath, bool timelineAc
     std::filesystem::path base(basePath);
     const std::filesystem::path dir = base.parent_path();
     std::ostringstream stem;
-    stem << base.stem().string() << "_frame_";
+    const std::string stemName = base.stem().string();
+    constexpr std::string_view frameTag{"_frame"};
+    if (stemName.size() >= frameTag.size() &&
+        stemName.compare(stemName.size() - frameTag.size(), frameTag.size(), frameTag) == 0) {
+        stem << stemName << '_';
+    } else {
+        stem << stemName << "_frame_";
+    }
     stem << std::setfill('0') << std::setw(static_cast<int>(digits)) << frameIndex;
     const std::string extension = base.extension().string();
     return dir / (stem.str() + extension);
