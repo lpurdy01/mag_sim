@@ -74,8 +74,30 @@ field-map CSV (`--field-map`) and provides switches such as `--draw-boundaries`,
   `docs/math_and_solver.md`.
 * `inputs/iron_ring_demo.json` — heterogeneous permeability demo with a polygon
   iron ring and six alternating-current wires in the bore. Solve it via
-  `./build/motor_sim --scenario inputs/iron_ring_demo.json --solve` and render a
+  `./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all`
+  and render a
   PNG with `python/visualize_scenario_field.py --scenario inputs/iron_ring_demo.json \
   --field-map outputs/iron_ring_field.csv --save outputs/iron_ring_field.png`.
   (CI runs capture the same render as an artifact, so the repository stays free
   of committed binaries.)
+
+## Time-series demos
+
+The synchronous motor walkthroughs live under `python/` and emit JSON scenarios
+that `motor_sim` can solve frame-by-frame. Both generators expose compact
+`ci` profiles for regression and larger `hires` presets for offline studies.
+
+* **Rotating stator field** –
+  `python/gen_three_phase_stator.py --profile ci --out inputs/three_phase_stator_ci.json`
+  reproduces the original rotating-field showcase without a rotor. Run it with
+  `./build/motor_sim --scenario inputs/three_phase_stator_ci.json --solve --parallel-frames \
+  --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000` and inspect
+  the bore-angle CSV or ParaView `.pvd` series. `docs/three_phase_stator.md`
+  collects further tips and animation commands.
+* **PM motor spin-up** –
+  `python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inputs/three_phase_pm_motor_spinup_ci.json`
+  adds the permanent-magnet rotor, lumped RL circuits, and the RK4 mechanical
+  integrator. Solving the generated JSON with `--vtk-series` writes
+  `pm_motor_spinup_frame_###.vti`, torque CSVs, and a `pm_motor_spinup_mechanical.csv`
+  history that `python/check_pm_spinup.py` validates. See
+  `docs/three_phase_pm_motor.md` for scenario parameters and workflow guidance.
