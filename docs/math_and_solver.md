@@ -315,6 +315,10 @@ self-documenting and reproducible. Two request flavours remain available:
   `Bmag`, `Hx`, `Hy`, `Hmag`, or `energy_density`), and an output path. The
   ingestor validates that the requested line lands on an existing grid column or
   row.
+* **Mechanical traces** (`{"type":"mechanical_trace", "id":"pm_spinup", "rotors":["pm_rotor"]}`)
+  log rotor state samples after each solved frame. The CSV header is
+  `time_s,rotor,angle_deg,omega_rad_s,omega_rpm,torque_Nm`, making it easy to
+  validate spin-up behaviour or feed coupled ODE solvers during post-processing.
 
 Python authors can build these records via
 `scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as

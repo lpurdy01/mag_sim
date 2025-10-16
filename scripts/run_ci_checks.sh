@@ -91,6 +91,12 @@ python3 python/gen_three_phase_stator.py --profile ci --out inputs/three_phase_s
 python3 python/check_three_phase_field.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json
 python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save ci_artifacts/three_phase_demo.gif --frame-png ci_artifacts/three_phase_demo.png
 
+echo "[ci-check] PM motor spin-up demo"
+python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inputs/three_phase_pm_motor_spinup_ci.json
+"$BUILD_DIR/motor_sim" --scenario inputs/three_phase_pm_motor_spinup_ci.json --solve --vtk-series outputs/pm_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000
+python3 python/check_pm_spinup.py --mechanical outputs/pm_motor_spinup_mechanical.csv --scenario inputs/three_phase_pm_motor_spinup_ci.json
+python3 python/animate_three_phase.py --pvd outputs/pm_motor_spinup_ci.pvd --scenario inputs/three_phase_pm_motor_spinup_ci.json --save ci_artifacts/pm_motor_spinup.gif --frame-png ci_artifacts/pm_motor_spinup.png
+
 echo "[ci-check] Rendering visualisations"
 export MPLBACKEND=Agg
 python3 python/visualize_scenario_field.py \

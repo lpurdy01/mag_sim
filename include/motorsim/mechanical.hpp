@@ -15,6 +15,13 @@ class MechanicalSimulator {
 public:
     MechanicalSimulator() = default;
 
+    struct RotorSample {
+        double time{0.0};
+        double angleRad{0.0};
+        double omega{0.0};
+        double torque{0.0};
+    };
+
     void initialize(const ScenarioSpec& baseSpec, const std::vector<ScenarioFrame>& frames);
 
     [[nodiscard]] bool is_active() const { return active_; }
@@ -27,6 +34,10 @@ public:
 
     [[nodiscard]] std::optional<double> rotor_angle_deg(const std::string& name) const;
     [[nodiscard]] std::optional<double> rotor_speed_rad_s(const std::string& name) const;
+
+    [[nodiscard]] const std::unordered_map<std::string, std::vector<RotorSample>>& history() const {
+        return history_;
+    }
 
 private:
     struct RotorState {
@@ -50,6 +61,7 @@ private:
 
     const ScenarioSpec* baseSpec_{nullptr};
     std::vector<RotorState> rotors_;
+    std::unordered_map<std::string, std::vector<RotorSample>> history_;
     bool active_{false};
 };
 

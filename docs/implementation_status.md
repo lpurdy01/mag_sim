@@ -45,7 +45,14 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   verifies the integrator against a constant-torque spin-up. Follow-up fixes
   ensure timeline exporters respect basenames that already end in `_frame`,
   restoring the expected `three_phase_frame_000.vti` artefact that CI archives
-  for the stator rotating-field demo.
+  for the stator rotating-field demo, and the new
+  `tests/pm_motor_spinup_test.cpp` regression drives the full EM/circuit/mechanical
+  loop to assert the rotor angle and speed rise over a short spin-up timeline
+  while the CLI exposes a `mechanical_trace` output so CI and users can verify
+  the rotor state history via `python/check_pm_spinup.py`. The PM motor guide now
+  summarises the CI fixture parameters and documents lighter generator overrides
+  for local smoke tests so developers can iterate without modifying the stored
+  regression JSON.
 - **Stage 3 (Frequency-domain induction path)**: Extended the material schema
   with per-material conductivities (`sigma`) and taught the rasteriser and grid
   container to track `sigma`, complex impressed currents, and an imaginary

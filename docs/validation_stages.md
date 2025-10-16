@@ -23,6 +23,9 @@ All tests execute via `ctest` (see `CMakeLists.txt`) and run as part of the GitH
 - **Stage 4:** The back-EMF test exercises polygonal and rectangular integration regions, verifies frame selection semantics, and validates the EMF series using synthetic flux ramps.
 - **Stage 5:** The rotor ripple scenario reuses the Stage&nbsp;3 geometry but sweeps the magnetisation vector through four angles (0°, 60°, 120°, 180°) via timeline frames. The regression ensures torque polarity and amplitude evolve consistently with the expected sinusoid.
 - **Stage 6:** The skin-depth fixture drives a uniform conductor slab with a harmonic current sheet. Sampling \(|\mathbf{B}|\) along the conductor normal and fitting a log-linear slope recovers the expected \(-1/\delta\) decay constant.
+- **Mechanical spin-up:** `tests/pm_motor_spinup_test.cpp` loads the coupled PM motor spin-up scenario, solving the EM field,
+  RL circuits, and RK4 mechanical loop frame-by-frame. The regression asserts that rotor angle and speed rise over the timeline,
+  mirroring the CI spin-up demo that writes `pm_motor_spinup_mechanical.csv` for further inspection.
 
 ## Running the ladder locally
 

@@ -1272,6 +1272,34 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path = "outputs/" + id + "_bore.csv";
                 }
                 spec.outputs.boreProbes.push_back(std::move(request));
+            } else if (type == "mechanical_trace") {
+                ScenarioSpec::Outputs::MechanicalTrace request{};
+                request.id = id;
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + "_mechanical.csv";
+                }
+
+                if (output.contains("rotors")) {
+                    const auto& rotorsNode = output.at("rotors");
+                    if (rotorsNode.is_array()) {
+                        for (const auto& entry : rotorsNode) {
+                            if (!entry.is_string()) {
+                                throw std::runtime_error(
+                                    "mechanical_trace rotors array must contain strings for output '" + id + "'");
+                            }
+                            request.rotors.push_back(requireNonEmpty("outputs.rotors", entry.get<std::string>()));
+                        }
+                    } else if (rotorsNode.is_string()) {
+                        request.rotors.push_back(requireNonEmpty("outputs.rotors", rotorsNode.get<std::string>()));
+                    } else {
+                        throw std::runtime_error(
+                            "mechanical_trace rotors must be a string or array of strings for output '" + id + "'");
+                    }
+                }
+
+                spec.outputs.mechanicalTraces.push_back(std::move(request));
             } else {
                 throw std::runtime_error("Unsupported output type: " + type);
             }

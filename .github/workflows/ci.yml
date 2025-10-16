@@ -78,6 +78,19 @@ jobs:
           cp outputs/three_phase_ci.pvd ci_artifacts/
           cp outputs/bore_angle.csv ci_artifacts/
           cp outputs/three_phase_outlines.vtp ci_artifacts/
+      - name: PM motor spin-up demo
+        env:
+          MPLBACKEND: Agg
+        run: |
+          set -euo pipefail
+          python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inputs/three_phase_pm_motor_spinup_ci.json
+          ./build/motor_sim --scenario inputs/three_phase_pm_motor_spinup_ci.json --solve --vtk-series outputs/pm_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000
+          python3 python/check_pm_spinup.py --mechanical outputs/pm_motor_spinup_mechanical.csv --scenario inputs/three_phase_pm_motor_spinup_ci.json
+          python3 python/animate_three_phase.py --pvd outputs/pm_motor_spinup_ci.pvd --scenario inputs/three_phase_pm_motor_spinup_ci.json --save ci_artifacts/pm_motor_spinup.gif --frame-png ci_artifacts/pm_motor_spinup.png
+          cp outputs/pm_motor_spinup_frame_000.vti ci_artifacts/
+          cp outputs/pm_motor_spinup_ci.pvd ci_artifacts/
+          cp outputs/pm_motor_spinup_mechanical.csv ci_artifacts/
+          cp outputs/pm_motor_spinup_outlines.vtp ci_artifacts/
       - name: Render visualisations
         env:
           MPLBACKEND: Agg

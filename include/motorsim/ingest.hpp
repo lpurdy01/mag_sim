@@ -158,6 +158,12 @@ struct ScenarioSpec {
             std::string path;
         };
 
+        struct MechanicalTrace {
+            std::string id;
+            std::string path;
+            std::vector<std::string> rotors;
+        };
+
         std::vector<FieldMap> fieldMaps;
         std::vector<VtkSeries> vtkSeries;
         std::vector<LineProbe> lineProbes;
@@ -165,6 +171,7 @@ struct ScenarioSpec {
         std::vector<BackEmfProbe> backEmfProbes;
         std::vector<PolylineOutlines> polylineOutlines;
         std::vector<BoreAverageProbe> boreProbes;
+        std::vector<MechanicalTrace> mechanicalTraces;
     };
 
     struct MechanicalSystem {

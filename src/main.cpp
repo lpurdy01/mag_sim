@@ -2100,6 +2100,90 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (!solverFailure && !filter.skip && !frames.front().spec.outputs.mechanicalTraces.empty()) {
+        if (!mechanicalActive) {
+            for (const auto& request : frames.front().spec.outputs.mechanicalTraces) {
+                if (!shouldEmitId(request.id)) {
+                    continue;
+                }
+                std::cerr << "Mechanical trace '" << request.id
+                          << "' requested but mechanical simulator is inactive (timeline overrides rotor angles).\n";
+            }
+            outputFailure = true;
+        } else {
+            const auto& histories = mechanicalSim.history();
+            constexpr double kPi = 3.14159265358979323846;
+            constexpr double kTwoPi = 2.0 * kPi;
+            for (const auto& request : frames.front().spec.outputs.mechanicalTraces) {
+                if (!shouldEmitId(request.id)) {
+                    continue;
+                }
+
+                std::vector<std::string> rotorNames = request.rotors;
+                if (rotorNames.empty()) {
+                    rotorNames.reserve(histories.size());
+                    for (const auto& entry : histories) {
+                        rotorNames.push_back(entry.first);
+                    }
+                    std::sort(rotorNames.begin(), rotorNames.end());
+                    rotorNames.erase(std::unique(rotorNames.begin(), rotorNames.end()), rotorNames.end());
+                }
+
+                if (rotorNames.empty()) {
+                    std::cerr << "Mechanical trace '" << request.id
+                              << "' could not resolve any rotor histories to record.\n";
+                    outputFailure = true;
+                    continue;
+                }
+
+                const std::filesystem::path outPath(request.path);
+                ensureParentDirectory(outPath);
+                std::ofstream ofs(outPath);
+                if (!ofs.is_open()) {
+                    std::cerr << "Failed to open mechanical trace output path " << outPath << '\n';
+                    outputFailure = true;
+                    continue;
+                }
+
+                ofs << "time_s,rotor,angle_deg,omega_rad_s,omega_rpm,torque_Nm\n";
+                ofs << std::scientific << std::setprecision(12);
+
+                std::size_t totalSamples = 0;
+                bool missingRotor = false;
+
+                for (const auto& rotorName : rotorNames) {
+                    const auto histIt = histories.find(rotorName);
+                    if (histIt == histories.end()) {
+                        std::cerr << "Mechanical trace '" << request.id << "' references unknown rotor '"
+                                  << rotorName << "'\n";
+                        outputFailure = true;
+                        missingRotor = true;
+                        continue;
+                    }
+                    for (const auto& sample : histIt->second) {
+                        const double angleDeg = sample.angleRad * 180.0 / kPi;
+                        const double rpm = sample.omega * (60.0 / kTwoPi);
+                        ofs << sample.time << ',' << rotorName << ',' << angleDeg << ',' << sample.omega << ',' << rpm
+                            << ',' << sample.torque << '\n';
+                        ++totalSamples;
+                    }
+                }
+
+                ofs.close();
+                if (!ofs) {
+                    std::cerr << "Failed while writing mechanical trace to " << outPath << '\n';
+                    outputFailure = true;
+                    continue;
+                }
+
+                if (!missingRotor && !quiet) {
+                    std::cout << "Mechanical trace '" << request.id << "' wrote " << totalSamples
+                              << " sample(s) to " << outPath << '\n';
+                }
+            }
+        }
+    }
+
     if (!filter.skip && !frames.front().spec.outputs.polylineOutlines.empty()) {
         const auto loops = buildOutlineLoops(frames.front().spec);
         for (const auto& request : frames.front().spec.outputs.polylineOutlines) {

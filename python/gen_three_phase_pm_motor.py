@@ -6,7 +6,7 @@ import argparse
 import json
 import math
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
@@ -18,6 +18,11 @@ DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
         "slot_depth": 0.010,
         "slot_width_deg": 18.0,
         "load_angle_deg": 15.0,
+        "spinup_cycles": 3,
+        "spinup_load_angle_deg": 30.0,
+        "spinup_initial_angle_deg": -30.0,
+        "spinup_load_torque": 4.0,
+        "spinup_damping": 0.00015,
     },
     "hires": {
         "nx": 401,
@@ -27,8 +32,16 @@ DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
         "slot_depth": 0.010,
         "slot_width_deg": 12.0,
         "load_angle_deg": 10.0,
+        "spinup_cycles": 6,
+        "spinup_load_angle_deg": 24.0,
+        "spinup_initial_angle_deg": -24.0,
+        "spinup_load_torque": 6.0,
+        "spinup_damping": 0.0002,
     },
 }
+
+VALID_MODES = ("locked", "spinup")
+
 
 def build_circle(radius: float, segments: int) -> List[List[float]]:
     return [
@@ -62,18 +75,38 @@ def compute_phase_currents(current_amp: float, omega: float, time: float) -> Tup
     return ia, ib, ic
 
 
-def generate_scenario(profile: str, output_path: Path) -> None:
+def generate_scenario(
+    profile: str,
+    output_path: Path,
+    *,
+    mode: str = "locked",
+    cycles_override: Optional[int] = None,
+    frames_per_cycle_override: Optional[int] = None,
+) -> None:
     if profile not in DEFAULT_PROFILES:
         raise ValueError(f"Unknown profile '{profile}'. Available profiles: {', '.join(DEFAULT_PROFILES)}")
+    if mode not in VALID_MODES:
+        raise ValueError(f"Unknown mode '{mode}'. Valid options: {', '.join(VALID_MODES)}")
 
     profile_cfg = DEFAULT_PROFILES[profile]
     nx = int(profile_cfg["nx"])
     ny = int(profile_cfg["ny"])
-    frames_per_cycle = int(profile_cfg["frames_per_cycle"])
-    cycles = int(profile_cfg["cycles"])
+
+    frames_per_cycle = frames_per_cycle_override if frames_per_cycle_override is not None else int(
+        profile_cfg["frames_per_cycle"]
+    )
+    base_cycles = int(profile_cfg["cycles"])
+    cycles = cycles_override if cycles_override is not None else base_cycles
+
     slot_depth = float(profile_cfg["slot_depth"])
     slot_width_deg = float(profile_cfg["slot_width_deg"])
-    load_angle_deg = float(profile_cfg.get("load_angle_deg", 15.0))
+    base_load_angle_deg = float(profile_cfg.get("load_angle_deg", 15.0))
+    load_angle_deg = base_load_angle_deg
+
+    if mode == "spinup":
+        if cycles_override is None:
+            cycles = int(profile_cfg.get("spinup_cycles", base_cycles))
+        load_angle_deg = float(profile_cfg.get("spinup_load_angle_deg", base_load_angle_deg))
 
     domain_size = 0.14
     r_in = 0.040
@@ -89,6 +122,10 @@ def generate_scenario(profile: str, output_path: Path) -> None:
     rotor_inertia = 0.0025
     rotor_damping = 0.0002
     load_torque = 8.0
+
+    if mode == "spinup":
+        rotor_damping = float(profile_cfg.get("spinup_damping", rotor_damping))
+        load_torque = float(profile_cfg.get("spinup_load_torque", load_torque))
 
     total_frames = frames_per_cycle * cycles
     dt = 1.0 / electrical_hz / frames_per_cycle
@@ -175,6 +212,9 @@ def generate_scenario(profile: str, output_path: Path) -> None:
     torque_loop_radius = rotor_radius + 0.004
     torque_probe_polygon = build_circle(torque_loop_radius, 128)
 
+    prefix = "pm_motor_spinup" if mode == "spinup" else "pm_motor"
+    torque_id = f"{prefix}_torque"
+
     timeline = []
     phase_voltage_amp = line_voltage_rms
     for frame_idx in range(total_frames):
@@ -185,22 +225,22 @@ def generate_scenario(profile: str, output_path: Path) -> None:
         vc = phase_voltage_amp * math.sin(omega * time + 2.0 * math.pi / 3.0)
         electrical_angle_deg = math.degrees(omega * time)
         rotor_angle_deg = electrical_angle_deg - load_angle_deg
-        timeline.append(
-            {
-                "t": time,
-                "phase_currents": {
-                    "A": ia,
-                    "B": ib,
-                    "C": ic,
-                },
-                "voltage_sources": [
-                    {"circuit": "stator_three_phase", "source": "Va", "value": va},
-                    {"circuit": "stator_three_phase", "source": "Vb", "value": vb},
-                    {"circuit": "stator_three_phase", "source": "Vc", "value": vc},
-                ],
-                "rotor_angles": {"pm_rotor": rotor_angle_deg},
-            }
-        )
+        frame_entry = {
+            "t": time,
+            "phase_currents": {
+                "A": ia,
+                "B": ib,
+                "C": ic,
+            },
+            "voltage_sources": [
+                {"circuit": "stator_three_phase", "source": "Va", "value": va},
+                {"circuit": "stator_three_phase", "source": "Vb", "value": vb},
+                {"circuit": "stator_three_phase", "source": "Vc", "value": vc},
+            ],
+        }
+        if mode == "locked":
+            frame_entry["rotor_angles"] = {"pm_rotor": rotor_angle_deg}
+        timeline.append(frame_entry)
 
     circuits = [
         {
@@ -226,6 +266,10 @@ def generate_scenario(profile: str, output_path: Path) -> None:
         }
     ]
 
+    initial_angle_deg = -load_angle_deg
+    if mode == "spinup":
+        initial_angle_deg = float(profile_cfg.get("spinup_initial_angle_deg", -load_angle_deg))
+
     scenario = {
         "version": "0.2",
         "units": "SI",
@@ -248,42 +292,43 @@ def generate_scenario(profile: str, output_path: Path) -> None:
                     "inertia": rotor_inertia,
                     "damping": rotor_damping,
                     "load_torque": load_torque,
-                    "initial_angle_deg": -load_angle_deg,
+                    "initial_angle_deg": initial_angle_deg,
                     "initial_speed_rpm": 0.0,
-                    "torque_probe": "pm_motor_torque",
+                    "torque_probe": torque_id,
                 }
             ]
         },
         "timeline": timeline,
-        "outputs": [
-            {
-                "type": "vtk_field_series",
-                "id": "pm_motor_series",
-                "dir": "outputs",
-                "basename": "pm_motor_frame",
-                "quantities": ["B", "H"],
-            },
-            {
-                "type": "polyline_outlines",
-                "id": "pm_motor_outlines",
-                "path": "outputs/pm_motor_outlines.vtp",
-            },
-            {
-                "type": "bore_avg_B",
-                "id": "pm_motor_bore",
-                "path": "outputs/pm_motor_bore.csv",
-                "vertices": bore_probe_polygon,
-            },
-            {
-                "type": "probe",
-                "id": "pm_motor_torque",
-                "probe_type": "torque",
-                "method": "stress_tensor",
-                "loop": {"type": "polygon", "vertices": torque_probe_polygon},
-                "path": "outputs/pm_motor_torque.csv",
-            },
-        ],
     }
+
+    outputs = [
+        {
+            "type": "vtk_field_series",
+            "id": f"{prefix}_series",
+            "dir": "outputs",
+            "basename": f"{prefix}_frame",
+            "quantities": ["B", "H"],
+        },
+        {
+            "type": "polyline_outlines",
+            "id": f"{prefix}_outlines",
+            "path": f"outputs/{prefix}_outlines.vtp",
+        },
+        {
+            "type": "bore_avg_B",
+            "id": f"{prefix}_bore",
+            "path": f"outputs/{prefix}_bore.csv",
+            "vertices": bore_probe_polygon,
+        },
+        {
+            "type": "probe",
+            "id": torque_id,
+            "probe_type": "torque",
+            "method": "stress_tensor",
+            "loop": {"type": "polygon", "vertices": torque_probe_polygon},
+            "path": f"outputs/{torque_id}.csv",
+        },
+    ]
 
     back_emf_outputs = []
     for phase, slots in phase_slot_map.items():
@@ -293,14 +338,26 @@ def generate_scenario(profile: str, output_path: Path) -> None:
         back_emf_outputs.append(
             {
                 "type": "back_emf_probe",
-                "id": f"pm_motor_phase_{phase.lower()}_emf",
+                "id": f"{prefix}_phase_{phase.lower()}_emf",
                 "component": "Bmag",
                 "region": {"type": "polygon", "vertices": pos_polygon},
-                "path": f"outputs/pm_motor_phase_{phase.lower()}_emf.csv",
+                "path": f"outputs/{prefix}_phase_{phase.lower()}_emf.csv",
             }
         )
 
-    scenario["outputs"].extend(back_emf_outputs)
+    outputs.extend(back_emf_outputs)
+
+    if mode == "spinup":
+        outputs.append(
+            {
+                "type": "mechanical_trace",
+                "id": f"{prefix}_mechanical",
+                "path": f"outputs/{prefix}_mechanical.csv",
+                "rotors": ["pm_rotor"],
+            }
+        )
+
+    scenario["outputs"] = outputs
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(scenario, indent=2) + "\n", encoding="utf-8")
@@ -309,13 +366,22 @@ def generate_scenario(profile: str, output_path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=sorted(DEFAULT_PROFILES.keys()), default="ci")
+    parser.add_argument("--mode", choices=VALID_MODES, default="locked", help="Scenario mode: locked rotor or free spin-up")
+    parser.add_argument("--cycles", type=int, help="Override the number of electrical cycles to emit")
+    parser.add_argument("--frames-per-cycle", type=int, dest="frames_per_cycle", help="Override frames per electrical cycle")
     parser.add_argument("--out", type=Path, required=True, help="Output scenario JSON path")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    generate_scenario(args.profile, args.out)
+    generate_scenario(
+        args.profile,
+        args.out,
+        mode=args.mode,
+        cycles_override=args.cycles,
+        frames_per_cycle_override=args.frames_per_cycle,
+    )
 
 
 if __name__ == "__main__":

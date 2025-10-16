@@ -11,14 +11,17 @@ constexpr double kPi = 3.14159265358979323846;
 }
 
 void MechanicalSimulator::initialize(const ScenarioSpec& baseSpec,
-                                     const std::vector<ScenarioFrame>& /*frames*/) {
+                                     const std::vector<ScenarioFrame>& frames) {
     baseSpec_ = &baseSpec;
     rotors_.clear();
+    history_.clear();
     active_ = false;
 
     if (!baseSpec.mechanical.has_value()) {
         return;
     }
+
+    const std::size_t frameCount = frames.size();
 
     bool timelineOverridesRotors = false;
     for (const auto& frame : baseSpec.timeline) {
@@ -53,6 +56,10 @@ void MechanicalSimulator::initialize(const ScenarioSpec& baseSpec,
         state.hasTorqueProbe = rotorConfig.hasTorqueProbe;
         state.lastTorque = 0.0;
         rotors_.push_back(state);
+        auto& samples = history_[state.name];
+        if (frameCount > 0) {
+            samples.reserve(frameCount);
+        }
     }
 
     if (!rotors_.empty()) {
@@ -95,6 +102,11 @@ void MechanicalSimulator::handle_solved_frame(
                           << "' not found for rotor '" << state.name << "'\n";
                 state.missingTorqueWarning = true;
             }
+        }
+
+        auto historyIt = history_.find(state.name);
+        if (historyIt != history_.end()) {
+            historyIt->second.push_back(RotorSample{frame.time, state.angleRad, state.omega, torque});
         }
 
         if (!(dt > 0.0) || !(state.inertia > 0.0)) {

@@ -178,6 +178,21 @@ target_include_directories(rotor_ripple_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME rotor_ripple COMMAND rotor_ripple_test)
 
+add_executable(pm_motor_spinup_test
+    tests/pm_motor_spinup_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(pm_motor_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME pm_motor_spinup COMMAND pm_motor_spinup_test)
+
 add_test(
     NAME scenario_python_emit
     COMMAND
