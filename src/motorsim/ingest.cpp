@@ -152,24 +152,38 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     spec.polygons.clear();
     spec.regionMasks.clear();
 
-    std::unordered_map<std::string, double> muMap;
+    struct MaterialProps {
+        double mu_r{1.0};
+        double sigma{0.0};
+        double inv_mu{1.0 / MU0};
+    };
+
+    std::unordered_map<std::string, MaterialProps> materialMap;
     for (const auto& material : materials) {
         const std::string name = material.at("name").get<std::string>();
-        if (muMap.count(name) != 0U) {
+        if (materialMap.count(name) != 0U) {
             throw std::runtime_error("Duplicate material name: " + name);
         }
         const double mu_r = requirePositive("material.mu_r", material.at("mu_r").get<double>());
-        muMap.emplace(name, mu_r);
+        const double sigma = material.value("sigma", 0.0);
+        MaterialProps props{};
+        props.mu_r = mu_r;
+        props.sigma = std::max(0.0, sigma);
+        props.inv_mu = 1.0 / (MU0 * mu_r);
+        materialMap.emplace(name, props);
         ScenarioSpec::Material entry{};
         entry.name = name;
         entry.mu_r = mu_r;
+        entry.sigma = props.sigma;
         spec.materials.push_back(entry);
     }
 
     if (!spec.materials.empty()) {
         spec.mu_r_background = spec.materials.front().mu_r;
+        spec.sigma_background = spec.materials.front().sigma;
     } else {
         spec.mu_r_background = 1.0;
+        spec.sigma_background = 0.0;
     }
 
     const auto& regions = json.at("regions");
@@ -182,23 +196,24 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         const std::string type = region.at("type").get<std::string>();
         if (type == "uniform") {
             const std::string materialName = region.at("material").get<std::string>();
-            const auto it = muMap.find(materialName);
-            if (it == muMap.end()) {
+            const auto it = materialMap.find(materialName);
+            if (it == materialMap.end()) {
                 throw std::runtime_error("Region references unknown material: " + materialName);
             }
             if (spec.version == "0.1" && foundUniform) {
                 throw std::runtime_error(
                     "Multiple uniform regions defined; only one is supported in v0.1");
             }
-            spec.mu_r_background = it->second;
+            spec.mu_r_background = it->second.mu_r;
+            spec.sigma_background = it->second.sigma;
             foundUniform = true;
         } else if (type == "halfspace") {
             if (!allowAdvancedRegions) {
                 throw std::runtime_error("Region type 'halfspace' requires scenario version 0.2");
             }
             const std::string materialName = region.at("material").get<std::string>();
-            const auto it = muMap.find(materialName);
-            if (it == muMap.end()) {
+            const auto it = materialMap.find(materialName);
+            if (it == materialMap.end()) {
                 throw std::runtime_error("Region references unknown material: " + materialName);
             }
             const auto& normal = region.at("normal");
@@ -216,8 +231,9 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             hs.normal_x = nx * invLength;
             hs.normal_y = ny * invLength;
             hs.offset = region.at("offset").get<double>() * invLength;
-            hs.mu_r = it->second;
-            hs.inv_mu = 1.0 / (MU0 * hs.mu_r);
+            hs.mu_r = it->second.mu_r;
+            hs.inv_mu = it->second.inv_mu;
+            hs.sigma = it->second.sigma;
             spec.halfspaces.push_back(hs);
             ScenarioSpec::RegionMask mask{};
             mask.kind = ScenarioSpec::RegionMask::Kind::Halfspace;
@@ -228,8 +244,8 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 throw std::runtime_error("Region type 'polygon' requires scenario version 0.2");
             }
             const std::string materialName = region.at("material").get<std::string>();
-            const auto it = muMap.find(materialName);
-            if (it == muMap.end()) {
+            const auto it = materialMap.find(materialName);
+            if (it == materialMap.end()) {
                 throw std::runtime_error("Region references unknown material: " + materialName);
             }
             const auto& vertices = region.at("vertices");
@@ -237,8 +253,9 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 throw std::runtime_error("polygon region requires an array of at least three vertices");
             }
             ScenarioSpec::PolygonRegion poly{};
-            poly.mu_r = it->second;
-            poly.inv_mu = 1.0 / (MU0 * poly.mu_r);
+            poly.mu_r = it->second.mu_r;
+            poly.inv_mu = it->second.inv_mu;
+            poly.sigma = it->second.sigma;
             poly.xs.reserve(vertices.size());
             poly.ys.reserve(vertices.size());
             double minX = std::numeric_limits<double>::infinity();
@@ -1658,8 +1675,25 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     }
 
     if (json.contains("solver")) {
+        const auto& solverNode = json.at("solver");
         spec.solverSettings.solverSpecified = true;
-        spec.solverSettings.solverId = json.at("solver").get<std::string>();
+        if (solverNode.is_string()) {
+            spec.solverSettings.solverId = solverNode.get<std::string>();
+        } else if (solverNode.is_object()) {
+            spec.solverSettings.solverId = solverNode.value("kind", std::string{"cg"});
+            if (solverNode.contains("frequency_hz")) {
+                spec.solverSettings.harmonicFrequencySpecified = true;
+                spec.solverSettings.harmonicFrequencyHz =
+                    requirePositive("solver.frequency_hz", solverNode.at("frequency_hz").get<double>());
+            }
+            if (solverNode.contains("omega_rad_per_s")) {
+                spec.solverSettings.harmonicOmegaSpecified = true;
+                spec.solverSettings.harmonicOmega =
+                    requirePositive("solver.omega_rad_per_s", solverNode.at("omega_rad_per_s").get<double>());
+            }
+        } else {
+            throw std::runtime_error("solver must be either a string or an object");
+        }
     }
     if (json.contains("warm_start")) {
         spec.solverSettings.warmStartSpecified = true;
@@ -1713,6 +1747,7 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                                  : Grid2D::BoundaryKind::Neumann;
 
     const double invMuBackground = 1.0 / (MU0 * spec.mu_r_background);
+    const double sigmaBackground = spec.sigma_background;
     std::fill(grid.Jz.begin(), grid.Jz.end(), 0.0);
     const std::size_t cellCount = grid.nx * grid.ny;
     if (grid.Mx.size() != cellCount) {
@@ -1724,6 +1759,21 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
         grid.My.assign(cellCount, 0.0);
     } else {
         std::fill(grid.My.begin(), grid.My.end(), 0.0);
+    }
+    if (grid.JzImag.size() != cellCount) {
+        grid.JzImag.assign(cellCount, 0.0);
+    } else {
+        std::fill(grid.JzImag.begin(), grid.JzImag.end(), 0.0);
+    }
+    if (grid.sigma.size() != cellCount) {
+        grid.sigma.assign(cellCount, sigmaBackground);
+    } else {
+        std::fill(grid.sigma.begin(), grid.sigma.end(), sigmaBackground);
+    }
+    if (grid.AzImag.size() != cellCount) {
+        grid.AzImag.assign(cellCount, 0.0);
+    } else {
+        std::fill(grid.AzImag.begin(), grid.AzImag.end(), 0.0);
     }
     grid.Hx.clear();
     grid.Hy.clear();
@@ -1739,11 +1789,13 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
             for (std::size_t i = 0; i < grid.nx; ++i) {
                 const double x = x0 + static_cast<double>(i) * spec.dx;
                 double invMu = invMuBackground;
+                double sigma = sigmaBackground;
                 for (const auto& mask : spec.regionMasks) {
                     if (mask.kind == ScenarioSpec::RegionMask::Kind::Halfspace) {
                         const auto& hs = spec.halfspaces[mask.index];
                         if (hs.normal_x * x + hs.normal_y * y + hs.offset < 0.0) {
                             invMu = hs.inv_mu;
+                            sigma = hs.sigma;
                         }
                     } else {
                         const auto& poly = spec.polygons[mask.index];
@@ -1752,10 +1804,12 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                         }
                         if (pointInPolygon(x, y, poly)) {
                             invMu = poly.inv_mu;
+                            sigma = poly.sigma;
                         }
                     }
                 }
                 grid.invMu[grid.idx(i, j)] = invMu;
+                grid.sigma[grid.idx(i, j)] = sigma;
             }
         }
     }

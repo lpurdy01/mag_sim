@@ -47,6 +47,7 @@ struct ScenarioSpec {
     struct Material {
         std::string name;
         double mu_r{1.0};
+        double sigma{0.0};
     };
 
     struct HalfspaceRegion {
@@ -55,6 +56,7 @@ struct ScenarioSpec {
         double offset{0.0};
         double mu_r{1.0};
         double inv_mu{0.0};
+        double sigma{0.0};
     };
 
     struct PolygonRegion {
@@ -62,6 +64,7 @@ struct ScenarioSpec {
         std::vector<double> ys;
         double mu_r{1.0};
         double inv_mu{0.0};
+        double sigma{0.0};
         double min_x{0.0};
         double max_x{0.0};
         double min_y{0.0};
@@ -271,6 +274,7 @@ struct ScenarioSpec {
     double dx{0.0};
     double dy{0.0};
     double mu_r_background{1.0};
+    double sigma_background{0.0};
     std::vector<Material> materials;
     std::vector<HalfspaceRegion> halfspaces;
     std::vector<PolygonRegion> polygons;
@@ -300,6 +304,10 @@ struct ScenarioSpec {
         std::size_t snapshotEveryIters{0};
         bool quietSpecified{false};
         bool quiet{false};
+        bool harmonicFrequencySpecified{false};
+        double harmonicFrequencyHz{0.0};
+        bool harmonicOmegaSpecified{false};
+        double harmonicOmega{0.0};
     } solverSettings;
 };
 

@@ -34,6 +34,7 @@ jobs:
           ./build/torque_validation_test 2>&1 | tee ci_artifacts/torque_validation_test.txt
           ./build/back_emf_probe_test 2>&1 | tee ci_artifacts/back_emf_probe_test.txt
           ./build/rotor_ripple_test 2>&1 | tee ci_artifacts/rotor_ripple_test.txt
+          ./build/skin_depth_test 2>&1 | tee ci_artifacts/skin_depth_test.txt
           {
             echo "# Regression accuracy summary"
             echo
@@ -45,7 +46,8 @@ jobs:
               ci_artifacts/probe_output_test.txt \
               ci_artifacts/torque_validation_test.txt \
               ci_artifacts/back_emf_probe_test.txt \
-              ci_artifacts/rotor_ripple_test.txt; do
+              ci_artifacts/rotor_ripple_test.txt \
+              ci_artifacts/skin_depth_test.txt; do
               name=$(basename "${report%.txt}")
               echo "## ${name}"
               cat "$report"

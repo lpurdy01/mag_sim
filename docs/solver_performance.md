@@ -6,6 +6,12 @@ with `tools/solver_benchmark`. All reported numbers come from single-threaded
 runs so you can scale them directly with per-core performance when planning
 work in lightweight environments such as GitHub Codespaces.
 
+The newly introduced harmonic solve (`--solver harmonic`) reuses the CG backend
+on a doubled system (real/imaginary components). Complexity follows the CG
+trends quoted below; expect roughly a 2× increase in per-iteration cost versus a
+purely real solve because the normal equations require two operator applications
+per iteration.
+
 ## 1. Complexity heuristics
 
 * Each SOR sweep visits every interior cell once, so the cost per iteration is

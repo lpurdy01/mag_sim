@@ -36,7 +36,8 @@ void printUsage() {
     std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
                  " [--list-outputs] [--outputs IDs] [--max-iters N] [--tol VALUE]"
                  " [--omega VALUE] [--parallel-frames] [--vtk-series PATH]"
-                 " [--solver {sor|cg}] [--warm-start] [--no-warm-start] [--use-prolongation]"
+                " [--solver {sor|cg|harmonic}] [--harmonic-frequency HZ] [--harmonic-omega RAD_S]"
+                " [--warm-start] [--no-warm-start] [--use-prolongation]"
                  " [--no-prolongation] [--coarse-nx N] [--coarse-ny N]"
                  " [--progress-every SEC] [--snapshot-every N]"
                  " [--progress-history PATH] [--quiet] [--no-quiet]\n";
@@ -608,6 +609,10 @@ bool tryParseSolverKind(const std::string& text, motorsim::SolverKind& out) {
     }
     if (lower == "cg") {
         out = motorsim::SolverKind::CG;
+        return true;
+    }
+    if (lower == "harmonic" || lower == "harmonic_cg") {
+        out = motorsim::SolverKind::Harmonic;
         return true;
     }
     return false;
@@ -1284,6 +1289,8 @@ int main(int argc, char** argv) {
     std::optional<int> maxItersOverride;
     std::optional<double> tolOverride;
     std::optional<double> omegaOverride;
+    std::optional<double> harmonicFreqOverride;
+    std::optional<double> harmonicOmegaOverride;
     std::optional<std::string> vtkSeriesPath;
     std::optional<std::string> solverOverride;
     std::optional<bool> warmStartOverride;
@@ -1380,15 +1387,51 @@ int main(int argc, char** argv) {
                 return 1;
             }
             omegaOverride = value;
+        } else if (arg == "--harmonic-frequency") {
+            if (i + 1 >= argc) {
+                std::cerr << "--harmonic-frequency requires a floating-point argument\n";
+                printUsage();
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--harmonic-frequency requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (!(value > 0.0)) {
+                std::cerr << "--harmonic-frequency must be positive\n";
+                return 1;
+            }
+            harmonicFreqOverride = value;
+        } else if (arg == "--harmonic-omega") {
+            if (i + 1 >= argc) {
+                std::cerr << "--harmonic-omega requires a floating-point argument\n";
+                printUsage();
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--harmonic-omega requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (!(value > 0.0)) {
+                std::cerr << "--harmonic-omega must be positive\n";
+                return 1;
+            }
+            harmonicOmegaOverride = value;
         } else if (arg == "--solver") {
             if (i + 1 >= argc) {
-                std::cerr << "--solver requires an argument (sor or cg)\n";
+                std::cerr << "--solver requires an argument (sor, cg, or harmonic)\n";
                 printUsage();
                 return 1;
             }
             const std::string value = argv[++i];
-            if (value != "sor" && value != "cg") {
-                std::cerr << "--solver must be 'sor' or 'cg'\n";
+            if (value != "sor" && value != "cg" && value != "harmonic" && value != "harmonic_cg") {
+                std::cerr << "--solver must be 'sor', 'cg', or 'harmonic'\n";
                 return 1;
             }
             solverOverride = value;
@@ -1668,6 +1711,27 @@ int main(int argc, char** argv) {
     if (!tryParseSolverKind(solverId, options.kind)) {
         std::cerr << "Unknown solver identifier: " << solverId << "\n";
         return 1;
+    }
+
+    if (options.kind == motorsim::SolverKind::Harmonic) {
+        double omega = 0.0;
+        if (harmonicOmegaOverride) {
+            omega = *harmonicOmegaOverride;
+        } else if (harmonicFreqOverride) {
+            constexpr double twoPi = 2.0 * 3.14159265358979323846;
+            omega = *harmonicFreqOverride * twoPi;
+        } else if (spec.solverSettings.harmonicOmegaSpecified) {
+            omega = spec.solverSettings.harmonicOmega;
+        } else if (spec.solverSettings.harmonicFrequencySpecified) {
+            constexpr double twoPi = 2.0 * 3.14159265358979323846;
+            omega = spec.solverSettings.harmonicFrequencyHz * twoPi;
+        }
+        if (!(omega > 0.0)) {
+            std::cerr << "Harmonic solver requires a positive drive frequency."
+                      << " Provide --harmonic-frequency/--harmonic-omega or set solver.frequency_hz in the scenario.\n";
+            return 1;
+        }
+        options.harmonicOmega = omega;
     }
 
     bool warmStart = spec.solverSettings.warmStartSpecified ? spec.solverSettings.warmStart : false;

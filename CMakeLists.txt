@@ -65,6 +65,18 @@ target_include_directories(line_current_interface_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME line_current_interface COMMAND line_current_interface_test)
 
+add_executable(skin_depth_test
+    tests/skin_depth_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
+target_include_directories(skin_depth_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME skin_depth COMMAND skin_depth_test)
+
 add_executable(magnet_strip_test
     tests/magnet_strip_test.cpp
     src/motorsim/solver.cpp

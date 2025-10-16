@@ -128,6 +128,94 @@ void computeJacobiDiagonal(const Grid2D& grid, std::vector<double>& diag) {
     }
 }
 
+void zeroDirichletBoundaryPair(const Grid2D& grid,
+                               std::vector<double>& realPart,
+                               std::vector<double>& imagPart) {
+    zeroDirichletBoundary(grid, realPart);
+    zeroDirichletBoundary(grid, imagPart);
+}
+
+double complexDot(const std::vector<double>& ar,
+                  const std::vector<double>& ai,
+                  const std::vector<double>& br,
+                  const std::vector<double>& bi) {
+    const std::size_t n = std::min(std::min(ar.size(), ai.size()), std::min(br.size(), bi.size()));
+    double accum = 0.0;
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        accum += ar[idx] * br[idx] + ai[idx] * bi[idx];
+    }
+    return accum;
+}
+
+void applyHarmonicOperator(const Grid2D& grid,
+                           double omega,
+                           const double* ar,
+                           const double* ai,
+                           double* outR,
+                           double* outI) {
+    const std::size_t n = grid.nx * grid.ny;
+    if (n == 0 || ar == nullptr || ai == nullptr || outR == nullptr || outI == nullptr) {
+        return;
+    }
+
+    linops::applyA(grid, ar, outR);
+    linops::applyA(grid, ai, outI);
+
+    if (grid.sigma.size() != n) {
+        return;
+    }
+
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        const double coupling = omega * grid.sigma[idx];
+        outR[idx] -= coupling * ai[idx];
+        outI[idx] += coupling * ar[idx];
+    }
+}
+
+void applyHarmonicTranspose(const Grid2D& grid,
+                             double omega,
+                             const double* ar,
+                             const double* ai,
+                             double* outR,
+                             double* outI) {
+    const std::size_t n = grid.nx * grid.ny;
+    if (n == 0 || ar == nullptr || ai == nullptr || outR == nullptr || outI == nullptr) {
+        return;
+    }
+
+    linops::applyA(grid, ar, outR);
+    linops::applyA(grid, ai, outI);
+
+    if (grid.sigma.size() != n) {
+        return;
+    }
+
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        const double coupling = omega * grid.sigma[idx];
+        outR[idx] += coupling * ai[idx];
+        outI[idx] -= coupling * ar[idx];
+    }
+}
+
+double computeHarmonicResidual(const Grid2D& grid,
+                               double omega,
+                               const std::vector<double>& ar,
+                               const std::vector<double>& ai,
+                               std::vector<double>& scratchR,
+                               std::vector<double>& scratchI) {
+    const std::size_t n = grid.nx * grid.ny;
+    scratchR.resize(n);
+    scratchI.resize(n);
+    applyHarmonicOperator(grid, omega, ar.data(), ai.data(), scratchR.data(), scratchI.data());
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        const double jr = (idx < grid.Jz.size()) ? grid.Jz[idx] : 0.0;
+        const double ji = (idx < grid.JzImag.size()) ? grid.JzImag[idx] : 0.0;
+        scratchR[idx] = jr - scratchR[idx];
+        scratchI[idx] = ji - scratchI[idx];
+    }
+    return std::sqrt(complexDot(scratchR, scratchI, scratchR, scratchI));
+}
+
 bool emitProgress(ProgressSink* sink,
                   const SolveOptions& options,
                   std::size_t iter,
@@ -513,14 +601,179 @@ Grid2D buildCoarseGrid(const Grid2D& fine, const SolveOptions& options) {
 
 }  // namespace
 
+SolveResult solveHarmonicInternal(Grid2D& grid,
+                                  const SolveOptions& options,
+                                  ProgressSink* progressSink) {
+    SolveResult report{};
+    const std::size_t n = grid.nx * grid.ny;
+    if (grid.nx < 3 || grid.ny < 3 || n == 0) {
+        return report;
+    }
+
+    if (grid.AzImag.size() != n) {
+        grid.AzImag.assign(n, 0.0);
+    }
+
+    zeroDirichletBoundaryPair(grid, grid.Az, grid.AzImag);
+    enforceNeumannBoundaries(grid, grid.Az);
+    enforceNeumannBoundaries(grid, grid.AzImag);
+    removeMeanIfNeumann(grid, grid.Az);
+    removeMeanIfNeumann(grid, grid.AzImag);
+    enforceNeumannGauge(grid, grid.Az);
+    enforceNeumannGauge(grid, grid.AzImag);
+
+    std::vector<double> rhsNormalR(n, 0.0);
+    std::vector<double> rhsNormalI(n, 0.0);
+    applyHarmonicTranspose(grid, options.harmonicOmega, grid.Jz.data(), grid.JzImag.data(),
+                           rhsNormalR.data(), rhsNormalI.data());
+    zeroDirichletBoundaryPair(grid, rhsNormalR, rhsNormalI);
+    removeMeanIfNeumann(grid, rhsNormalR);
+    removeMeanIfNeumann(grid, rhsNormalI);
+    enforceNeumannGauge(grid, rhsNormalR);
+    enforceNeumannGauge(grid, rhsNormalI);
+
+    std::vector<double> residualR(n, 0.0);
+    std::vector<double> residualI(n, 0.0);
+    std::vector<double> searchR(n, 0.0);
+    std::vector<double> searchI(n, 0.0);
+    std::vector<double> normalXR(n, 0.0);
+    std::vector<double> normalXI(n, 0.0);
+    std::vector<double> ApR(n, 0.0);
+    std::vector<double> ApI(n, 0.0);
+    std::vector<double> tmpR(n, 0.0);
+    std::vector<double> tmpI(n, 0.0);
+    std::vector<double> scratchR;
+    std::vector<double> scratchI;
+
+    auto applyNormal = [&](const std::vector<double>& vecR,
+                           const std::vector<double>& vecI,
+                           std::vector<double>& outR,
+                           std::vector<double>& outI) {
+        applyHarmonicOperator(grid, options.harmonicOmega, vecR.data(), vecI.data(), tmpR.data(), tmpI.data());
+        applyHarmonicTranspose(grid, options.harmonicOmega, tmpR.data(), tmpI.data(), outR.data(), outI.data());
+        zeroDirichletBoundaryPair(grid, outR, outI);
+        removeMeanIfNeumann(grid, outR);
+        removeMeanIfNeumann(grid, outI);
+        enforceNeumannGauge(grid, outR);
+        enforceNeumannGauge(grid, outI);
+    };
+
+    applyNormal(grid.Az, grid.AzImag, normalXR, normalXI);
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        residualR[idx] = rhsNormalR[idx] - normalXR[idx];
+        residualI[idx] = rhsNormalI[idx] - normalXI[idx];
+    }
+    zeroDirichletBoundaryPair(grid, residualR, residualI);
+    removeMeanIfNeumann(grid, residualR);
+    removeMeanIfNeumann(grid, residualI);
+    enforceNeumannGauge(grid, residualR);
+    enforceNeumannGauge(grid, residualI);
+
+    const double rhsFieldNorm = std::max(std::sqrt(complexDot(grid.Jz, grid.JzImag, grid.Jz, grid.JzImag)), 1e-30);
+
+    const auto start = Clock::now();
+    auto lastProgress = start;
+
+    double harmonicResidual = computeHarmonicResidual(grid, options.harmonicOmega, grid.Az, grid.AzImag, scratchR, scratchI);
+    double relResidual = harmonicResidual / rhsFieldNorm;
+    report.relResidual = relResidual;
+    if (!emitProgress(progressSink, options, 0, relResidual, start, lastProgress, true)) {
+        return report;
+    }
+    maybeWriteSnapshot(progressSink, options, grid, 0, relResidual, start);
+    if (relResidual < options.tol) {
+        report.converged = true;
+        report.iters = 0;
+        return report;
+    }
+
+    double rr = complexDot(residualR, residualI, residualR, residualI);
+    double rrPrev = rr;
+
+    for (std::size_t iter = 0; iter < options.maxIters; ++iter) {
+        if (iter == 0) {
+            searchR = residualR;
+            searchI = residualI;
+        } else {
+            const double beta = (rrPrev > 0.0) ? rr / rrPrev : 0.0;
+            for (std::size_t idx = 0; idx < n; ++idx) {
+                searchR[idx] = residualR[idx] + beta * searchR[idx];
+                searchI[idx] = residualI[idx] + beta * searchI[idx];
+            }
+        }
+        zeroDirichletBoundaryPair(grid, searchR, searchI);
+        removeMeanIfNeumann(grid, searchR);
+        removeMeanIfNeumann(grid, searchI);
+        enforceNeumannGauge(grid, searchR);
+        enforceNeumannGauge(grid, searchI);
+
+        applyNormal(searchR, searchI, ApR, ApI);
+        const double denom = complexDot(searchR, searchI, ApR, ApI);
+        if (!std::isfinite(denom) || std::abs(denom) < 1e-30) {
+            break;
+        }
+
+        const double alpha = (rr > 0.0) ? rr / denom : 0.0;
+        for (std::size_t idx = 0; idx < n; ++idx) {
+            grid.Az[idx] += alpha * searchR[idx];
+            grid.AzImag[idx] += alpha * searchI[idx];
+            residualR[idx] -= alpha * ApR[idx];
+            residualI[idx] -= alpha * ApI[idx];
+        }
+
+        zeroDirichletBoundaryPair(grid, grid.Az, grid.AzImag);
+        zeroDirichletBoundaryPair(grid, residualR, residualI);
+        enforceNeumannBoundaries(grid, grid.Az);
+        enforceNeumannBoundaries(grid, grid.AzImag);
+        removeMeanIfNeumann(grid, grid.Az);
+        removeMeanIfNeumann(grid, grid.AzImag);
+        enforceNeumannGauge(grid, grid.Az);
+        enforceNeumannGauge(grid, grid.AzImag);
+        removeMeanIfNeumann(grid, residualR);
+        removeMeanIfNeumann(grid, residualI);
+        enforceNeumannGauge(grid, residualR);
+        enforceNeumannGauge(grid, residualI);
+
+        rrPrev = rr;
+        rr = complexDot(residualR, residualI, residualR, residualI);
+
+        harmonicResidual = computeHarmonicResidual(grid, options.harmonicOmega, grid.Az, grid.AzImag, scratchR, scratchI);
+        relResidual = harmonicResidual / rhsFieldNorm;
+        report.relResidual = relResidual;
+        report.iters = iter + 1;
+
+        const bool force = options.snapshotEveryIters > 0 && (report.iters % options.snapshotEveryIters) == 0;
+        if (!emitProgress(progressSink, options, report.iters, relResidual, start, lastProgress, force)) {
+            return report;
+        }
+        maybeWriteSnapshot(progressSink, options, grid, report.iters, relResidual, start);
+
+        if (relResidual < options.tol) {
+            report.converged = true;
+            break;
+        }
+
+        if (!(rr > 0.0)) {
+            break;
+        }
+    }
+
+    return report;
+}
+
 SolveResult solveAz(Grid2D& grid,
                     const SolveOptions& options,
                     const InitialGuess* initialGuess,
                     ProgressSink* progress) {
     SolveOptions adjusted = options;
 
+    if (grid.AzImag.size() != grid.Az.size()) {
+        grid.AzImag.assign(grid.Az.size(), 0.0);
+    }
+
     if (!adjusted.warmStart && (!initialGuess || initialGuess->Az0 == nullptr) && !adjusted.useProlongation) {
         std::fill(grid.Az.begin(), grid.Az.end(), 0.0);
+        std::fill(grid.AzImag.begin(), grid.AzImag.end(), 0.0);
     }
 
     if (initialGuess != nullptr && initialGuess->Az0 != nullptr && initialGuess->Az0->size() == grid.Az.size()) {
@@ -541,6 +794,14 @@ SolveResult solveAz(Grid2D& grid,
             removeMeanIfNeumann(grid, grid.Az);
             enforceNeumannGauge(grid, grid.Az);
         }
+    }
+
+    if (initialGuess != nullptr && initialGuess->AzImag0 != nullptr &&
+        initialGuess->AzImag0->size() == grid.AzImag.size()) {
+        grid.AzImag = *initialGuess->AzImag0;
+        enforceNeumannBoundaries(grid, grid.AzImag);
+        removeMeanIfNeumann(grid, grid.AzImag);
+        enforceNeumannGauge(grid, grid.AzImag);
     }
 
     Grid2D coarse;
@@ -574,6 +835,8 @@ SolveResult solveAz(Grid2D& grid,
             return solveSORInternal(grid, adjusted, progress);
         case SolverKind::CG:
             return solveCGInternal(grid, adjusted, progress);
+        case SolverKind::Harmonic:
+            return solveHarmonicInternal(grid, adjusted, progress);
     }
     return {};
 }
@@ -661,6 +924,102 @@ void computeH(Grid2D& grid) {
         }
         grid.Hx[idx] = hx;
         grid.Hy[idx] = hy;
+    }
+}
+
+void computeBHarmonic(const Grid2D& grid,
+                      const std::vector<double>& AzReal,
+                      const std::vector<double>& AzImag,
+                      std::vector<double>& BxReal,
+                      std::vector<double>& BxImag,
+                      std::vector<double>& ByReal,
+                      std::vector<double>& ByImag) {
+    const std::size_t count = grid.nx * grid.ny;
+    BxReal.assign(count, 0.0);
+    BxImag.assign(count, 0.0);
+    ByReal.assign(count, 0.0);
+    ByImag.assign(count, 0.0);
+
+    if (AzReal.size() < count || AzImag.size() < count) {
+        return;
+    }
+
+    const double inv2dx = 1.0 / (2.0 * grid.dx);
+    const double inv2dy = 1.0 / (2.0 * grid.dy);
+
+    for (std::size_t j = 0; j < grid.ny; ++j) {
+        for (std::size_t i = 0; i < grid.nx; ++i) {
+            const std::size_t p = grid.idx(i, j);
+
+            auto diffY = [&](const std::vector<double>& az) {
+                if (j == 0) {
+                    return (az[grid.idx(i, j + 1)] - az[p]) / grid.dy;
+                }
+                if (j + 1 == grid.ny) {
+                    return (az[p] - az[grid.idx(i, j - 1)]) / grid.dy;
+                }
+                return (az[grid.idx(i, j + 1)] - az[grid.idx(i, j - 1)]) * inv2dy;
+            };
+
+            auto diffX = [&](const std::vector<double>& az) {
+                if (i == 0) {
+                    return -(az[grid.idx(i + 1, j)] - az[p]) / grid.dx;
+                }
+                if (i + 1 == grid.nx) {
+                    return -(az[p] - az[grid.idx(i - 1, j)]) / grid.dx;
+                }
+                return -(az[grid.idx(i + 1, j)] - az[grid.idx(i - 1, j)]) * inv2dx;
+            };
+
+            BxReal[p] = diffY(AzReal);
+            BxImag[p] = diffY(AzImag);
+            ByReal[p] = diffX(AzReal);
+            ByImag[p] = diffX(AzImag);
+        }
+    }
+}
+
+void computeHHarmonic(const Grid2D& grid,
+                      const std::vector<double>& BxReal,
+                      const std::vector<double>& BxImag,
+                      const std::vector<double>& ByReal,
+                      const std::vector<double>& ByImag,
+                      std::vector<double>& HxReal,
+                      std::vector<double>& HxImag,
+                      std::vector<double>& HyReal,
+                      std::vector<double>& HyImag) {
+    const std::size_t count = grid.nx * grid.ny;
+    HxReal.assign(count, 0.0);
+    HxImag.assign(count, 0.0);
+    HyReal.assign(count, 0.0);
+    HyImag.assign(count, 0.0);
+
+    if (BxReal.size() < count || BxImag.size() < count || ByReal.size() < count || ByImag.size() < count) {
+        return;
+    }
+
+    const bool hasMagnetisation = grid.Mx.size() == count && grid.My.size() == count;
+
+    for (std::size_t idx = 0; idx < count; ++idx) {
+        const double invMu = (idx < grid.invMu.size()) ? grid.invMu[idx] : 0.0;
+        double hxR = invMu * BxReal[idx];
+        double hyR = invMu * ByReal[idx];
+        const double hxI = invMu * BxImag[idx];
+        const double hyI = invMu * ByImag[idx];
+        if (hasMagnetisation) {
+            if (invMu > 0.0) {
+                const double mu_r = 1.0 / (MU0 * invMu);
+                hxR -= grid.Mx[idx] / mu_r;
+                hyR -= grid.My[idx] / mu_r;
+            } else {
+                hxR -= grid.Mx[idx];
+                hyR -= grid.My[idx];
+            }
+        }
+        HxReal[idx] = hxR;
+        HxImag[idx] = hxI;
+        HyReal[idx] = hyR;
+        HyImag[idx] = hyI;
     }
 }
 

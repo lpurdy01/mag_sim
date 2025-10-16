@@ -11,6 +11,7 @@ The analytical validation ladder mirrors the "Next-Stage Development Plan — Ti
 | 3 | `tests/torque_validation_test` (`inputs/tests/torque_validation_test.json`) | Torque on a dipole in an external field | Maxwell stress tensor torque agrees with dipole and virtual-work estimates within 20% / 25%, respectively. |
 | 4 | `tests/back_emf_probe_test` (`inputs/tests/back_emf_probe_test.json`) | Faraday law using discrete flux differences | Polygon and rectangular probes integrate flux exactly for synthetic fields and produce the expected EMF between frames. |
 | 5 | `tests/rotor_ripple_test` (`inputs/tests/rotor_ripple_test.json`) | Quasi-static PM rotor in a stator field | Torque sign flips as the rotor sweeps 0°→180° and the simulated peak-to-peak ripple exceeds 0.3&nbsp;N·m·m⁻¹. |
+| 6 | `tests/skin_depth_test` (`inputs/tests/skin_depth_test.json`) | Classical skin-depth decay in a conducting half-space | Linear-fit slope of \(|\mathbf{B}|\) vs depth matches \(-1/\delta\) within 15%. |
 
 All tests execute via `ctest` (see `CMakeLists.txt`) and run as part of the GitHub Actions workflow. They share compact domains so the Gauss–Seidel solver converges within a few seconds per frame.
 
@@ -21,6 +22,7 @@ All tests execute via `ctest` (see `CMakeLists.txt`) and run as part of the GitH
 - **Stage 3:** The torque validation setup places a rectangular magnet between counter-wound conductors. The magnet experiences a uniform transverse field so the torque can be predicted from `τ = (M · A) × B`. The regression checks both the Maxwell stress integration and a virtual-work finite difference (`ΔW/Δθ`).
 - **Stage 4:** The back-EMF test exercises polygonal and rectangular integration regions, verifies frame selection semantics, and validates the EMF series using synthetic flux ramps.
 - **Stage 5:** The rotor ripple scenario reuses the Stage&nbsp;3 geometry but sweeps the magnetisation vector through four angles (0°, 60°, 120°, 180°) via timeline frames. The regression ensures torque polarity and amplitude evolve consistently with the expected sinusoid.
+- **Stage 6:** The skin-depth fixture drives a uniform conductor slab with a harmonic current sheet. Sampling \(|\mathbf{B}|\) along the conductor normal and fitting a log-linear slope recovers the expected \(-1/\delta\) decay constant.
 
 ## Running the ladder locally
 

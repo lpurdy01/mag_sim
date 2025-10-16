@@ -48,6 +48,7 @@ declare -a regression_bins=(
   torque_validation_test
   back_emf_probe_test
   rotor_ripple_test
+  skin_depth_test
   warm_start_prolongation_test
   progress_snapshot_test
 )

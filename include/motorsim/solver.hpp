@@ -18,10 +18,11 @@ namespace motorsim {
 /**
  * @brief Snapshot of the iterative solver's progress.
  */
-enum class SolverKind { SOR, CG };
+enum class SolverKind { SOR, CG, Harmonic };
 
 struct InitialGuess {
     const std::vector<double>* Az0{nullptr};
+    const std::vector<double>* AzImag0{nullptr};
 };
 
 struct ProgressSample {
@@ -51,6 +52,7 @@ struct SolveOptions {
     std::size_t coarseNx{0};
     std::size_t coarseNy{0};
     bool verbose{false};
+    double harmonicOmega{0.0};
 };
 
 struct SolveResult {
@@ -63,6 +65,27 @@ SolveResult solveAz(Grid2D& grid,
                     const SolveOptions& options,
                     const InitialGuess* initialGuess = nullptr,
                     ProgressSink* progress = nullptr);
+
+/**
+ * @brief Compute the harmonic magnetic flux density components from complex vector potential parts.
+ */
+void computeBHarmonic(const Grid2D& grid,
+                      const std::vector<double>& AzReal,
+                      const std::vector<double>& AzImag,
+                      std::vector<double>& BxReal,
+                      std::vector<double>& BxImag,
+                      std::vector<double>& ByReal,
+                      std::vector<double>& ByImag);
+
+void computeHHarmonic(const Grid2D& grid,
+                      const std::vector<double>& BxReal,
+                      const std::vector<double>& BxImag,
+                      const std::vector<double>& ByReal,
+                      const std::vector<double>& ByImag,
+                      std::vector<double>& HxReal,
+                      std::vector<double>& HxImag,
+                      std::vector<double>& HyReal,
+                      std::vector<double>& HyImag);
 
 SolveResult solveAz_GS_SOR(Grid2D& grid,
                            const SolveOptions& options,

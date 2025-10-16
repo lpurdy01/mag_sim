@@ -32,9 +32,10 @@ where \(J_z\) is the impressed current density in the \(z\) direction. In the sp
 
 The solver operates on a structured, uniform grid of size \((n_x, n_y)\) with spacings \(\Delta x, \Delta y\). All quantities are stored at cell centres:
 
-- \(A_z\): vector potential solution.
-- \(J_z\): source term.
+- \(A_z\): vector potential solution. In harmonic solves the code also stores an imaginary component \(A_z^{(i)}\).
+- \(J_z\): source term. A companion array stores the imaginary impressed current density when frequency-domain sources are used.
 - \(\nu = 1/\mu\): inverse permeability.
+- \(\sigma\): electrical conductivity (S/m), required for eddy-current calculations.
 
 ### 3.1 Variable-coefficient five-point stencil
 
@@ -193,7 +194,50 @@ This reference captures the mathematical foundations and numerical choices embed
 For runtime and scaling heuristics, consult `docs/solver_performance.md`, which summarises
 benchmark data from the bundled tooling.
 
-## 11. Scenario Spec v0.2
+## 11. Frequency-domain magneto-quasistatics
+
+Conductive regions introduce eddy currents when the magnetic field varies in time.
+The simulator's first step toward induction modelling solves the steady-state
+magneto-quasistatic system for sinusoidal excitation. Assuming a phasor
+dependence \(e^{j\omega t}\) and a scalar potential \(A_z\) split into real and
+imaginary parts (\(A_z = A_r + j A_i\)), the governing equations become
+
+\[
+\begin{aligned}
+\nabla \cdot (\nu \nabla A_r) - \omega \sigma A_i &= J_r, \\
+\nabla \cdot (\nu \nabla A_i) + \omega \sigma A_r &= J_i,
+\end{aligned}
+\]
+
+where \(\sigma\) is the electrical conductivity and \(J = J_r + j J_i\) is the
+impressed current density. The discrete operator therefore couples the real and
+imaginary systems through the frequency-dependent \(\omega \sigma\) term.
+
+The implementation keeps the matrix-free structure used by the magnetostatic
+solver. A helper applies the block operator
+
+\[
+\mathbf{H} =
+\begin{bmatrix}
+L & -\omega S \\
+\omega S & L
+\end{bmatrix},
+\]
+
+where \(L\) is the familiar diffusion stencil and \(S\) holds per-cell
+conductivities. Because \(\mathbf{H}\) is not symmetric, the code forms the
+normal equations \(\mathbf{H}^T \mathbf{H} x = \mathbf{H}^T b\) and solves them
+with conjugate gradients. Dirichlet boundaries enforce the phasor gauge, and a
+Jacobi-like preconditioner can be added later without changing the interface.
+
+Post-processing mirrors the magnetostatic pipeline: `computeBHarmonic` evaluates
+the complex curl of \(A_z\) to recover \(\mathbf{B}\), and `computeHHarmonic`
+applies \(\mathbf{H} = \nu \mathbf{B} - \mathbf{M}/\mu_r\) to obtain the magnetic
+field intensity phasor. The new `materials[].sigma` property, propagated through
+`Grid2D::sigma`, enables eddy terms while keeping legacy magnetostatic scenarios
+unchanged (\(\sigma = 0\)).
+
+## 12. Scenario Spec v0.2
 
 The solver ingests simulation descriptions authored as JSON documents. Version
 `0.2` extends the original schema with heterogeneous material regions while

@@ -46,6 +46,16 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   ensure timeline exporters respect basenames that already end in `_frame`,
   restoring the expected `three_phase_frame_000.vti` artefact that CI archives
   for the stator rotating-field demo.
+- **Stage 3 (Frequency-domain induction path)**: Extended the material schema
+  with per-material conductivities (`sigma`) and taught the rasteriser and grid
+  container to track `sigma`, complex impressed currents, and an imaginary
+  vector potential. A new harmonic solver assembles the coupled real/imaginary
+  system and applies CG to the normal equations so frequency-domain eddy
+  currents can be simulated without leaving the matrix-free framework. Utility
+  routines compute complex \(\mathbf{B}\) and \(\mathbf{H}\) fields, and the
+  regression `tests/skin_depth_test.cpp` validates skin-depth decay against the
+  analytic \(e^{-x/\delta}\) profile for a half-space conductor, enforcing a
+  ≤15% slope error on the bundled scenario.
 
 ## Completed Milestones
 - **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` with regression coverage in `tests/output_quantity_test.cpp` and exercised in CI through the rotor ripple timeline artefacts. Exports now bundle combined `B`/`H` vector arrays plus geometry outline polydata companions to streamline ParaView workflows. The `python/verify_vtk.py` utility (documented in `docs/vtk_output.md`) runs during CI to sanity-check the generated `.vti` files.
