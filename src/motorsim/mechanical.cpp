@@ -20,6 +20,17 @@ void MechanicalSimulator::initialize(const ScenarioSpec& baseSpec,
         return;
     }
 
+    bool timelineOverridesRotors = false;
+    for (const auto& frame : baseSpec.timeline) {
+        if (frame.hasRotorAngle || !frame.rotorAngles.empty()) {
+            timelineOverridesRotors = true;
+            break;
+        }
+    }
+    if (timelineOverridesRotors) {
+        return;
+    }
+
     const ScenarioSpec::MechanicalSystem& mechanical = *baseSpec.mechanical;
     if (mechanical.rotors.empty()) {
         return;

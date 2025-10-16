@@ -198,6 +198,7 @@ def generate_scenario(profile: str, output_path: Path) -> None:
                     {"circuit": "stator_three_phase", "source": "Vb", "value": vb},
                     {"circuit": "stator_three_phase", "source": "Vc", "value": vc},
                 ],
+                "rotor_angles": {"pm_rotor": rotor_angle_deg},
             }
         )
 

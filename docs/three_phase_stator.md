@@ -21,8 +21,12 @@ models the three stator phases as simple RL branches (`R≈0.4 Ω`, `L≈12 
 tied together at a neutral node and a `mechanical` section that tracks the
 surface-mounted rotor as a rigid body with inertia, damping, and a constant
 load torque. Timeline entries now drive the simulation with sinusoidal phase
-voltages via `"voltage_sources"`, after which the solver integrates coil
-currents and advances the rotor speed/angle before each magnetostatic frame.
+voltages via `"voltage_sources"`, inject synchronous rotor angles under
+`"rotor_angles"` (keeping the permanent magnet locked to the prescribed
+load angle for deterministic runs), and the solver integrates coil currents
+before each magnetostatic frame. When those timeline rotor overrides are
+present the mechanical integrator automatically stands down; omit them to let
+the rotor dynamics module advance the pose frame-to-frame.
 
 ## Scaling up
 
@@ -102,6 +106,8 @@ for larger offline runs.
   points at the torque probe feeding the co-simulation loop. The solver solves
   frames sequentially so it can advance the rotor pose with an RK4 step after
   each magnetostatic solve; parallel frame execution is automatically disabled
-  when this block is present.
+  when this block is present. Provide explicit timeline `rotor_angles` when you
+  need a deterministic synchronous demo—the mechanical integrator detects those
+  overrides and leaves the pre-scripted pose untouched.
 - Keep binary artefacts (MP4/VTI samples) out of git history. The CI workflow
   uploads a small bundle with the demo VTK frame, bore CSV, and animation.

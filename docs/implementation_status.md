@@ -39,9 +39,12 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   damping, and load torque terms under `"mechanical"`, the generator emits a
   default PM rotor configuration with a constant load, and the runtime keeps
   timeline frames sequential to ensure warm-started field solves feed the
-  coupled ODE. `tests/mechanical_spinup_test.cpp` verifies the integrator
-  against a constant-torque spin-up, and `docs/three_phase_stator.md` covers the
-  new voltage + mechanical workflow.
+  coupled ODE. The integrator automatically stands down when timeline frames
+  provide explicit rotor angles so deterministic synchronous demos (e.g. the CI
+  rotating-field check) keep their scripted pose, while scenarios without those
+  overrides step the coupled mechanics. `tests/mechanical_spinup_test.cpp`
+  verifies the integrator against a constant-torque spin-up, and
+  `docs/three_phase_stator.md` covers the new voltage + mechanical workflow.
 
 ## Completed Milestones
 - **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` with regression coverage in `tests/output_quantity_test.cpp` and exercised in CI through the rotor ripple timeline artefacts. Exports now bundle combined `B`/`H` vector arrays plus geometry outline polydata companions to streamline ParaView workflows. The `python/verify_vtk.py` utility (documented in `docs/vtk_output.md`) runs during CI to sanity-check the generated `.vti` files.
