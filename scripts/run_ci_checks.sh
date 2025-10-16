@@ -78,10 +78,17 @@ echo "[ci-check] Solving scenarios"
 "$BUILD_DIR/motor_sim" --scenario inputs/tests/magnet_strip_test.json --solve --outputs all --solver sor
 "$BUILD_DIR/motor_sim" --scenario inputs/tests/magnet_strip_test.json --solve --outputs none --solver cg --quiet
 "$BUILD_DIR/motor_sim" --scenario inputs/tests/rotor_ripple_test.json --solve --outputs all --parallel-frames --max-iters 40000 --tol 2.5e-6 --solver sor
-"$BUILD_DIR/motor_sim" --scenario inputs/tests/rotor_ripple_test.json --solve --outputs none --parallel-frames --max-iters 40000 --tol 2.5e-6 --solver cg --quiet --warm-start
+"$BUILD_DIR/motor_sim" --scenario inputs/tests/rotor_ripple_test.json --solve --outputs none --parallel-frames --max-iters 40000 --tol 2.5e-6 --solver cg --quiet --warm-start --progress-history outputs/rotor_ripple_cg_history.csv --progress-every 0
 
 echo "[ci-check] Verifying VTK export"
 python3 python/verify_vtk.py outputs/rotor_ripple_field_frame_000.vti
+
+echo "[ci-check] Three-phase stator demo"
+export MPLBACKEND=Agg
+python3 python/gen_three_phase_stator.py --profile ci --out inputs/three_phase_stator_ci.json
+"$BUILD_DIR/motor_sim" --scenario inputs/three_phase_stator_ci.json --solve --parallel-frames --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000
+python3 python/check_three_phase_field.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json
+python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save ci_artifacts/three_phase_demo.gif --frame-png ci_artifacts/three_phase_demo.png
 
 echo "[ci-check] Rendering visualisations"
 export MPLBACKEND=Agg

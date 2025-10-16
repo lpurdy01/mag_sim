@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -163,6 +164,62 @@ struct ScenarioSpec {
         std::vector<BoreAverageProbe> boreProbes;
     };
 
+    struct MechanicalSystem {
+        struct Rotor {
+            std::string name;
+            std::size_t rotorIndex{std::numeric_limits<std::size_t>::max()};
+            double inertia{0.0};
+            double damping{0.0};
+            double loadTorque{0.0};
+            double initialAngleDeg{0.0};
+            bool hasInitialAngle{false};
+            double initialSpeedRadPerSec{0.0};
+            bool hasInitialSpeed{false};
+            std::string torqueProbeId;
+            bool hasTorqueProbe{false};
+        };
+
+        std::vector<Rotor> rotors;
+    };
+
+    struct Circuit {
+        struct Resistor {
+            std::string id;
+            std::size_t nodePos{0};
+            std::size_t nodeNeg{0};
+            double resistance{0.0};
+        };
+
+        struct Inductor {
+            std::string id;
+            std::size_t nodePos{0};
+            std::size_t nodeNeg{0};
+            double inductance{0.0};
+            double initialCurrent{0.0};
+        };
+
+        struct VoltageSource {
+            std::string id;
+            std::size_t nodePos{0};
+            std::size_t nodeNeg{0};
+            double value{0.0};
+        };
+
+        struct CoilLink {
+            std::string id;
+            std::size_t inductorIndex{0};
+            std::size_t regionIndex{0};
+            double turns{0.0};
+        };
+
+        std::string id;
+        std::vector<std::string> nodes;
+        std::vector<Resistor> resistors;
+        std::vector<Inductor> inductors;
+        std::vector<VoltageSource> voltageSources;
+        std::vector<CoilLink> coilLinks;
+    };
+
     struct TimelineFrame {
         struct WireOverride {
             std::size_t index{0};
@@ -188,6 +245,12 @@ struct ScenarioSpec {
             double angleDegrees{0.0};
         };
 
+        struct VoltageSourceOverride {
+            std::size_t circuitIndex{0};
+            std::size_t sourceIndex{0};
+            double value{0.0};
+        };
+
         double time{0.0};
         bool hasRotorAngle{false};
         double rotorAngleDeg{0.0};
@@ -195,6 +258,7 @@ struct ScenarioSpec {
         std::vector<WireOverride> wireOverrides;
         std::vector<CurrentRegionOverride> currentRegionOverrides;
         std::vector<MagnetOverride> magnetOverrides;
+        std::vector<VoltageSourceOverride> voltageSourceOverrides;
     };
 
     std::string version;
@@ -215,6 +279,8 @@ struct ScenarioSpec {
     std::vector<CurrentRegion> currentRegions;
     std::vector<Rotor> rotors;
     std::vector<MagnetRegion> magnetRegions;
+    std::vector<Circuit> circuits;
+    std::optional<MechanicalSystem> mechanical;
     BoundaryType boundaryType{BoundaryType::Dirichlet};
     Outputs outputs;
     std::vector<TimelineFrame> timeline;

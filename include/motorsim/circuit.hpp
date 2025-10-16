@@ -1,0 +1,97 @@
+#pragma once
+
+#include <cstddef>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "motorsim/grid.hpp"
+#include "motorsim/ingest.hpp"
+
+namespace motorsim {
+
+class CircuitSimulator {
+public:
+    CircuitSimulator() = default;
+
+    explicit CircuitSimulator(const std::vector<ScenarioFrame>& frames) { initialize(frames); }
+
+    void initialize(const std::vector<ScenarioFrame>& frames);
+
+    [[nodiscard]] bool is_active() const { return active_; }
+
+    void apply_currents(ScenarioFrame& frame);
+
+    void record_solved_frame(const ScenarioFrame& frame, const Grid2D& grid);
+
+    void prepare_next_frame(std::size_t frameIndex,
+                            const ScenarioFrame& frame,
+                            const ScenarioFrame* nextFrame);
+
+    [[nodiscard]] std::optional<double> inductor_current(const std::string& circuitId,
+                                                         std::size_t inductorIndex) const;
+
+private:
+    struct ResistorData {
+        std::size_t nodePos{0};
+        std::size_t nodeNeg{0};
+        double conductance{0.0};
+    };
+
+    struct VoltageSourceData {
+        std::size_t nodePos{0};
+        std::size_t nodeNeg{0};
+    };
+
+    struct CoilLinkData {
+        std::size_t inductorIndex{0};
+        std::size_t regionIndex{0};
+        double turns{0.0};
+    };
+
+    struct InductorState {
+        std::size_t nodePos{0};
+        std::size_t nodeNeg{0};
+        double inductance{0.0};
+        double current{0.0};
+        double initialCurrent{0.0};
+        double prevFlux{0.0};
+        double prevFluxTime{0.0};
+        double lastFlux{0.0};
+        double lastFluxTime{0.0};
+        double backEmf{0.0};
+        std::vector<std::size_t> coilLinkIndices;
+    };
+
+    struct CircuitData {
+        std::string id;
+        std::vector<std::string> nodeNames;
+        std::vector<ResistorData> resistors;
+        std::vector<VoltageSourceData> voltageSources;
+        std::vector<InductorState> inductors;
+        std::vector<CoilLinkData> coilLinks;
+        std::vector<double> lhsTemplate;
+        std::size_t nodeCount{0};
+        std::size_t nodeVarCount{0};
+        std::size_t voltageVarCount{0};
+    };
+
+    std::vector<CircuitData> circuits_;
+    bool active_{false};
+
+    static bool solve_dense_linear_system(std::vector<double>& matrix,
+                                          std::vector<double>& rhs,
+                                          std::size_t dim);
+
+    void compute_rhs(const CircuitData& circuit,
+                     const std::vector<double>& inductorCurrents,
+                     std::vector<double>& rhs) const;
+
+    void evaluate_derivatives(const CircuitData& circuit,
+                              const std::vector<double>& inductorCurrents,
+                              const std::vector<double>& voltages,
+                              std::vector<double>& derivs) const;
+};
+
+}  // namespace motorsim
+

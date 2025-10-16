@@ -38,6 +38,9 @@ Hardware/software snapshot:
 * GitHub Codespaces container (Intel Xeon-class core; solver runs on one thread).
 * Ubuntu 22.04 container with GCC 13.3, CMake 3.22.
 * Build type: `Debug` (default `cmake-configure`).
+* SIMD hints: enabled by default via the `MOTORSIM_ENABLE_SIMD_HINTS` CMake option
+  (adds `-DMOTORSIM_SIMD_HINTS`). Disable the hints with
+  `-DMOTORSIM_ENABLE_SIMD_HINTS=OFF` when comparing against historical runs.
 * Benchmarks executed via `tools/solver_benchmark --repeats 3`.
 
 ### 2.1 Convergence comparison

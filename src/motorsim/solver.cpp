@@ -2,6 +2,7 @@
 
 #include "motorsim/grid.hpp"
 #include "motorsim/io_csv.hpp"
+#include "motorsim/linops.hpp"
 #include "motorsim/types.hpp"
 
 #include <algorithm>
@@ -28,23 +29,6 @@ using Clock = std::chrono::steady_clock;
         return 0.0;
     }
     return 2.0 * a * b / denom;
-}
-
-[[nodiscard]] double normSquared(const std::vector<double>& values) {
-    double accum = 0.0;
-    for (double v : values) {
-        accum += v * v;
-    }
-    return accum;
-}
-
-[[nodiscard]] double dotProduct(const std::vector<double>& a, const std::vector<double>& b) {
-    const std::size_t n = std::min(a.size(), b.size());
-    double accum = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-        accum += a[i] * b[i];
-    }
-    return accum;
 }
 
 void enforceNeumannBoundaries(const Grid2D& grid, std::vector<double>& field) {
@@ -144,83 +128,6 @@ void computeJacobiDiagonal(const Grid2D& grid, std::vector<double>& diag) {
     }
 }
 
-void applyOperator(const Grid2D& grid, const double* x, double* out) {
-    const std::size_t n = grid.nx * grid.ny;
-    for (std::size_t idx = 0; idx < n; ++idx) {
-        out[idx] = 0.0;
-    }
-
-    if (grid.nx < 3 || grid.ny < 3) {
-        return;
-    }
-
-    const double invDx2 = 1.0 / (grid.dx * grid.dx);
-    const double invDy2 = 1.0 / (grid.dy * grid.dy);
-
-    for (std::size_t j = 1; j + 1 < grid.ny; ++j) {
-        for (std::size_t i = 1; i + 1 < grid.nx; ++i) {
-            const std::size_t p = grid.idx(i, j);
-            const std::size_t e = grid.idx(i + 1, j);
-            const std::size_t w = grid.idx(i - 1, j);
-            const std::size_t nIdx = grid.idx(i, j + 1);
-            const std::size_t s = grid.idx(i, j - 1);
-
-            const double nuP = grid.invMu[p];
-            const double nuE = harmonicAverage(nuP, grid.invMu[e]);
-            const double nuW = harmonicAverage(nuP, grid.invMu[w]);
-            const double nuN = harmonicAverage(nuP, grid.invMu[nIdx]);
-            const double nuS = harmonicAverage(nuP, grid.invMu[s]);
-
-            double azCenter = x[p];
-            double azEast = x[e];
-            double azWest = x[w];
-            double azNorth = x[nIdx];
-            double azSouth = x[s];
-
-            if (grid.boundaryCondition == Grid2D::BoundaryKind::Neumann) {
-                if (i == 1) {
-                    azWest = azCenter;
-                }
-                if (i + 2 == grid.nx) {
-                    azEast = azCenter;
-                }
-                if (j == 1) {
-                    azSouth = azCenter;
-                }
-                if (j + 2 == grid.ny) {
-                    azNorth = azCenter;
-                }
-            }
-
-            const double flux = (nuE * (azEast - azCenter) - nuW * (azCenter - azWest)) * invDx2 +
-                                (nuN * (azNorth - azCenter) - nuS * (azCenter - azSouth)) * invDy2;
-            out[p] = -flux;
-        }
-    }
-
-    if (grid.boundaryCondition == Grid2D::BoundaryKind::Dirichlet) {
-        for (std::size_t i = 0; i < grid.nx; ++i) {
-            out[grid.idx(i, 0)] = x[grid.idx(i, 0)];
-            out[grid.idx(i, grid.ny - 1)] = x[grid.idx(i, grid.ny - 1)];
-        }
-        for (std::size_t j = 0; j < grid.ny; ++j) {
-            out[grid.idx(0, j)] = x[grid.idx(0, j)];
-            out[grid.idx(grid.nx - 1, j)] = x[grid.idx(grid.nx - 1, j)];
-        }
-    }
-}
-
-void computeResidual(const Grid2D& grid, const double* x, std::vector<double>& residual) {
-    const std::size_t n = grid.nx * grid.ny;
-    residual.assign(n, 0.0);
-    std::vector<double> Ax(n, 0.0);
-    applyOperator(grid, x, Ax.data());
-
-    for (std::size_t idx = 0; idx < n; ++idx) {
-        residual[idx] = Ax[idx] - grid.Jz[idx];
-    }
-}
-
 bool emitProgress(ProgressSink* sink,
                   const SolveOptions& options,
                   std::size_t iter,
@@ -309,7 +216,7 @@ SolveResult solveSORInternal(Grid2D& grid,
         return report;
     }
 
-    const double denom = std::sqrt(normSquared(grid.Jz) + 1e-30);
+    const double denom = std::sqrt(linops::squaredNorm(grid.Jz) + 1e-30);
     const double invDx2 = 1.0 / (grid.dx * grid.dx);
     const double invDy2 = 1.0 / (grid.dy * grid.dy);
 
@@ -411,10 +318,11 @@ SolveResult solveCGInternal(Grid2D& grid,
     computeJacobiDiagonal(grid, diag);
 
     std::vector<double> residualScratch;
-    const double rhsNorm = std::sqrt(normSquared(grid.Jz) + 1e-30);
+    const double rhsNorm = std::sqrt(linops::squaredNorm(grid.Jz) + 1e-30);
 
     auto rebuildResidual = [&]() {
-        computeResidual(grid, grid.Az.data(), residualScratch);
+        residualScratch.resize(n);
+        linops::computeResidual(grid, grid.Az.data(), residualScratch.data());
         removeMeanIfNeumann(grid, residualScratch);
         enforceNeumannGauge(grid, residualScratch);
         for (std::size_t idx = 0; idx < n; ++idx) {
@@ -424,7 +332,7 @@ SolveResult solveCGInternal(Grid2D& grid,
         removeMeanIfNeumann(grid, r);
         enforceNeumannBoundaries(grid, r);
         enforceNeumannGauge(grid, r);
-        return std::sqrt(normSquared(residualScratch)) / rhsNorm;
+        return linops::norm(residualScratch) / rhsNorm;
     };
 
     double relResidual = rebuildResidual();
@@ -454,7 +362,7 @@ SolveResult solveCGInternal(Grid2D& grid,
         return report;
     }
 
-    double rzPrev = dotProduct(r, z);  // initialise to zero via initial z
+    double rzPrev = linops::dot(r, z);  // initialise to zero via initial z
     bool firstIteration = true;
 
     for (std::size_t iter = 0; iter < options.maxIters; ++iter) {
@@ -467,7 +375,7 @@ SolveResult solveCGInternal(Grid2D& grid,
         enforceNeumannBoundaries(grid, z);
         enforceNeumannGauge(grid, z);
 
-        const double rz = dotProduct(r, z);
+        const double rz = linops::dot(r, z);
         if (!std::isfinite(rz)) {
             std::cerr << "CG encountered non-finite rz" << std::endl;
             break;
@@ -487,11 +395,11 @@ SolveResult solveCGInternal(Grid2D& grid,
         enforceNeumannBoundaries(grid, p);
         enforceNeumannGauge(grid, p);
 
-        applyOperator(grid, p.data(), Ap.data());
+        linops::applyA(grid, p.data(), Ap.data());
         removeMeanIfNeumann(grid, Ap);
         enforceNeumannBoundaries(grid, Ap);
         enforceNeumannGauge(grid, Ap);
-        double denom = dotProduct(p, Ap);
+        double denom = linops::dot(p, Ap);
         if (denom <= 0.0 || !std::isfinite(denom)) {
             std::cerr << "CG denominator non-positive at iter " << iter << " (denom=" << denom
                       << ", rz=" << rz << ")" << std::endl;
@@ -512,7 +420,7 @@ SolveResult solveCGInternal(Grid2D& grid,
         enforceNeumannGauge(grid, r);
 
         rzPrev = rz;
-        relResidual = std::sqrt(normSquared(r)) / rhsNorm;
+        relResidual = linops::norm(r) / rhsNorm;
         report.iters = iter + 1;
         report.relResidual = relResidual;
 

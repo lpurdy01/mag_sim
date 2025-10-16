@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+option(MOTORSIM_ENABLE_SIMD_HINTS "Enable vectorization hints in linear algebra kernels" ON)
+if(MOTORSIM_ENABLE_SIMD_HINTS)
+    add_compile_definitions(MOTORSIM_SIMD_HINTS)
+endif()
+
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 # Project include path
@@ -27,6 +32,7 @@ add_test(NAME smoke_run COMMAND smoke_test)
 add_executable(analytic_wire_test
     tests/analytic_wire_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/ingest.cpp
     src/motorsim/grid.cpp)
@@ -38,6 +44,7 @@ add_test(NAME analytic_wire COMMAND analytic_wire_test)
 add_executable(two_wire_cancel_test
     tests/two_wire_cancel_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -49,6 +56,7 @@ add_test(NAME two_wire_cancel COMMAND two_wire_cancel_test)
 add_executable(line_current_interface_test
     tests/line_current_interface_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -60,6 +68,7 @@ add_test(NAME line_current_interface COMMAND line_current_interface_test)
 add_executable(magnet_strip_test
     tests/magnet_strip_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -112,9 +121,29 @@ target_include_directories(back_emf_probe_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME back_emf_probe COMMAND back_emf_probe_test)
 
+add_executable(mechanical_spinup_test
+    tests/mechanical_spinup_test.cpp
+    src/motorsim/mechanical.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(mechanical_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME mechanical_spinup COMMAND mechanical_spinup_test)
+
+add_executable(circuit_rk_test
+    tests/circuit_rk_test.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp)
+target_include_directories(circuit_rk_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME circuit_rk COMMAND circuit_rk_test)
+
 add_executable(torque_validation_test
     tests/torque_validation_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/probes.cpp
     src/motorsim/io_csv.cpp
@@ -127,6 +156,7 @@ add_test(NAME torque_validation COMMAND torque_validation_test)
 add_executable(rotor_ripple_test
     tests/rotor_ripple_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/probes.cpp
     src/motorsim/io_csv.cpp
@@ -165,6 +195,7 @@ set_tests_properties(scenario_cli_solve PROPERTIES DEPENDS scenario_json_diff)
 add_executable(solver_benchmark
     tools/solver_benchmark.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/grid.cpp
     src/motorsim/io_csv.cpp)
 target_include_directories(solver_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -172,6 +203,7 @@ target_include_directories(solver_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
 add_executable(solver_visualization_capture
     tools/solver_visualization_capture.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/grid.cpp
     src/motorsim/io_csv.cpp)
@@ -182,6 +214,7 @@ target_include_directories(solver_visualization_capture PRIVATE
 add_executable(warm_start_prolongation_test
     tests/warm_start_prolongation_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -193,6 +226,7 @@ add_test(NAME warm_start_prolongation COMMAND warm_start_prolongation_test)
 add_executable(progress_snapshot_test
     tests/progress_snapshot_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/grid.cpp
     src/motorsim/io_csv.cpp)

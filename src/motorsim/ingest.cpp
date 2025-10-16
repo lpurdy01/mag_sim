@@ -289,6 +289,8 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     spec.currentRegions.reserve(sources.size());
     std::unordered_map<std::string, std::size_t> currentRegionIdToIndex;
     std::unordered_map<std::string, std::vector<std::size_t>> phaseToCurrentRegions;
+    std::unordered_map<std::string, std::size_t> circuitIdToIndex;
+    std::vector<std::unordered_map<std::string, std::size_t>> circuitVoltageSourceIdToIndex;
     for (const auto& source : sources) {
         const std::string type = source.at("type").get<std::string>();
         if (type == "wire") {
@@ -543,6 +545,303 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             }
 
             spec.rotors.push_back(std::move(rotor));
+        }
+    }
+
+    spec.circuits.clear();
+    circuitIdToIndex.clear();
+    circuitVoltageSourceIdToIndex.clear();
+    if (json.contains("circuits")) {
+        const auto& circuitsNode = json.at("circuits");
+        if (!circuitsNode.is_array()) {
+            throw std::runtime_error("circuits must be an array when provided");
+        }
+        spec.circuits.reserve(circuitsNode.size());
+        circuitVoltageSourceIdToIndex.reserve(circuitsNode.size());
+
+        for (const auto& circuitNode : circuitsNode) {
+            if (!circuitNode.is_object()) {
+                throw std::runtime_error("circuit entries must be JSON objects");
+            }
+            ScenarioSpec::Circuit circuit{};
+            circuit.id = circuitNode.value("id", std::string{});
+            if (circuit.id.empty()) {
+                circuit.id = "circuit_" + std::to_string(spec.circuits.size());
+            }
+            if (!circuitIdToIndex.emplace(circuit.id, spec.circuits.size()).second) {
+                throw std::runtime_error("Duplicate circuit id: " + circuit.id);
+            }
+
+            const auto& nodesNode = circuitNode.at("nodes");
+            if (!nodesNode.is_array() || nodesNode.empty()) {
+                throw std::runtime_error("Circuit '" + circuit.id + "' must provide a non-empty nodes array");
+            }
+            circuit.nodes.reserve(nodesNode.size());
+            for (const auto& nodeValue : nodesNode) {
+                circuit.nodes.push_back(nodeValue.get<std::string>());
+            }
+
+            const auto resolveNode = [&](const nlohmann::json& nodeEntry) {
+                const std::string name = nodeEntry.get<std::string>();
+                for (std::size_t idx = 0; idx < circuit.nodes.size(); ++idx) {
+                    if (circuit.nodes[idx] == name) {
+                        return idx;
+                    }
+                }
+                throw std::runtime_error("Circuit '" + circuit.id + "' references unknown node: " + name);
+            };
+
+            std::unordered_map<std::string, std::size_t> inductorIdToIndex;
+            std::unordered_map<std::string, std::size_t> voltageSourceIdToIndex;
+
+            const auto& elementsNode = circuitNode.at("elements");
+            if (!elementsNode.is_array()) {
+                throw std::runtime_error("Circuit '" + circuit.id + "' elements must be an array");
+            }
+
+            for (const auto& element : elementsNode) {
+                if (!element.is_object()) {
+                    throw std::runtime_error("Circuit '" + circuit.id + "' elements must be objects");
+                }
+                std::string type = element.at("type").get<std::string>();
+                std::transform(type.begin(), type.end(), type.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+                const auto getNodePair = [&](const nlohmann::json& nodesValue) {
+                    if (!nodesValue.is_array() || nodesValue.size() != 2) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' element requires nodes [pos, neg]");
+                    }
+                    return std::pair<std::size_t, std::size_t>{resolveNode(nodesValue.at(0)),
+                                                               resolveNode(nodesValue.at(1))};
+                };
+
+                if (type == "resistor" || type == "r") {
+                    const auto& nodesValue = element.at("nodes");
+                    const auto [nodePos, nodeNeg] = getNodePair(nodesValue);
+                    double resistance = 0.0;
+                    if (element.contains("resistance")) {
+                        resistance = element.at("resistance").get<double>();
+                    } else if (element.contains("R")) {
+                        resistance = element.at("R").get<double>();
+                    } else if (element.contains("value")) {
+                        resistance = element.at("value").get<double>();
+                    }
+                    if (!(resistance > 0.0)) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' resistor requires positive resistance");
+                    }
+                    ScenarioSpec::Circuit::Resistor resistor{};
+                    resistor.id = element.value("id", element.value("name", std::string{}));
+                    resistor.nodePos = nodePos;
+                    resistor.nodeNeg = nodeNeg;
+                    resistor.resistance = resistance;
+                    circuit.resistors.push_back(resistor);
+                } else if (type == "inductor" || type == "l") {
+                    const auto& nodesValue = element.at("nodes");
+                    const auto [nodePos, nodeNeg] = getNodePair(nodesValue);
+                    double inductance = 0.0;
+                    if (element.contains("inductance")) {
+                        inductance = element.at("inductance").get<double>();
+                    } else if (element.contains("L")) {
+                        inductance = element.at("L").get<double>();
+                    }
+                    if (!(inductance > 0.0)) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' inductor requires positive inductance");
+                    }
+                    ScenarioSpec::Circuit::Inductor inductor{};
+                    inductor.id = element.value("id", element.value("name", std::string{}));
+                    inductor.nodePos = nodePos;
+                    inductor.nodeNeg = nodeNeg;
+                    inductor.inductance = inductance;
+                    inductor.initialCurrent = element.value("initial_current", element.value("I0", 0.0));
+                    inductorIdToIndex.emplace(inductor.id, circuit.inductors.size());
+                    circuit.inductors.push_back(inductor);
+                } else if (type == "voltage_source" || type == "voltage" || type == "vs") {
+                    const auto& nodesValue = element.at("nodes");
+                    const auto [nodePos, nodeNeg] = getNodePair(nodesValue);
+                    ScenarioSpec::Circuit::VoltageSource source{};
+                    source.id = element.value("id", element.value("name", std::string{}));
+                    source.nodePos = nodePos;
+                    source.nodeNeg = nodeNeg;
+                    source.value = element.value("value", element.value("voltage", 0.0));
+                    if (!source.id.empty()) {
+                        if (!voltageSourceIdToIndex.emplace(source.id, circuit.voltageSources.size()).second) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' duplicate voltage source id: " +
+                                                     source.id);
+                        }
+                    }
+                    circuit.voltageSources.push_back(source);
+                } else if (type == "coil_link" || type == "coillink" || type == "coil") {
+                    if (circuit.inductors.empty()) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link requires an inductor");
+                    }
+                    std::string inductorId = element.value("inductor", element.value("inductor_id", std::string{}));
+                    std::size_t inductorIndex = 0;
+                    if (!inductorId.empty()) {
+                        const auto it = inductorIdToIndex.find(inductorId);
+                        if (it == inductorIdToIndex.end()) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' coil_link references unknown inductor: " +
+                                                     inductorId);
+                        }
+                        inductorIndex = it->second;
+                    } else if (element.contains("inductor_index")) {
+                        inductorIndex = element.at("inductor_index").get<std::size_t>();
+                        if (inductorIndex >= circuit.inductors.size()) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' coil_link inductor index out of range");
+                        }
+                    } else {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link must specify inductor id or index");
+                    }
+
+                    double turns = 0.0;
+                    if (element.contains("turns")) {
+                        turns = element.at("turns").get<double>();
+                    } else if (element.contains("N")) {
+                        turns = element.at("N").get<double>();
+                    }
+                    if (!(turns > 0.0)) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link requires positive turns");
+                    }
+
+                    std::size_t regionIndex = std::numeric_limits<std::size_t>::max();
+                    if (element.contains("region")) {
+                        const auto& regionNode = element.at("region");
+                        if (regionNode.is_number_unsigned()) {
+                            regionIndex = regionNode.get<std::size_t>();
+                        } else if (regionNode.is_string()) {
+                            const std::string regionId = regionNode.get<std::string>();
+                            const auto it = currentRegionIdToIndex.find(regionId);
+                            if (it == currentRegionIdToIndex.end()) {
+                                throw std::runtime_error("Circuit '" + circuit.id + "' coil_link references unknown region: " +
+                                                         regionId);
+                            }
+                            regionIndex = it->second;
+                        }
+                    } else if (element.contains("region_index")) {
+                        regionIndex = element.at("region_index").get<std::size_t>();
+                    } else if (element.contains("current_region")) {
+                        const std::string regionId = element.at("current_region").get<std::string>();
+                        const auto it = currentRegionIdToIndex.find(regionId);
+                        if (it == currentRegionIdToIndex.end()) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' coil_link references unknown region: " +
+                                                     regionId);
+                        }
+                        regionIndex = it->second;
+                    }
+                    if (regionIndex == std::numeric_limits<std::size_t>::max() ||
+                        regionIndex >= spec.currentRegions.size()) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link region index out of range");
+                    }
+
+                    ScenarioSpec::Circuit::CoilLink link{};
+                    link.id = element.value("id", element.value("name", std::string{}));
+                    link.inductorIndex = inductorIndex;
+                    link.regionIndex = regionIndex;
+                    link.turns = turns;
+                    circuit.coilLinks.push_back(link);
+                } else {
+                    throw std::runtime_error("Circuit '" + circuit.id + "' unsupported element type: " + type);
+                }
+            }
+
+            circuitVoltageSourceIdToIndex.push_back(std::move(voltageSourceIdToIndex));
+            spec.circuits.push_back(std::move(circuit));
+        }
+    }
+
+    spec.mechanical.reset();
+    if (json.contains("mechanical")) {
+        const auto& mechanicalNode = json.at("mechanical");
+        if (!mechanicalNode.is_object()) {
+            throw std::runtime_error("mechanical section must be an object when provided");
+        }
+
+        ScenarioSpec::MechanicalSystem mechanical{};
+        if (mechanicalNode.contains("rotors")) {
+            const auto& mechRotors = mechanicalNode.at("rotors");
+            if (!mechRotors.is_array()) {
+                throw std::runtime_error("mechanical.rotors must be an array when provided");
+            }
+            mechanical.rotors.reserve(mechRotors.size());
+            for (const auto& rotorNode : mechRotors) {
+                if (!rotorNode.is_object()) {
+                    throw std::runtime_error("mechanical rotor entries must be objects");
+                }
+                ScenarioSpec::MechanicalSystem::Rotor rotor{};
+                if (rotorNode.contains("index")) {
+                    rotor.rotorIndex = rotorNode.at("index").get<std::size_t>();
+                    if (rotor.rotorIndex >= spec.rotors.size()) {
+                        throw std::runtime_error("mechanical rotor index out of range");
+                    }
+                    rotor.name = spec.rotors[rotor.rotorIndex].name;
+                } else if (rotorNode.contains("idx")) {
+                    rotor.rotorIndex = rotorNode.at("idx").get<std::size_t>();
+                    if (rotor.rotorIndex >= spec.rotors.size()) {
+                        throw std::runtime_error("mechanical rotor idx out of range");
+                    }
+                    rotor.name = spec.rotors[rotor.rotorIndex].name;
+                } else {
+                    rotor.name = rotorNode.value("name", std::string{});
+                    if (rotor.name.empty()) {
+                        throw std::runtime_error(
+                            "mechanical rotor entries must specify 'name' or 'index'");
+                    }
+                    const auto it = rotorNameToIndex.find(rotor.name);
+                    if (it == rotorNameToIndex.end()) {
+                        throw std::runtime_error(
+                            "mechanical rotor references unknown rotor name: " + rotor.name);
+                    }
+                    rotor.rotorIndex = it->second;
+                }
+
+                rotor.inertia = rotorNode.value("inertia", rotorNode.value("J", 0.0));
+                if (!(rotor.inertia > 0.0)) {
+                    throw std::runtime_error("mechanical rotor '" + rotor.name + "' requires positive inertia");
+                }
+
+                rotor.damping = rotorNode.value("damping", rotorNode.value("viscous", 0.0));
+                if (!(rotor.damping >= 0.0)) {
+                    throw std::runtime_error("mechanical rotor '" + rotor.name + "' requires non-negative damping");
+                }
+
+                rotor.loadTorque = rotorNode.value("load_torque", rotorNode.value("tau_load", 0.0));
+
+                if (rotorNode.contains("initial_angle_deg")) {
+                    rotor.initialAngleDeg = rotorNode.at("initial_angle_deg").get<double>();
+                    rotor.hasInitialAngle = true;
+                } else if (rotorNode.contains("initial_angle")) {
+                    rotor.initialAngleDeg = rotorNode.at("initial_angle").get<double>();
+                    rotor.hasInitialAngle = true;
+                } else if (rotorNode.contains("initial_angle_rad")) {
+                    rotor.initialAngleDeg = rotorNode.at("initial_angle_rad").get<double>() * 180.0 / kPi;
+                    rotor.hasInitialAngle = true;
+                }
+
+                if (rotorNode.contains("initial_speed_rad_s")) {
+                    rotor.initialSpeedRadPerSec = rotorNode.at("initial_speed_rad_s").get<double>();
+                    rotor.hasInitialSpeed = true;
+                } else if (rotorNode.contains("initial_speed")) {
+                    rotor.initialSpeedRadPerSec = rotorNode.at("initial_speed").get<double>();
+                    rotor.hasInitialSpeed = true;
+                } else if (rotorNode.contains("initial_speed_rpm")) {
+                    const double rpm = rotorNode.at("initial_speed_rpm").get<double>();
+                    rotor.initialSpeedRadPerSec = rpm * 2.0 * kPi / 60.0;
+                    rotor.hasInitialSpeed = true;
+                }
+
+                if (rotorNode.contains("torque_probe")) {
+                    rotor.torqueProbeId = rotorNode.at("torque_probe").get<std::string>();
+                    rotor.hasTorqueProbe = !rotor.torqueProbeId.empty();
+                } else if (rotorNode.contains("probe")) {
+                    rotor.torqueProbeId = rotorNode.at("probe").get<std::string>();
+                    rotor.hasTorqueProbe = !rotor.torqueProbeId.empty();
+                }
+
+                mechanical.rotors.push_back(std::move(rotor));
+            }
+        }
+
+        if (!mechanical.rotors.empty()) {
+            spec.mechanical = std::move(mechanical);
         }
     }
 
@@ -1281,6 +1580,78 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 parseMagnetOverrides(frame.at("magnet_overrides"));
             }
 
+            if (frame.contains("voltage_sources")) {
+                if (spec.circuits.empty()) {
+                    throw std::runtime_error(
+                        "timeline voltage_sources provided but scenario defines no circuits");
+                }
+                const auto& vsArray = frame.at("voltage_sources");
+                if (!vsArray.is_array()) {
+                    throw std::runtime_error("timeline voltage_sources must be an array");
+                }
+                for (const auto& item : vsArray) {
+                    if (!item.is_object()) {
+                        throw std::runtime_error("timeline voltage_sources entries must be objects");
+                    }
+                    std::size_t circuitIndex = 0;
+                    if (item.contains("circuit_index")) {
+                        circuitIndex = item.at("circuit_index").get<std::size_t>();
+                        if (circuitIndex >= spec.circuits.size()) {
+                            throw std::runtime_error("timeline voltage_sources circuit_index out of range");
+                        }
+                    } else if (item.contains("circuit")) {
+                        const std::string circuitId = item.at("circuit").get<std::string>();
+                        const auto it = circuitIdToIndex.find(circuitId);
+                        if (it == circuitIdToIndex.end()) {
+                            throw std::runtime_error("timeline voltage_sources references unknown circuit: " + circuitId);
+                        }
+                        circuitIndex = it->second;
+                    } else if (spec.circuits.size() == 1) {
+                        circuitIndex = 0;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline voltage_sources entry must specify 'circuit' or 'circuit_index'");
+                    }
+
+                    if (circuitIndex >= circuitVoltageSourceIdToIndex.size()) {
+                        throw std::runtime_error("timeline voltage_sources internal index out of range");
+                    }
+
+                    std::size_t sourceIndex = 0;
+                    const auto& sourceMap = circuitVoltageSourceIdToIndex[circuitIndex];
+                    if (item.contains("source_index")) {
+                        sourceIndex = item.at("source_index").get<std::size_t>();
+                    } else if (item.contains("source")) {
+                        const std::string sourceId = item.at("source").get<std::string>();
+                        const auto mapIt = sourceMap.find(sourceId);
+                        if (mapIt == sourceMap.end()) {
+                            if (spec.circuits[circuitIndex].voltageSources.size() == 1) {
+                                sourceIndex = 0;
+                            } else {
+                                throw std::runtime_error(
+                                    "timeline voltage_sources references unknown source id: " + sourceId);
+                            }
+                        } else {
+                            sourceIndex = mapIt->second;
+                        }
+                    } else if (spec.circuits[circuitIndex].voltageSources.size() == 1) {
+                        sourceIndex = 0;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline voltage_sources entry must specify 'source' or 'source_index'");
+                    }
+                    if (sourceIndex >= spec.circuits[circuitIndex].voltageSources.size()) {
+                        throw std::runtime_error("timeline voltage_sources source index out of range");
+                    }
+
+                    ScenarioSpec::TimelineFrame::VoltageSourceOverride override{};
+                    override.circuitIndex = circuitIndex;
+                    override.sourceIndex = sourceIndex;
+                    override.value = item.value("value", item.value("voltage", 0.0));
+                    entry.voltageSourceOverrides.push_back(override);
+                }
+            }
+
             spec.timeline.push_back(std::move(entry));
             ++frameIndex;
         }
@@ -1671,6 +2042,17 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
             throw std::runtime_error("timeline current region override index out of range");
         }
         workingSpec.currentRegions[override.index].current = override.current;
+    }
+
+    for (const auto& override : frame.voltageSourceOverrides) {
+        if (override.circuitIndex >= workingSpec.circuits.size()) {
+            throw std::runtime_error("timeline voltage source override circuit index out of range");
+        }
+        auto& circuit = workingSpec.circuits[override.circuitIndex];
+        if (override.sourceIndex >= circuit.voltageSources.size()) {
+            throw std::runtime_error("timeline voltage source override source index out of range");
+        }
+        circuit.voltageSources[override.sourceIndex].value = override.value;
     }
 }
 

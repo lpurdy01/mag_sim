@@ -82,4 +82,11 @@ Combine with `Scenario.outputs.append(output)` before calling `save_json`.
   error if two consecutive frames share the same time value.
 * Back-EMF probes currently operate on field-map data. They do not capture coil
   turn counts or end-winding effects — multiply the reported voltage per unit
-  length by the active length and number of turns to obtain line voltages.
+  length by the active length and number of turns to obtain line voltages. The
+  three-phase stator demo integrates the flux magnitude over each phase’s
+  positive slot to produce a sinusoidal reference waveform that lines up with
+  the rotating air-gap field.
+* `tests/back_emf_probe_test.cpp` drives the integration helper with synthetic
+  three-phase flux waveforms, verifying that the induced EMFs follow the
+  expected sinusoidal shape, maintain 120° phase separation, and scale with both
+  flux amplitude and electrical speed.

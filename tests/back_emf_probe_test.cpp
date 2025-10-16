@@ -11,6 +11,8 @@ int main() {
     using namespace motorsim;
     namespace fs = std::filesystem;
 
+    constexpr double kPi = 3.14159265358979323846;
+
     const fs::path scenarioPath =
         (fs::path(__FILE__).parent_path() / "../inputs/tests/back_emf_probe_test.json").lexically_normal();
 
@@ -112,6 +114,65 @@ int main() {
         return 1;
     }
 
+    const double phiAmplitude = 2.5e-3;
+    const double electricalHz = 60.0;
+    const double omega = 2.0 * kPi * electricalHz;
+    const std::size_t samplesPerCycle = 48;
+    const std::size_t frameCount = samplesPerCycle + 1;
+    const double dt = 1.0 / electricalHz / samplesPerCycle;
+
+    std::vector<std::size_t> seriesFrames(frameCount);
+    std::vector<double> seriesTimes(frameCount);
+    std::vector<double> fluxPhaseA(frameCount);
+    std::vector<double> fluxPhaseB(frameCount);
+    std::vector<double> fluxPhaseC(frameCount);
+    for (std::size_t n = 0; n < frameCount; ++n) {
+        const double t = static_cast<double>(n) * dt;
+        seriesFrames[n] = n;
+        seriesTimes[n] = t;
+        fluxPhaseA[n] = phiAmplitude * std::sin(omega * t);
+        fluxPhaseB[n] = phiAmplitude * std::sin(omega * t - 2.0 * kPi / 3.0);
+        fluxPhaseC[n] = phiAmplitude * std::sin(omega * t + 2.0 * kPi / 3.0);
+    }
+
+    const double expectedAmplitude = phiAmplitude * omega;
+
+    const auto checkSinusoid = [&](const std::vector<double>& flux, double phaseShift) {
+        std::vector<BackEmfSample> emfSeries = compute_back_emf_series(seriesFrames, seriesTimes, flux);
+        if (emfSeries.size() != frameCount - 1) {
+            std::cerr << "Expected " << (frameCount - 1) << " EMF samples, got " << emfSeries.size() << '\n';
+            return false;
+        }
+        double maxAbsEmf = 0.0;
+        const double tolerance = 1.5e-3 * std::max(expectedAmplitude, 1.0);
+        for (std::size_t idx = 0; idx < emfSeries.size(); ++idx) {
+            const auto& interval = emfSeries[idx];
+            const double tMid = 0.5 * (interval.timeStart + interval.timeEnd);
+            const double expected = -phiAmplitude * omega * std::cos(omega * tMid + phaseShift);
+            if (std::abs(interval.emf - expected) > tolerance) {
+                std::cerr << "Sinusoidal EMF mismatch at index " << idx << ": got " << interval.emf
+                          << " expected " << expected << '\n';
+                return false;
+            }
+            maxAbsEmf = std::max(maxAbsEmf, std::abs(interval.emf));
+        }
+        if (std::abs(maxAbsEmf - expectedAmplitude) / expectedAmplitude > 0.01) {
+            std::cerr << "EMF amplitude mismatch: got " << maxAbsEmf << " expected " << expectedAmplitude << '\n';
+            return false;
+        }
+        return true;
+    };
+
+    if (!checkSinusoid(fluxPhaseA, 0.0)) {
+        return 1;
+    }
+    if (!checkSinusoid(fluxPhaseB, -2.0 * kPi / 3.0)) {
+        return 1;
+    }
+    if (!checkSinusoid(fluxPhaseC, 2.0 * kPi / 3.0)) {
+        return 1;
+    }
+
     const auto relError = [](double value, double reference) {
         const double denom = std::max(std::abs(reference), 1e-12);
         return std::abs(value - reference) / denom;
@@ -123,7 +184,8 @@ int main() {
 
     std::cout << "BackEmfTest: polygon_flux=" << polygonFlux << " rect_flux=" << rectFlux
               << " emf=" << sample.emf << " polygon_flux_relErr=" << polygonFluxRelErr
-              << " rect_flux_relErr=" << rectFluxRelErr << " emf_relErr=" << emfRelErr << '\n';
+              << " rect_flux_relErr=" << rectFluxRelErr << " emf_relErr=" << emfRelErr
+              << " sinusoid_amp=" << expectedAmplitude << '\n';
 
     return 0;
 }

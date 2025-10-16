@@ -24,8 +24,11 @@ Key runtime flags for `motor_sim`:
 * `--warm-start` reuses the previous frame's field as the initial guess when traversing a timeline, dramatically cutting CG
   iterations.
 * `--use-prolongation` seeds the fine-grid solve from an automatically selected coarse solve; adjust with `--coarse-nx/--coarse-ny`.
-* `--progress-every <seconds>` controls the live progress cadence (default 2 s). Pair with `--snapshot-every <iters>` to enable
-  diagnostic field dumps requested by progress sinks.
+* `--progress-every <seconds>` controls the live progress cadence (default 2 s). Set it to `0` to emit a sample every iteration
+  when collecting detailed residual histories.
+* `--snapshot-every <iters>` enables downsampled field dumps requested by progress sinks (handy for spotting spatial stagnation).
+* `--progress-history <path>` writes the emitted residual samples to a CSV. Timeline runs append `_frame_###` to the basename;
+  combine with `--progress-every 0` for a full per-iteration log.
 * `--quiet` suppresses progress output when scripting multiple runs.
 
 ## 2. VS Code configuration

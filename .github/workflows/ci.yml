@@ -60,6 +60,7 @@ jobs:
           ./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all --tol 5e-6 --max-iters 40000
           ./build/motor_sim --scenario inputs/tests/magnet_strip_test.json --solve --outputs all
           ./build/motor_sim --scenario inputs/tests/rotor_ripple_test.json --solve --outputs all --parallel-frames --max-iters 40000 --tol 2.5e-6
+          ./build/motor_sim --scenario inputs/tests/rotor_ripple_test.json --solve --outputs none --parallel-frames --max-iters 40000 --tol 2.5e-6 --solver cg --quiet --warm-start --progress-history outputs/rotor_ripple_cg_history.csv --progress-every 0
       - name: Verify VTK export
         run: python3 python/verify_vtk.py outputs/rotor_ripple_field_frame_000.vti
       - name: Three-phase stator rotating-field demo
@@ -71,7 +72,7 @@ jobs:
           ./build/motor_sim --scenario inputs/three_phase_stator_ci.json --solve --parallel-frames --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000
           python3 python/check_three_phase_field.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json
           python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save ci_artifacts/three_phase_demo.gif --frame-png ci_artifacts/three_phase_demo.png
-          cp outputs/three_phase_frame_frame_000.vti ci_artifacts/
+          cp outputs/three_phase_frame_000.vti ci_artifacts/
           cp outputs/three_phase_ci.pvd ci_artifacts/
           cp outputs/bore_angle.csv ci_artifacts/
           cp outputs/three_phase_outlines.vtp ci_artifacts/

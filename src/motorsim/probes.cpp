@@ -296,6 +296,36 @@ double integrate_rect_flux_component(const Grid2D& grid, double originX, double 
     return flux;
 }
 
+double compute_magnetic_coenergy(const Grid2D& grid, double dx, double dy) {
+    if (!(dx > 0.0) || !(dy > 0.0)) {
+        throw std::runtime_error("Grid spacing must be positive for co-energy integration");
+    }
+
+    const std::size_t count = grid.nx * grid.ny;
+    if (grid.Bx.size() != count || grid.By.size() != count) {
+        throw std::runtime_error("Magnetic field components unavailable; call computeB() first");
+    }
+    if (grid.Hx.size() != count || grid.Hy.size() != count) {
+        throw std::runtime_error("Magnetic field intensity unavailable; call computeH() before co-energy integration");
+    }
+
+    const double cellArea = dx * dy;
+    double energy = 0.0;
+    const bool hasMagnetization = grid.Mx.size() == count && grid.My.size() == count;
+    for (std::size_t idx = 0; idx < count; ++idx) {
+        const double hx = grid.Hx[idx];
+        const double hy = grid.Hy[idx];
+        double mx = 0.0;
+        double my = 0.0;
+        if (hasMagnetization) {
+            mx = grid.Mx[idx];
+            my = grid.My[idx];
+        }
+        energy += grid.Bx[idx] * (hx + mx) + grid.By[idx] * (hy + my);
+    }
+    return 0.5 * energy * cellArea;
+}
+
 std::vector<BackEmfSample> compute_back_emf_series(const std::vector<std::size_t>& frameIndices,
                                                    const std::vector<double>& times,
                                                    const std::vector<double>& fluxes) {
