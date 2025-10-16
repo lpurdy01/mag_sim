@@ -15,39 +15,37 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   output. The CLI now records residual samples to CSV (timeline runs append
   `_frame_###`), enabling CI to archive a long CG history directly from
   `motor_sim`.
-- **Stage 1 (Three-phase synchronous baseline)**: The updated
-  `python/gen_three_phase_stator.py` now emits a surface-mounted PM rotor,
-  torque/back-EMF outputs, and timeline rotor angles in addition to the CI and
-  hi-res stator profiles. `docs/three_phase_stator.md` covers the workflow,
-  including the rotating-field regression (`python/check_three_phase_field.py`),
-  ParaView `.pvd` series, torque CSVs with co-energy samples, and phase EMF
-  reports. Maxwell-stress probes store co-energy so virtual-work torque checks
-  remain within ≤10 % on the CI case, while the back-EMF infrastructure
-  (`docs/back_emf.md`, `tests/back_emf_probe_test.cpp`) still verifies the
-  120° phase separation and frequency scaling.
+- **Stage 1 (Three-phase synchronous baseline)**: Restored
+  `python/gen_three_phase_stator.py` to emit the original stator-only rotating
+  field demo. The generator continues to supply CI and hi-res profiles, and
+  `docs/three_phase_stator.md` focuses on the bore-angle regression
+  (`python/check_three_phase_field.py`), ParaView `.pvd` series, and animation
+  workflow without introducing rotor geometry. Maxwell-stress and back-EMF
+  probes remain available for stator studies, with regression coverage in
+  `tests/back_emf_probe_test.cpp`.
 - **Stage 2.1 (RL circuit co-simulation)**: Scenario JSON now accepts
   lumped-element circuits with per-phase resistors, inductors, voltage sources,
   and coil links. Timeline frames drive the network via
   `"voltage_sources"`, the solver integrates branch currents with RK4 (while
-  feeding back `-dλ/dt` from coil flux), and the Python generator emits the
-  default three-phase star connection. `tests/circuit_rk_test.cpp` exercises the
-  RK integrator against the analytic RL step response, and
-  `docs/three_phase_stator.md` documents the voltage-driven workflow.
+  feeding back `-dλ/dt` from coil flux), and the new
+  `python/gen_three_phase_pm_motor.py` emits the default three-phase star
+  connection for the permanent-magnet motor demo. `tests/circuit_rk_test.cpp`
+  exercises the RK integrator against the analytic RL step response, and
+  `docs/three_phase_pm_motor.md` documents the voltage-driven workflow.
 - **Stage 2.2 (Mechanical coupling)**: Introduced a light-weight rotor
   dynamics module that integrates speed and position via RK4 using the torque
   reported by Maxwell-stress probes. Scenarios can now declare inertial,
-  damping, and load torque terms under `"mechanical"`, the generator emits a
-  default PM rotor configuration with a constant load, and the runtime keeps
+  damping, and load torque terms under `"mechanical"`; the PM motor generator
+  provides a default configuration with a constant load, and the runtime keeps
   timeline frames sequential to ensure warm-started field solves feed the
   coupled ODE. The integrator automatically stands down when timeline frames
-  provide explicit rotor angles so deterministic synchronous demos (e.g. the CI
-  rotating-field check) keep their scripted pose, while scenarios without those
+  provide explicit rotor angles so deterministic synchronous demos (e.g. the PM
+  motor walkthrough) keep their scripted pose, while scenarios without those
   overrides step the coupled mechanics. `tests/mechanical_spinup_test.cpp`
-  verifies the integrator against a constant-torque spin-up, and
-  `docs/three_phase_stator.md` covers the new voltage + mechanical workflow.
-  Follow-up fixes ensure timeline exporters respect basenames that already end
-  in `_frame`, restoring the expected `three_phase_frame_000.vti` artefact that
-  CI archives for the rotating-field demo.
+  verifies the integrator against a constant-torque spin-up. Follow-up fixes
+  ensure timeline exporters respect basenames that already end in `_frame`,
+  restoring the expected `three_phase_frame_000.vti` artefact that CI archives
+  for the stator rotating-field demo.
 
 ## Completed Milestones
 - **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` with regression coverage in `tests/output_quantity_test.cpp` and exercised in CI through the rotor ripple timeline artefacts. Exports now bundle combined `B`/`H` vector arrays plus geometry outline polydata companions to streamline ParaView workflows. The `python/verify_vtk.py` utility (documented in `docs/vtk_output.md`) runs during CI to sanity-check the generated `.vti` files.

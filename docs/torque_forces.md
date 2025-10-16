@@ -106,7 +106,7 @@ rotor dipole scenario at ±5° offsets, evaluating both the Maxwell stress torqu
 and the co-energy difference, and enforcing a ≤10 % agreement on the CI grid.
 Any probe requesting torque automatically triggers `computeH()` and records the
 co-energy alongside the stress-tensor integral, making the diagnostic available
-for future report/CSV exports and the new three-phase synchronous demo.
+for future report/CSV exports and the three-phase PM motor walkthrough.
 
 The `tests/probe_output_test.cpp` fixture exercises the ingestion and evaluation
 path with a synthetic field that generates a known downward force, providing a

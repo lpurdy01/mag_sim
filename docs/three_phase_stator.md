@@ -1,32 +1,19 @@
 # Three-Phase Stator Scenario
 
 This scenario bundles a six-slot, two-pole three-phase stator that drives a
-balanced rotating field against a permanent-magnet rotor. The Python generator
-produces both the tiny CI-sized case and a high-resolution configuration by
-tweaking a single profile flag.
+balanced rotating field. The Python generator produces both the tiny CI-sized
+case and a high-resolution configuration by tweaking a single profile flag.
 
 ## Quickstart
 
 ```bash
 python3 python/gen_three_phase_stator.py --profile ci --out inputs/three_phase_stator_ci.json
-./build/motor_sim --scenario inputs/three_phase_stator_ci.json --solve --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000
-python3 python/check_three_phase_field.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json
+./build/motor_sim --scenario inputs/three_phase_stator_ci.json --solve --parallel-frames --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000
 python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save three_phase_demo.mp4 --frame-png three_phase_demo.png
 ```
 
-The generated scenario exports cell-centred VTK frames, a bore-average CSV,
-stress-tensor torque CSVs (one per frame with co-energy samples), and
-back-EMF measurements for each phase. Stage 2 adds a `circuits` block that
-models the three stator phases as simple RL branches (`R≈0.4 Ω`, `L≈12 mH`)
-tied together at a neutral node and a `mechanical` section that tracks the
-surface-mounted rotor as a rigid body with inertia, damping, and a constant
-load torque. Timeline entries now drive the simulation with sinusoidal phase
-voltages via `"voltage_sources"`, inject synchronous rotor angles under
-`"rotor_angles"` (keeping the permanent magnet locked to the prescribed
-load angle for deterministic runs), and the solver integrates coil currents
-before each magnetostatic frame. When those timeline rotor overrides are
-present the mechanical integrator automatically stands down; omit them to let
-the rotor dynamics module advance the pose frame-to-frame.
+The generated scenario exports cell-centred VTK frames, a bore-average CSV, and
+polyline outlines that highlight the stator geometry.
 
 ## Scaling up
 
@@ -47,10 +34,6 @@ animation command on the new JSON.
 - `outputs/three_phase_outlines.vtp`: geometry polylines for overlaying slot
   and stator boundaries.
 - `outputs/bore_angle.csv`: bore-average B components, magnitudes, and angles.
-- `outputs/rotor_torque_frame_###.csv`: Maxwell-stress torque with accompanying
-  co-energy samples for virtual-work checks.
-- `outputs/phase_a_emf.csv`, `outputs/phase_b_emf.csv`, `outputs/phase_c_emf.csv`:
-  back-EMF series derived from the positive slot of each phase.
 
 ## ParaView tips
 
@@ -90,24 +73,8 @@ for larger offline runs.
   the bore field angle, verifies monotonic rotation, enforces an R² > 0.95 fit
   against a straight line, and guards against magnitude collapse. The CI
   workflow runs it automatically.
-- The surface-mounted permanent magnet rotor lags the electrical angle by the
-  configured load angle so the stress-tensor torque stays positive. The
-  `CoEnergy` column in the torque CSV enables a virtual-work cross-check by
-  differencing neighbouring frames.
-- Back-EMF probes integrate the magnetic flux magnitude inside the positive slot
-  of each phase; the resulting CSV already carries the induced `emf` column, so
-  no additional differentiation is required.
-- The scenario's `circuits` section exposes per-phase voltage sources, series
-  resistances, inductances, and coil links for each slot polygon. Timeline
-  entries under `"voltage_sources"` set the instantaneous phase voltages,
-  allowing the simulator to integrate coil currents with a fourth-order Runge–
-  Kutta step before each magnetostatic solve.
-- The `mechanical` section specifies rotor inertia, damping, and load torque and
-  points at the torque probe feeding the co-simulation loop. The solver solves
-  frames sequentially so it can advance the rotor pose with an RK4 step after
-  each magnetostatic solve; parallel frame execution is automatically disabled
-  when this block is present. Provide explicit timeline `rotor_angles` when you
-  need a deterministic synchronous demo—the mechanical integrator detects those
-  overrides and leaves the pre-scripted pose untouched.
+- Looking for a fully coupled permanent-magnet motor walkthrough? See
+  `docs/three_phase_pm_motor.md` for the rotor, circuit, and mechanical
+  co-simulation demo.
 - Keep binary artefacts (MP4/VTI samples) out of git history. The CI workflow
   uploads a small bundle with the demo VTK frame, bore CSV, and animation.
