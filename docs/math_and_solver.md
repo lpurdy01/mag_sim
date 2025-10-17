@@ -252,7 +252,7 @@ following top-level members:
 | `boundary`  | object | Optional boundary condition override, e.g. `{ "type": "neumann" }`; defaults to Dirichlet when omitted. |
 | `materials` | array  | Each entry defines `{name, mu_r}` with unique names. |
 | `regions`   | array  | Evaluated in authoring order. Entries may be `{"type": "uniform", "material": ...}` to set the background, `{"type": "halfspace", "normal": [nx, ny], "offset": c, "material": ...}` for planar masks, and `{"type": "polygon", "vertices": [[x1, y1], …], "material": ...}` to paint arbitrary simple polygons. |
-| `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
+| `sources`   | array  | Excites the field solve. Each entry is either a circular `{ "type": "wire", "x", "y", "radius", "I" }` or a polygonal `{ "type": "current_region", "vertices": [...], "I", "turns", "fill_fraction" }`. |
 | `magnet_regions` | array | Optional list of magnetised shapes with uniform magnetisation vectors, e.g. polygon loops or axis-aligned rectangles. |
 | `outputs`   | array  | Optional list of export requests. `field_map` records support `quantity` values `"B"`, `"H"`, `"BH"`, or `"energy_density"`; `line_probe` records accept `"Bmag"`, `"Bx"`, `"By"`, `"Hx"`, `"Hy"`, `"Hmag"`, or `"energy_density"`. All outputs are emitted as CSV. |
 
@@ -283,16 +283,37 @@ Two helper layers keep authoring ergonomic:
    fulfilled at runtime. The legacy `--write-midline` flag remains available for
    ad-hoc dumps.
 
-The `sources` list supports multiple wire entries. Each is rasterised as a disk
-with constant current density `J_z = I / (π r²)` applied to cells whose centres
-fall inside the radius. `tests/two_wire_cancel_test.cpp` integrates these cells
-to confirm that the deposited current matches the requested value to within
-15%, providing a regression guard on the rasteriser. Magnetised regions live in
-`magnet_regions`; each entry supplies a shape (`polygon` with vertices or
-`rect` with `x_range`/`y_range`) plus a magnetisation vector `magnetization`
-given either as `[Mx, My]` or `{ "Mx": ..., "My": ... }`. Overlapping entries
-add their vectors. Bound currents are generated from the resulting discrete
-curl, so partial coverage and composite magnets are supported.
+The `sources` list accepts both circular wires and polygonal current regions.
+`wire` entries remain a thin wrapper around the analytic Biot–Savart source:
+the rasteriser paints a disk of radius `r` with uniform current density
+`J_z = I / (π r²)` wherever the cell centre lies inside the loop. The
+`tests/two_wire_cancel_test.cpp` regression integrates the deposited density to
+confirm that it recovers the requested current to within 15% on the coarse CI
+grid.
+
+`current_region` entries describe coil slots via arbitrary simple polygons.
+Each region stores an orientation (±1), optional `phase` label, the conductor
+current `I`, the number of turns threading the slot, and a copper packing
+factor `fill_fraction`. During rasterisation the simulator distributes the net
+ampere-turns evenly across the polygon,
+
+```
+J_z = (orientation × I × turns × fill_fraction) / area_polygon,
+```
+
+so that the integrated current density matches the requested ampere-turns even
+when the slot is only partially filled. The packing factor is clamped to `[1e-4,
+1]` to avoid singular densities, and authors can drive the same slot from
+voltage-driven circuits (via coil links) or by prescribing timeline currents.
+`tests/current_region_turns_test.cpp` integrates the rasterised density and
+asserts the ampere-turn budget stays within 5% of the analytic value.
+
+Magnetised regions live in `magnet_regions`; each entry supplies a shape
+(`polygon` with vertices or `rect` with `x_range`/`y_range`) plus a
+magnetisation vector `magnetization` given either as `[Mx, My]` or `{ "Mx": ...,
+"My": ... }`. Overlapping entries add their vectors. Bound currents are
+generated from the resulting discrete curl, so partial coverage and composite
+magnets are supported.
 
 Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
 introduced without breaking the base schema because the parser ignores unknown

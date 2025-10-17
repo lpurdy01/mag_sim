@@ -1,11 +1,12 @@
 # Three-Phase PM Motor Scenario
 
 This walkthrough builds on the rotating-field stator demo by adding a
-surface-mounted permanent-magnet rotor, per-phase RL circuits, and a lightweight
-mechanical model. Use it to explore torque production, back-EMF, and circuit
-response in a synchronous motor setting. The generator now supports both a
-locked-rotor mode (matching earlier releases) and a spin-up mode that lets the
-mechanical integrator advance the rotor angle from the electromagnetic torque.
+surface-mounted permanent-magnet rotor (trimmed to 1×10⁵ A/m with μᵣ≈1.05),
+per-phase RL circuits, and a lightweight mechanical model driven by 30 A peak stator
+currents. Use it to explore torque production, back-EMF, and circuit response in
+a synchronous motor setting. The generator now supports both a locked-rotor mode
+(matching earlier releases) and a spin-up mode that lets the mechanical
+integrator advance the rotor angle from the electromagnetic torque.
 
 ## Quickstart (locked rotor)
 
@@ -51,14 +52,27 @@ the same.
 ## Scenario highlights
 
 - **Rotor assembly** – A rigid body named `pm_rotor` groups the rotor iron
-  polygon and the rectangular magnet block. Locked mode includes
+  polygon and the rectangular magnet block. The generator also carves the magnet
+  out of the rotor iron and assigns it the `pm_magnet` material (μᵣ≈1.05) so the
+  magnetisation vector does not experience an 800× permeability boost. Locked mode includes
   `"rotor_angles"` timeline entries to phase-lock the magnet to the rotating
   stator field by a configurable load angle, while spin-up mode omits them so
   the mechanical integrator owns the pose.
 - **Circuits** – The `stator_three_phase` network models each phase as a series
   `R-L` branch with a driven voltage source. Coil links bind both slot polygons
   for a phase to the shared inductor so the circuit solver injects equal and
-  opposite current densities.
+  opposite current densities. The ingestor now enforces that each coil link’s
+  turn count matches the associated `current_region`, keeping the magnetic
+  ampere-turn budget consistent between the field solve and the circuit model.
+- **Slot packing** – Slot polygons carry 60 turns apiece with a 0.55 fill
+  fraction. The rasteriser multiplies the timeline or circuit current by both
+  factors so the resulting ampere-turn budget matches what the circuit solver
+  assumes when computing coil flux linkages.
+- **Bore field levels** – The pm-magnet material keeps |B| in the rotor block on
+  roughly the same sub-tesla scale as the driven stator coils rather than the
+  50–200 T range seen when the magnet inherited the 800× permeability of the
+  surrounding steel. This makes the torque interaction easier to inspect and
+  maintains a realistic magnitude for induced voltages.
 - **Mechanical coupling** – The `mechanical` section specifies rotor inertia,
   viscous damping, constant load torque, and the torque probe that feeds the
   integrator. Spin-up mode keeps the timeline free of overrides so the solver
@@ -88,25 +102,28 @@ python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup \
 
 The JSON looks bulky because the generator rasterises each circular boundary
 with a few hundred segments to keep the Maxwell-stress torque probe smooth, and
-because the timeline spans three electrical cycles (36 frames) so the mechanical
-solver sees a full rotation. Key baked-in values for the CI fixture are:
+because the timeline samples a full electrical cycle (10 frames) so the
+mechanical solver still sees enough motion to verify acceleration. Key
+baked-in values for the CI fixture are:
 
 | Quantity | Value |
 | --- | --- |
 | Grid | 65×65 Cartesian cells over a 0.14 m square |
-| Electrical frequency | 60 Hz (12 frames per cycle, 3 cycles) |
-| Rotor inertia / damping | 2.5×10⁻³ kg·m², 1.5×10⁻⁴ N·m·s |
-| Load torque | 4 N·m opposing rotation |
-| Magnet strength | 4×10⁵ A/m surface-mounted block |
-| Phase drive | 200 A peak sinusoidal current with 325 V peak phase voltage |
+| Electrical frequency | 60 Hz (10 frames per cycle, 1 cycle) |
+| Rotor inertia / damping | 2.5×10⁻³ kg·m², 1.0×10⁻⁴ N·m·s |
+| Load torque | 0.5 N·m opposing rotation |
+| Magnet strength | 1×10⁵ A/m surface-mounted block |
+| Slot turns / fill | 60 turns per slot, 0.55 copper fill fraction |
+| Phase drive | 30 A peak warm-start currents with 20 V peak phase voltage |
 
 Rather than editing the JSON manually, re-run the generator when you need to
 tweak those knobs so the derived polygons stay consistent.
 
 ### Faster local experiments
 
-The bundled test purposely remains heavy (~140 s on two vCPUs) so the torque and
-mechanical traces match the long-run CI artefacts. For day-to-day iteration you
+The bundled test still takes roughly a minute on two vCPUs so the torque and
+mechanical traces match the CI artefacts while remaining tractable. For
+day-to-day iteration you
 can emit smaller timelines without touching the committed fixture. A few useful
 variants:
 

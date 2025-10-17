@@ -97,6 +97,15 @@ target_include_directories(polygon_region_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME polygon_region COMMAND polygon_region_test)
 
+add_executable(current_region_turns_test
+    tests/current_region_turns_test.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp)
+target_include_directories(current_region_turns_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME current_region_turns COMMAND current_region_turns_test)
+
 add_executable(output_quantity_test
     tests/output_quantity_test.cpp
     src/motorsim/ingest.cpp

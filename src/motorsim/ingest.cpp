@@ -19,6 +19,7 @@ namespace motorsim {
 namespace {
 constexpr double kTiny = 1e-12;
 constexpr double kPi = 3.14159265358979323846;
+constexpr double kMinFillFraction = 1e-4;
 
 bool pointInPolygonCoords(double x, double y, const std::vector<double>& xs,
                           const std::vector<double>& ys) {
@@ -330,6 +331,25 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             if (!(std::abs(region.orientation) > 0.0)) {
                 throw std::runtime_error("current_region orientation must be non-zero");
             }
+            region.turns = source.value("turns", source.value("N", 1.0));
+            if (!(region.turns > 0.0)) {
+                throw std::runtime_error("current_region turns must be positive");
+            }
+            double fillFraction = 1.0;
+            if (source.contains("fill_fraction")) {
+                fillFraction = source.at("fill_fraction").get<double>();
+            } else if (source.contains("fillFraction")) {
+                fillFraction = source.at("fillFraction").get<double>();
+            } else if (source.contains("fillFactor")) {
+                fillFraction = source.at("fillFactor").get<double>();
+            }
+            if (!(fillFraction > 0.0)) {
+                throw std::runtime_error("current_region fill_fraction must be positive");
+            }
+            if (fillFraction > 1.0 + 1e-6) {
+                throw std::runtime_error("current_region fill_fraction cannot exceed 1");
+            }
+            region.fillFraction = std::clamp(fillFraction, kMinFillFraction, 1.0);
             const auto& vertices = source.at("vertices");
             if (!vertices.is_array() || vertices.size() < 3) {
                 throw std::runtime_error("current_region requires an array of at least three vertices");
@@ -361,6 +381,7 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             if (!(region.area > kTiny)) {
                 throw std::runtime_error("current_region polygon area must be positive");
             }
+            region.copperArea = region.area * region.fillFraction;
             region.current = source.value("I", source.value("current", 0.0));
             const std::size_t index = spec.currentRegions.size();
             spec.currentRegions.push_back(region);
@@ -754,6 +775,14 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     link.inductorIndex = inductorIndex;
                     link.regionIndex = regionIndex;
                     link.turns = turns;
+                    auto& currentRegion = spec.currentRegions[regionIndex];
+                    if (currentRegion.turns <= 0.0 || std::abs(currentRegion.turns - 1.0) < 1e-12) {
+                        currentRegion.turns = turns;
+                    } else if (std::abs(currentRegion.turns - turns) > 1e-9) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link turns mismatch for region index " +
+                                                 std::to_string(regionIndex));
+                    }
+                    currentRegion.copperArea = currentRegion.area * currentRegion.fillFraction;
                     circuit.coilLinks.push_back(link);
                 } else {
                     throw std::runtime_error("Circuit '" + circuit.id + "' unsupported element type: " + type);
@@ -1874,7 +1903,10 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
             if (!(region.area > kTiny)) {
                 continue;
             }
-            const double density = region.current / region.area;
+            const double turns = region.turns > 0.0 ? region.turns : 1.0;
+            const double fill = std::clamp(region.fillFraction, kMinFillFraction, 1.0);
+            const double ampereTurns = region.current * turns * fill;
+            const double density = ampereTurns / region.area;
             if (std::abs(density) < kTiny) {
                 continue;
             }

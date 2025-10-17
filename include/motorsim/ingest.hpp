@@ -33,6 +33,9 @@ struct ScenarioSpec {
         double max_y{0.0};
         double area{0.0};
         double current{0.0};
+        double turns{1.0};
+        double fillFraction{1.0};
+        double copperArea{0.0};
     };
 
     struct Rotor {

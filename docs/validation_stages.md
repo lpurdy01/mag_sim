@@ -8,6 +8,7 @@ The analytical validation ladder mirrors the "Next-Stage Development Plan — Ti
 | ----- | ---------------- | ------------------ | ---------------- |
 | 1 | `tests/analytic_wire_test` (`inputs/tests/analytic_wire_test.json`) | Biot–Savart field of an infinite line current | RMS relative error of sampled \|B\| at a 5&nbsp;cm radius ring below 25%. |
 | 2 | `tests/magnet_strip_test` (`inputs/tests/magnet_strip_test.json`) | Surface-current model of a uniformly magnetised slab | RMS relative error of \|B\| along the midline < 15% and Hy inside the magnet near zero. |
+| 2a | `tests/current_region_turns_test` (`inputs/tests/current_region_turns_test.json`) | Ampere-turn conservation for polygonal slot sources | Integrated current density matches the requested ampere-turns within 5%. |
 | 3 | `tests/torque_validation_test` (`inputs/tests/torque_validation_test.json`) | Torque on a dipole in an external field | Maxwell stress tensor torque agrees with dipole and virtual-work estimates within 20% / 25%, respectively. |
 | 4 | `tests/back_emf_probe_test` (`inputs/tests/back_emf_probe_test.json`) | Faraday law using discrete flux differences | Polygon and rectangular probes integrate flux exactly for synthetic fields and produce the expected EMF between frames. |
 | 5 | `tests/rotor_ripple_test` (`inputs/tests/rotor_ripple_test.json`) | Quasi-static PM rotor in a stator field | Torque sign flips as the rotor sweeps 0°→180° and the simulated peak-to-peak ripple exceeds 0.3&nbsp;N·m·m⁻¹. |
@@ -19,6 +20,7 @@ All tests execute via `ctest` (see `CMakeLists.txt`) and run as part of the GitH
 
 - **Stage 1:** The analytic wire scenario writes CSV artefacts for regression plots. The `python/visualize_wire.py` helper overlays the Biot–Savart solution and is used in CI artefact generation.
 - **Stage 2:** The magnet strip benchmark samples the field along `y=0` and compares against a 4,000-segment surface-current quadrature. It also confirms that the magnet interior is nearly demagnetised (Hy ≈ 0).
+- **Stage 2a:** The current-region turns test integrates the rasterised `J_z` over a coil slot polygon to ensure the deposited ampere-turns stay within 5% of the analytic `orientation × I × turns × fill_fraction` target.
 - **Stage 3:** The torque validation setup places a rectangular magnet between counter-wound conductors. The magnet experiences a uniform transverse field so the torque can be predicted from `τ = (M · A) × B`. The regression checks both the Maxwell stress integration and a virtual-work finite difference (`ΔW/Δθ`).
 - **Stage 4:** The back-EMF test exercises polygonal and rectangular integration regions, verifies frame selection semantics, and validates the EMF series using synthetic flux ramps.
 - **Stage 5:** The rotor ripple scenario reuses the Stage&nbsp;3 geometry but sweeps the magnetisation vector through four angles (0°, 60°, 120°, 180°) via timeline frames. The regression ensures torque polarity and amplitude evolve consistently with the expected sinusoid.

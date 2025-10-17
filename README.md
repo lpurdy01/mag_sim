@@ -97,7 +97,12 @@ that `motor_sim` can solve frame-by-frame. Both generators expose compact
 * **PM motor spin-up** –
   `python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inputs/three_phase_pm_motor_spinup_ci.json`
   adds the permanent-magnet rotor, lumped RL circuits, and the RK4 mechanical
-  integrator. Solving the generated JSON with `--vtk-series` writes
+  integrator. Slot polygons now carry explicit turn counts (60 per slot) and a
+  0.55 copper fill fraction so the stator’s ampere-turn budget matches the
+  magnet linkage. The generator also carves the magnet out of the rotor iron and
+  assigns it a near-air permeability (μᵣ≈1.05) so the trimmed 1×10⁵ A/m
+  magnetisation produces bore flux on the same order as the stator coils.
+  Solving the generated JSON with `--vtk-series` writes
   `pm_motor_spinup_frame_###.vti`, torque CSVs, and a `pm_motor_spinup_mechanical.csv`
   history that `python/check_pm_spinup.py` validates. See
   `docs/three_phase_pm_motor.md` for scenario parameters and workflow guidance.

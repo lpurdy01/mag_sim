@@ -22,6 +22,10 @@
     {
       "name": "rotor_steel",
       "mu_r": 800.0
+    },
+    {
+      "name": "pm_magnet",
+      "mu_r": 1.05
     }
   ],
   "regions": [
@@ -2610,6 +2614,28 @@
           -0.0008637159466995197
         ]
       ]
+    },
+    {
+      "type": "polygon",
+      "material": "pm_magnet",
+      "vertices": [
+        [
+          -0.0187,
+          -0.012100000000000001
+        ],
+        [
+          0.0187,
+          -0.012100000000000001
+        ],
+        [
+          0.0187,
+          0.012100000000000001
+        ],
+        [
+          -0.0187,
+          0.012100000000000001
+        ]
+      ]
     }
   ],
   "magnet_regions": [
@@ -2634,7 +2660,7 @@
         ]
       ],
       "magnetization": [
-        400000.0,
+        100000.0,
         0.0
       ]
     }
@@ -2679,7 +2705,9 @@
           0.006257378601609235
         ]
       ],
-      "I": 0.0
+      "I": 0.0,
+      "turns": 60.0,
+      "fill_fraction": 0.55
     },
     {
       "type": "current_region",
@@ -2705,7 +2733,9 @@
           0.03734321705988807
         ]
       ],
-      "I": 0.0
+      "I": 0.0,
+      "turns": 60.0,
+      "fill_fraction": 0.55
     },
     {
       "type": "current_region",
@@ -2731,7 +2761,9 @@
           0.03108583845827884
         ]
       ],
-      "I": 0.0
+      "I": 0.0,
+      "turns": 60.0,
+      "fill_fraction": 0.55
     },
     {
       "type": "current_region",
@@ -2757,7 +2789,9 @@
           -0.0062573786016092295
         ]
       ],
-      "I": 0.0
+      "I": 0.0,
+      "turns": 60.0,
+      "fill_fraction": 0.55
     },
     {
       "type": "current_region",
@@ -2783,7 +2817,9 @@
           -0.037343217059888065
         ]
       ],
-      "I": 0.0
+      "I": 0.0,
+      "turns": 60.0,
+      "fill_fraction": 0.55
     },
     {
       "type": "current_region",
@@ -2809,7 +2845,9 @@
           -0.031085838458278833
         ]
       ],
-      "I": 0.0
+      "I": 0.0,
+      "turns": 60.0,
+      "fill_fraction": 0.55
     }
   ],
   "circuits": [
@@ -2854,14 +2892,14 @@
           "id": "coil_a_pos",
           "inductor": "L_a",
           "region": "A_pos",
-          "turns": 120.0
+          "turns": 60.0
         },
         {
           "type": "coil_link",
           "id": "coil_a_neg",
           "inductor": "L_a",
           "region": "A_neg",
-          "turns": 120.0
+          "turns": 60.0
         },
         {
           "type": "resistor",
@@ -2895,14 +2933,14 @@
           "id": "coil_b_pos",
           "inductor": "L_b",
           "region": "B_pos",
-          "turns": 120.0
+          "turns": 60.0
         },
         {
           "type": "coil_link",
           "id": "coil_b_neg",
           "inductor": "L_b",
           "region": "B_neg",
-          "turns": 120.0
+          "turns": 60.0
         },
         {
           "type": "resistor",
@@ -2936,14 +2974,14 @@
           "id": "coil_c_pos",
           "inductor": "L_c",
           "region": "C_pos",
-          "turns": 120.0
+          "turns": 60.0
         },
         {
           "type": "coil_link",
           "id": "coil_c_neg",
           "inductor": "L_c",
           "region": "C_neg",
-          "turns": 120.0
+          "turns": 60.0
         }
       ]
     }
@@ -2954,7 +2992,7 @@
         "name": "pm_rotor",
         "inertia": 0.0025,
         "damping": 0.00015,
-        "load_torque": 4.0,
+        "load_torque": 0.6,
         "initial_angle_deg": -30.0,
         "initial_speed_rpm": 0.0,
         "torque_probe": "pm_motor_spinup_torque"
@@ -2966,8 +3004,8 @@
       "t": 0.0,
       "phase_currents": {
         "A": 0.0,
-        "B": -173.20508075688775,
-        "C": 173.20508075688775
+        "B": -25.98076211353316,
+        "C": 25.98076211353316
       },
       "voltage_sources": [
         {
@@ -2978,587 +3016,237 @@
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": -281.4582562299426
+          "value": -17.320508075688775
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": 281.4582562299426
+          "value": 17.320508075688775
         }
       ]
     },
     {
-      "t": 0.001388888888888889,
+      "t": 0.0016666666666666666,
       "phase_currents": {
-        "A": 99.99999999999999,
-        "B": -200.0,
-        "C": 100.00000000000007
+        "A": 17.63355756877419,
+        "B": -29.8356568610482,
+        "C": 12.202099292274013
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": 162.49999999999997
+          "value": 11.75570504584946
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": -325.0
+          "value": -19.890437907365467
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": 162.5000000000001
+          "value": 8.134732861516008
         }
       ]
     },
     {
-      "t": 0.002777777777777778,
+      "t": 0.003333333333333333,
       "phase_currents": {
-        "A": 173.20508075688772,
-        "B": -173.20508075688772,
-        "C": 2.4492935982947064e-14
+        "A": 28.531695488854606,
+        "B": -22.294344764321828,
+        "C": -6.237350724532758
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": 281.45825622994255
+          "value": 19.02113032590307
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": -281.45825622994255
+          "value": -14.862896509547884
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": 3.980102097228898e-14
+          "value": -4.158233816355173
         }
       ]
     },
     {
-      "t": 0.004166666666666667,
+      "t": 0.004999999999999999,
       "phase_currents": {
-        "A": 200.0,
-        "B": -100.0,
-        "C": -99.99999999999987
+        "A": 28.531695488854613,
+        "B": -6.237350724532789,
+        "C": -22.29434476432181
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": 325.0
+          "value": 19.021130325903076
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": -162.5
+          "value": -4.158233816355192
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": -162.4999999999998
+          "value": -14.862896509547873
         }
       ]
     },
     {
-      "t": 0.005555555555555556,
+      "t": 0.006666666666666666,
       "phase_currents": {
-        "A": 173.20508075688775,
-        "B": 0.0,
-        "C": -173.20508075688767
+        "A": 17.633557568774208,
+        "B": 12.202099292273997,
+        "C": -29.8356568610482
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": 281.4582562299426
+          "value": 11.75570504584947
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": 0.0
+          "value": 8.134732861516
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": -281.4582562299425
-        }
-      ]
-    },
-    {
-      "t": 0.006944444444444445,
-      "phase_currents": {
-        "A": 99.99999999999999,
-        "B": 100.00000000000004,
-        "C": -200.0
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 162.49999999999997
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 162.50000000000009
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -325.0
+          "value": -19.890437907365467
         }
       ]
     },
     {
       "t": 0.008333333333333333,
       "phase_currents": {
-        "A": 1.1331077795295959e-13,
-        "B": 173.2050807568877,
-        "C": -173.2050807568878
+        "A": 1.699661669294394e-14,
+        "B": 25.980762113533153,
+        "C": -25.98076211353317
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": 1.8413001417355935e-13
+          "value": 1.1331077795295958e-14
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": 281.4582562299425
+          "value": 17.32050807568877
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": -281.45825622994266
+          "value": -17.32050807568878
         }
       ]
     },
     {
-      "t": 0.009722222222222222,
+      "t": 0.009999999999999998,
       "phase_currents": {
-        "A": -99.99999999999994,
-        "B": 200.0,
-        "C": -100.00000000000009
+        "A": -17.63355756877417,
+        "B": 29.835656861048204,
+        "C": -12.202099292274028
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": -162.49999999999991
+          "value": -11.755705045849446
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": 325.0
+          "value": 19.890437907365467
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": -162.50000000000014
+          "value": -8.134732861516019
         }
       ]
     },
     {
-      "t": 0.011111111111111112,
+      "t": 0.011666666666666665,
       "phase_currents": {
-        "A": -173.20508075688767,
-        "B": 173.20508075688775,
-        "C": -4.898587196589413e-14
+        "A": -28.531695488854595,
+        "B": 22.294344764321846,
+        "C": 6.237350724532755
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": -281.4582562299425
+          "value": -19.021130325903066
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": 281.4582562299426
+          "value": 14.862896509547896
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": -7.960204194457796e-14
+          "value": 4.15823381635517
         }
       ]
     },
     {
-      "t": 0.0125,
+      "t": 0.013333333333333332,
       "phase_currents": {
-        "A": -200.0,
-        "B": 99.99999999999999,
-        "C": 99.99999999999986
+        "A": -28.531695488854616,
+        "B": 6.2373507245328055,
+        "C": 22.29434476432181
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": -325.0
+          "value": -19.021130325903076
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": 162.49999999999997
+          "value": 4.158233816355203
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": 162.49999999999977
+          "value": 14.862896509547873
         }
       ]
     },
     {
-      "t": 0.01388888888888889,
+      "t": 0.015,
       "phase_currents": {
-        "A": -173.20508075688772,
-        "B": -6.432490598706547e-14,
-        "C": 173.20508075688775
+        "A": -17.633557568774222,
+        "B": -12.202099292273983,
+        "C": 29.8356568610482
       },
       "voltage_sources": [
         {
           "circuit": "stator_three_phase",
           "source": "Va",
-          "value": -281.45825622994255
+          "value": -11.755705045849481
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vb",
-          "value": -1.0452797222898138e-13
+          "value": -8.134732861515989
         },
         {
           "circuit": "stator_three_phase",
           "source": "Vc",
-          "value": 281.4582562299426
-        }
-      ]
-    },
-    {
-      "t": 0.015277777777777779,
-      "phase_currents": {
-        "A": -100.00000000000009,
-        "B": -99.99999999999994,
-        "C": 200.0
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -162.50000000000014
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -162.49999999999991
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 325.0
-        }
-      ]
-    },
-    {
-      "t": 0.016666666666666666,
-      "phase_currents": {
-        "A": -2.2662155590591918e-13,
-        "B": -173.20508075688758,
-        "C": 173.20508075688784
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -3.682600283471187e-13
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -281.4582562299423
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 281.4582562299427
-        }
-      ]
-    },
-    {
-      "t": 0.018055555555555557,
-      "phase_currents": {
-        "A": 100.0,
-        "B": -200.0,
-        "C": 99.99999999999996
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 162.5
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -325.0
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 162.49999999999991
-        }
-      ]
-    },
-    {
-      "t": 0.019444444444444445,
-      "phase_currents": {
-        "A": 173.20508075688767,
-        "B": -173.2050807568878,
-        "C": 7.347880794884119e-14
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 281.4582562299425
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -281.45825622994266
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 1.1940306291686692e-13
-        }
-      ]
-    },
-    {
-      "t": 0.020833333333333336,
-      "phase_currents": {
-        "A": 200.0,
-        "B": -99.99999999999993,
-        "C": -99.99999999999983
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 325.0
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -162.4999999999999
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -162.49999999999972
-        }
-      ]
-    },
-    {
-      "t": 0.022222222222222223,
-      "phase_currents": {
-        "A": 173.20508075688784,
-        "B": -4.898587196589413e-14,
-        "C": -173.20508075688755
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 281.4582562299427
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -7.960204194457796e-14
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -281.45825622994226
-        }
-      ]
-    },
-    {
-      "t": 0.02361111111111111,
-      "phase_currents": {
-        "A": 100.00000000000027,
-        "B": 99.99999999999986,
-        "C": -200.0
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 162.50000000000043
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 162.49999999999977
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -325.0
-        }
-      ]
-    },
-    {
-      "t": 0.025,
-      "phase_currents": {
-        "A": 7.347880794884119e-14,
-        "B": 173.20508075688775,
-        "C": -173.20508075688784
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 1.1940306291686692e-13
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 281.4582562299426
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -281.4582562299427
-        }
-      ]
-    },
-    {
-      "t": 0.02638888888888889,
-      "phase_currents": {
-        "A": -99.99999999999983,
-        "B": 200.0,
-        "C": -100.00000000000028
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -162.49999999999972
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 325.0
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -162.50000000000048
-        }
-      ]
-    },
-    {
-      "t": 0.02777777777777778,
-      "phase_currents": {
-        "A": -173.20508075688775,
-        "B": 173.20508075688764,
-        "C": -9.797174393178826e-14
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -281.4582562299426
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 281.45825622994244
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -1.5920408388915592e-13
-        }
-      ]
-    },
-    {
-      "t": 0.029166666666666667,
-      "phase_currents": {
-        "A": -200.0,
-        "B": 99.99999999999996,
-        "C": 99.99999999999982
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -325.0
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 162.49999999999991
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 162.4999999999997
-        }
-      ]
-    },
-    {
-      "t": 0.030555555555555558,
-      "phase_currents": {
-        "A": -173.20508075688784,
-        "B": 7.347880794884119e-14,
-        "C": 173.20508075688755
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -281.4582562299427
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 1.1940306291686692e-13
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 281.45825622994226
-        }
-      ]
-    },
-    {
-      "t": 0.03194444444444445,
-      "phase_currents": {
-        "A": -99.99999999999997,
-        "B": -100.00000000000013,
-        "C": 200.0
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -162.49999999999997
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -162.50000000000023
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 325.0
+          "value": 19.890437907365467
         }
       ]
     }

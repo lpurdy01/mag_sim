@@ -18,11 +18,12 @@ DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
         "slot_depth": 0.010,
         "slot_width_deg": 18.0,
         "load_angle_deg": 15.0,
-        "spinup_cycles": 3,
+        "spinup_cycles": 1,
         "spinup_load_angle_deg": 30.0,
         "spinup_initial_angle_deg": -30.0,
-        "spinup_load_torque": 4.0,
+        "spinup_load_torque": 0.6,
         "spinup_damping": 0.00015,
+        "spinup_frames_per_cycle": 10,
     },
     "hires": {
         "nx": 401,
@@ -32,11 +33,12 @@ DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
         "slot_depth": 0.010,
         "slot_width_deg": 12.0,
         "load_angle_deg": 10.0,
-        "spinup_cycles": 6,
+        "spinup_cycles": 5,
         "spinup_load_angle_deg": 24.0,
         "spinup_initial_angle_deg": -24.0,
-        "spinup_load_torque": 6.0,
+        "spinup_load_torque": 1.2,
         "spinup_damping": 0.0002,
+        "spinup_frames_per_cycle": 100,
     },
 }
 
@@ -107,21 +109,27 @@ def generate_scenario(
         if cycles_override is None:
             cycles = int(profile_cfg.get("spinup_cycles", base_cycles))
         load_angle_deg = float(profile_cfg.get("spinup_load_angle_deg", base_load_angle_deg))
+        spinup_fpc = int(profile_cfg.get("spinup_frames_per_cycle", frames_per_cycle))
+        if frames_per_cycle_override is None:
+            frames_per_cycle = spinup_fpc
 
     domain_size = 0.14
     r_in = 0.040
     r_out = 0.055
     bore_fraction = 0.6
-    current_amp = 200.0
+    current_amp = 30.0
     electrical_hz = 60.0
-    magnet_strength = 4.0e5
+    magnet_strength = 1.0e5
+    magnet_mu_r = 1.05
     phase_resistance = 0.4
     phase_inductance = 0.012
-    coil_turns = 120.0
-    line_voltage_rms = 325.0  # peak phase voltage ~230 RMS line-to-neutral
+    phase_turns = 120.0
+    turns_per_slot = phase_turns / 2.0
+    slot_fill_fraction = 0.55
+    line_voltage_rms = 20.0  # peak phase voltage driving the RL network
     rotor_inertia = 0.0025
-    rotor_damping = 0.0002
-    load_torque = 8.0
+    rotor_damping = 0.0001
+    load_torque = 0.5
 
     if mode == "spinup":
         rotor_damping = float(profile_cfg.get("spinup_damping", rotor_damping))
@@ -161,6 +169,8 @@ def generate_scenario(
                 "orientation": orientation,
                 "vertices": polygon,
                 "I": 0.0,
+                "turns": turns_per_slot,
+                "fill_fraction": slot_fill_fraction,
             }
         )
         phase_slot_map.setdefault(phase, {})["pos" if orientation > 0 else "neg"] = polygon
@@ -190,6 +200,8 @@ def generate_scenario(
         [magnet_half_width, magnet_height],
         [-magnet_half_width, magnet_height],
     ]
+
+    regions.append({"type": "polygon", "material": "pm_magnet", "vertices": magnet_polygon})
 
     magnet_regions = [
         {
@@ -250,18 +262,18 @@ def generate_scenario(
                 {"type": "resistor", "id": "R_a", "nodes": ["phase_a", "neutral"], "resistance": phase_resistance},
                 {"type": "inductor", "id": "L_a", "nodes": ["phase_a", "neutral"], "inductance": phase_inductance},
                 {"type": "voltage_source", "id": "Va", "nodes": ["phase_a", "neutral"], "value": 0.0},
-                {"type": "coil_link", "id": "coil_a_pos", "inductor": "L_a", "region": "A_pos", "turns": coil_turns},
-                {"type": "coil_link", "id": "coil_a_neg", "inductor": "L_a", "region": "A_neg", "turns": coil_turns},
+                {"type": "coil_link", "id": "coil_a_pos", "inductor": "L_a", "region": "A_pos", "turns": turns_per_slot},
+                {"type": "coil_link", "id": "coil_a_neg", "inductor": "L_a", "region": "A_neg", "turns": turns_per_slot},
                 {"type": "resistor", "id": "R_b", "nodes": ["phase_b", "neutral"], "resistance": phase_resistance},
                 {"type": "inductor", "id": "L_b", "nodes": ["phase_b", "neutral"], "inductance": phase_inductance},
                 {"type": "voltage_source", "id": "Vb", "nodes": ["phase_b", "neutral"], "value": 0.0},
-                {"type": "coil_link", "id": "coil_b_pos", "inductor": "L_b", "region": "B_pos", "turns": coil_turns},
-                {"type": "coil_link", "id": "coil_b_neg", "inductor": "L_b", "region": "B_neg", "turns": coil_turns},
+                {"type": "coil_link", "id": "coil_b_pos", "inductor": "L_b", "region": "B_pos", "turns": turns_per_slot},
+                {"type": "coil_link", "id": "coil_b_neg", "inductor": "L_b", "region": "B_neg", "turns": turns_per_slot},
                 {"type": "resistor", "id": "R_c", "nodes": ["phase_c", "neutral"], "resistance": phase_resistance},
                 {"type": "inductor", "id": "L_c", "nodes": ["phase_c", "neutral"], "inductance": phase_inductance},
                 {"type": "voltage_source", "id": "Vc", "nodes": ["phase_c", "neutral"], "value": 0.0},
-                {"type": "coil_link", "id": "coil_c_pos", "inductor": "L_c", "region": "C_pos", "turns": coil_turns},
-                {"type": "coil_link", "id": "coil_c_neg", "inductor": "L_c", "region": "C_neg", "turns": coil_turns},
+                {"type": "coil_link", "id": "coil_c_pos", "inductor": "L_c", "region": "C_pos", "turns": turns_per_slot},
+                {"type": "coil_link", "id": "coil_c_neg", "inductor": "L_c", "region": "C_neg", "turns": turns_per_slot},
             ],
         }
     ]
@@ -279,6 +291,7 @@ def generate_scenario(
             {"name": "air", "mu_r": 1.0},
             {"name": "stator_steel", "mu_r": 400.0},
             {"name": "rotor_steel", "mu_r": 800.0},
+            {"name": "pm_magnet", "mu_r": magnet_mu_r},
         ],
         "regions": regions,
         "magnet_regions": magnet_regions,

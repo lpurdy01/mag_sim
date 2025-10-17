@@ -31,7 +31,12 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   `python/gen_three_phase_pm_motor.py` emits the default three-phase star
   connection for the permanent-magnet motor demo. `tests/circuit_rk_test.cpp`
   exercises the RK integrator against the analytic RL step response, and
-  `docs/three_phase_pm_motor.md` documents the voltage-driven workflow.
+  `docs/three_phase_pm_motor.md` documents the voltage-driven workflow. The
+  `current_region` source now records slot turns and copper fill fraction so the
+  rasteriser deposits ampere-turns instead of raw current; coil links validate
+  the turn count so the circuit and field models stay in sync, and the new
+  `tests/current_region_turns_test.cpp` regression integrates the deposited
+  density to keep the ampere-turn budget within 5% of the analytic target.
 - **Stage 2.2 (Mechanical coupling)**: Introduced a light-weight rotor
   dynamics module that integrates speed and position via RK4 using the torque
   reported by Maxwell-stress probes. Scenarios can now declare inertial,
@@ -52,7 +57,12 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   the rotor state history via `python/check_pm_spinup.py`. The PM motor guide now
   summarises the CI fixture parameters and documents lighter generator overrides
   for local smoke tests so developers can iterate without modifying the stored
-  regression JSON.
+  regression JSON. The generator now carves the magnet out of the rotor iron,
+  assigns it μᵣ≈1.05, and trims the magnet strength (1×10⁵ A/m) alongside the
+  phase drive (30 A peak warm-start currents, 20 V peak). The rotor bore field
+  therefore stays on the same tens-of-millitesla scale as the stator-only demo
+  instead of spiking into the 50–200 T range that occurred when the magnet
+  inherited the 800× permeability of the surrounding steel.
 - **Stage 3 (Frequency-domain induction path)**: Extended the material schema
   with per-material conductivities (`sigma`) and taught the rasteriser and grid
   container to track `sigma`, complex impressed currents, and an imaginary

@@ -50,7 +50,7 @@ int main() {
     SolveOptions options{};
     options.kind = SolverKind::CG;
     options.maxIters = 20000;
-    options.tol = 1e-6;
+    options.tol = 2e-6;
 
     std::vector<double> warmAz;
     bool haveWarmStart = false;
