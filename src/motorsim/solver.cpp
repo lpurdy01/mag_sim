@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -125,6 +126,86 @@ void computeJacobiDiagonal(const Grid2D& grid, std::vector<double>& diag) {
             const double diagValue = (nuE + nuW) * invDx2 + (nuN + nuS) * invDy2;
             diag[p] = diagValue <= 0.0 ? 1.0 : diagValue;
         }
+    }
+}
+
+void applySSORPreconditioner(const Grid2D& grid,
+                             const std::vector<double>& diag,
+                             const std::vector<double>& rhs,
+                             std::vector<double>& z,
+                             std::vector<double>& scratch) {
+    const std::size_t n = grid.nx * grid.ny;
+    if (n == 0) {
+        z.clear();
+        return;
+    }
+    if (rhs.size() != n) {
+        z.assign(n, 0.0);
+        return;
+    }
+
+    z.assign(n, 0.0);
+    scratch.assign(n, 0.0);
+
+    if (grid.nx < 3 || grid.ny < 3) {
+        z = rhs;
+        return;
+    }
+
+    const double invDx2 = 1.0 / (grid.dx * grid.dx);
+    const double invDy2 = 1.0 / (grid.dy * grid.dy);
+
+    for (std::size_t j = 1; j + 1 < grid.ny; ++j) {
+        for (std::size_t i = 1; i + 1 < grid.nx; ++i) {
+            const std::size_t p = grid.idx(i, j);
+            double sum = rhs[p];
+
+            const double nuP = grid.invMu[p];
+            if (i > 1) {
+                const std::size_t w = grid.idx(i - 1, j);
+                const double nuW = harmonicAverage(nuP, grid.invMu[w]);
+                sum += nuW * invDx2 * scratch[w];
+            }
+            if (j > 1) {
+                const std::size_t s = grid.idx(i, j - 1);
+                const double nuS = harmonicAverage(nuP, grid.invMu[s]);
+                sum += nuS * invDy2 * scratch[s];
+            }
+
+            const double d = diag[p] > 0.0 ? diag[p] : 1.0;
+            scratch[p] = sum / d;
+        }
+    }
+
+    for (std::size_t j = grid.ny - 2; j > 0; --j) {
+        for (std::size_t i = grid.nx - 2; i > 0; --i) {
+            const std::size_t p = grid.idx(i, j);
+            double sum = scratch[p];
+
+            const double nuP = grid.invMu[p];
+            if (i + 1 < grid.nx - 1) {
+                const std::size_t e = grid.idx(i + 1, j);
+                const double nuE = harmonicAverage(nuP, grid.invMu[e]);
+                sum += nuE * invDx2 * z[e];
+            }
+            if (j + 1 < grid.ny - 1) {
+                const std::size_t nIdx = grid.idx(i, j + 1);
+                const double nuN = harmonicAverage(nuP, grid.invMu[nIdx]);
+                sum += nuN * invDy2 * z[nIdx];
+            }
+
+            const double d = diag[p] > 0.0 ? diag[p] : 1.0;
+            z[p] = sum / d;
+        }
+    }
+
+    for (std::size_t i = 0; i < grid.nx; ++i) {
+        z[grid.idx(i, 0)] = rhs[grid.idx(i, 0)];
+        z[grid.idx(i, grid.ny - 1)] = rhs[grid.idx(i, grid.ny - 1)];
+    }
+    for (std::size_t j = 0; j < grid.ny; ++j) {
+        z[grid.idx(0, j)] = rhs[grid.idx(0, j)];
+        z[grid.idx(grid.nx - 1, j)] = rhs[grid.idx(grid.nx - 1, j)];
     }
 }
 
@@ -386,10 +467,13 @@ SolveResult solveSORInternal(Grid2D& grid,
 
 SolveResult solveCGInternal(Grid2D& grid,
                             const SolveOptions& options,
-                            ProgressSink* progressSink) {
+                            ProgressSink* progressSink,
+                            const std::vector<double>& rhs,
+                            const std::function<void(const double*, double*)>& applyOperator,
+                            const std::function<void(std::vector<double>&)>& buildDiagonal) {
     SolveResult report{};
     const std::size_t n = grid.nx * grid.ny;
-    if (grid.nx < 3 || grid.ny < 3 || n == 0) {
+    if (grid.nx < 3 || grid.ny < 3 || n == 0 || rhs.size() != n) {
         return report;
     }
 
@@ -402,15 +486,23 @@ SolveResult solveCGInternal(Grid2D& grid,
     std::vector<double> p(n, 0.0);
     std::vector<double> Ap(n, 0.0);
     std::vector<double> diag(n, 1.0);
-
-    computeJacobiDiagonal(grid, diag);
-
     std::vector<double> residualScratch;
-    const double rhsNorm = std::sqrt(linops::squaredNorm(grid.Jz) + 1e-30);
+    std::vector<double> ssorScratch;
+
+    if (buildDiagonal) {
+        buildDiagonal(diag);
+    } else {
+        computeJacobiDiagonal(grid, diag);
+    }
+
+    const double rhsNorm = std::sqrt(linops::squaredNorm(rhs) + 1e-30);
 
     auto rebuildResidual = [&]() {
         residualScratch.resize(n);
-        linops::computeResidual(grid, grid.Az.data(), residualScratch.data());
+        applyOperator(grid.Az.data(), residualScratch.data());
+        for (std::size_t idx = 0; idx < n; ++idx) {
+            residualScratch[idx] -= rhs[idx];
+        }
         removeMeanIfNeumann(grid, residualScratch);
         enforceNeumannGauge(grid, residualScratch);
         for (std::size_t idx = 0; idx < n; ++idx) {
@@ -421,6 +513,29 @@ SolveResult solveCGInternal(Grid2D& grid,
         enforceNeumannBoundaries(grid, r);
         enforceNeumannGauge(grid, r);
         return linops::norm(residualScratch) / rhsNorm;
+    };
+
+    auto applyPreconditioner = [&](const std::vector<double>& in, std::vector<double>& out) {
+        switch (options.preconditioner) {
+            case PreconditionerKind::Jacobi:
+                out.resize(n);
+                for (std::size_t idx = 0; idx < n; ++idx) {
+                    const double d = diag[idx];
+                    out[idx] = (d > 0.0) ? in[idx] / d : in[idx];
+                }
+                break;
+            case PreconditionerKind::SSOR:
+                applySSORPreconditioner(grid, diag, in, out, ssorScratch);
+                break;
+            case PreconditionerKind::None:
+            default:
+                out = in;
+                break;
+        }
+        zeroDirichletBoundary(grid, out);
+        removeMeanIfNeumann(grid, out);
+        enforceNeumannBoundaries(grid, out);
+        enforceNeumannGauge(grid, out);
     };
 
     double relResidual = rebuildResidual();
@@ -450,18 +565,14 @@ SolveResult solveCGInternal(Grid2D& grid,
         return report;
     }
 
-    double rzPrev = linops::dot(r, z);  // initialise to zero via initial z
+    applyPreconditioner(r, z);
+    double rzPrev = linops::dot(r, z);
     bool firstIteration = true;
 
     for (std::size_t iter = 0; iter < options.maxIters; ++iter) {
-        for (std::size_t idx = 0; idx < n; ++idx) {
-            const double d = diag[idx];
-            z[idx] = (d > 0.0) ? r[idx] / d : r[idx];
+        if (!firstIteration) {
+            applyPreconditioner(r, z);
         }
-        zeroDirichletBoundary(grid, z);
-        removeMeanIfNeumann(grid, z);
-        enforceNeumannBoundaries(grid, z);
-        enforceNeumannGauge(grid, z);
 
         const double rz = linops::dot(r, z);
         if (!std::isfinite(rz)) {
@@ -483,10 +594,11 @@ SolveResult solveCGInternal(Grid2D& grid,
         enforceNeumannBoundaries(grid, p);
         enforceNeumannGauge(grid, p);
 
-        linops::applyA(grid, p.data(), Ap.data());
+        applyOperator(p.data(), Ap.data());
         removeMeanIfNeumann(grid, Ap);
         enforceNeumannBoundaries(grid, Ap);
         enforceNeumannGauge(grid, Ap);
+
         double denom = linops::dot(p, Ap);
         if (denom <= 0.0 || !std::isfinite(denom)) {
             std::cerr << "CG denominator non-positive at iter " << iter << " (denom=" << denom
@@ -834,7 +946,10 @@ SolveResult solveAz(Grid2D& grid,
         case SolverKind::SOR:
             return solveSORInternal(grid, adjusted, progress);
         case SolverKind::CG:
-            return solveCGInternal(grid, adjusted, progress);
+            return solveCGInternal(
+                grid, adjusted, progress, grid.Jz,
+                [&](const double* x, double* y) { linops::applyA(grid, x, y); },
+                [&](std::vector<double>& diag) { computeJacobiDiagonal(grid, diag); });
         case SolverKind::Harmonic:
             return solveHarmonicInternal(grid, adjusted, progress);
     }
@@ -857,6 +972,73 @@ SolveResult solveAz_CG(Grid2D& grid,
     SolveOptions cgOptions = options;
     cgOptions.kind = SolverKind::CG;
     return solveAz(grid, cgOptions, initialGuess, progress);
+}
+
+SolveResult solveTransientStep(Grid2D& grid,
+                               const SolveOptions& options,
+                               double dt,
+                               const std::vector<double>& previousAz,
+                               ProgressSink* progress) {
+    SolveResult report{};
+    const std::size_t n = grid.nx * grid.ny;
+    if (!(dt > 0.0) || grid.nx < 3 || grid.ny < 3 || n == 0) {
+        return report;
+    }
+
+    if (previousAz.size() == n) {
+        grid.Az = previousAz;
+    }
+
+    const double invDt = 1.0 / dt;
+    std::vector<double> rhs(n, 0.0);
+    for (std::size_t idx = 0; idx < n; ++idx) {
+        const double sigma = (idx < grid.sigma.size()) ? grid.sigma[idx] : 0.0;
+        const double prev = (idx < previousAz.size()) ? previousAz[idx] : 0.0;
+        rhs[idx] = grid.Jz[idx] + sigma * invDt * prev;
+    }
+
+    auto applyOperator = [&](const double* x, double* y) {
+        linops::applyA(grid, x, y);
+        if (grid.sigma.size() != n) {
+            return;
+        }
+        if (grid.boundaryCondition == Grid2D::BoundaryKind::Dirichlet) {
+            for (std::size_t j = 1; j + 1 < grid.ny; ++j) {
+                for (std::size_t i = 1; i + 1 < grid.nx; ++i) {
+                    const std::size_t p = grid.idx(i, j);
+                    y[p] += grid.sigma[p] * invDt * x[p];
+                }
+            }
+        } else {
+            for (std::size_t idx = 0; idx < n; ++idx) {
+                y[idx] += grid.sigma[idx] * invDt * x[idx];
+            }
+        }
+    };
+
+    auto buildDiagonal = [&](std::vector<double>& diag) {
+        computeJacobiDiagonal(grid, diag);
+        if (grid.sigma.size() != n) {
+            return;
+        }
+        if (grid.boundaryCondition == Grid2D::BoundaryKind::Dirichlet) {
+            for (std::size_t j = 1; j + 1 < grid.ny; ++j) {
+                for (std::size_t i = 1; i + 1 < grid.nx; ++i) {
+                    const std::size_t p = grid.idx(i, j);
+                    diag[p] += grid.sigma[p] * invDt;
+                }
+            }
+        } else {
+            for (std::size_t idx = 0; idx < n; ++idx) {
+                diag[idx] += grid.sigma[idx] * invDt;
+            }
+        }
+    };
+
+    SolveOptions cgOptions = options;
+    cgOptions.kind = SolverKind::CG;
+
+    return solveCGInternal(grid, cgOptions, progress, rhs, applyOperator, buildDiagonal);
 }
 
 void computeB(Grid2D& grid) {

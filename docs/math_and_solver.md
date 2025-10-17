@@ -93,9 +93,10 @@ SOR remains useful as a smoother and a robust fallback when diagnostics are requ
 ### 5.2 Preconditioned Conjugate Gradient (PCG)
 
 For production runs the simulator now provides a preconditioned conjugate gradient solver tailored to the symmetric positive
-definite system. The PCG iteration is expressed in matrix-free form using the residual assembly routine shown earlier. A Jacobi
-preconditioner (diagonal inverse of the operator) is applied to each residual update. The update equations follow the standard
-PCG recurrence:
+definite system. The PCG iteration is expressed in matrix-free form using the residual assembly routine shown earlier. Users can
+select a preconditioner at runtime via `--pc {none|jacobi|ssor}` (or the matching scenario schema). The Jacobi option applies the
+diagonal inverse of the operator, while the SSOR mode runs a matrix-free symmetric Gauss–Seidel sweep that respects the
+structured 5-point stencil. The update equations follow the standard PCG recurrence:
 \[
 \begin{aligned}
 r_k &= b - A x_k, & z_k &= M^{-1} r_k, & p_k &= z_k + \beta_{k-1} p_{k-1}, \\
@@ -105,6 +106,23 @@ r_k &= b - A x_k, & z_k &= M^{-1} r_k, & p_k &= z_k + \beta_{k-1} p_{k-1}, \\
 with \(\beta_{k-1} = (r_k^T z_k) / (r_{k-1}^T z_{k-1})\). The implementation enforces Neumann symmetry by mirroring boundary
 values between iterations and monitors stagnation. If the relative residual fails to improve over a configurable window the
 solver emits guidance suggesting warm starts, prolongation, or falling back to SOR for inspection.
+
+### 5.3 Transient magnetodynamics
+
+Conductive regions introduce the magneto-quasistatic equation
+\[
+\sigma \frac{\partial A_z}{\partial t} + \nabla\cdot\left(\nu \nabla A_z\right) = -J_{\text{imp}},
+\]
+which, after linearising with a Crank–Nicolson step and assuming quasi-static magnetisation, yields the linear system
+\[
+\left(\frac{\sigma}{\Delta t}I + \mathcal{A}\right) A_z^{n+1} = \frac{\sigma}{\Delta t} A_z^n + J_{\text{imp}}^{n+1},
+\]
+where \(\mathcal{A}(\cdot) = -\nabla\cdot(\nu \nabla \cdot)\) is the same operator used in the magnetostatic solve. The
+implementation reuses the CG/PCG back-end by augmenting the matrix-free stencil with the \(\sigma/\Delta t\) diagonal term and
+supplying the adjusted right-hand side. Scenario JSON enables transient marching by adding a top-level `"transient"` block with
+`dt` and `n_steps`, and timeline frames advance sequentially so coupled circuit and mechanical subsystems remain synchronised
+with the EM state. The bundled diffusion regression (`tests/diffusion_test.cpp`) exercises this pathway and compares the recovered
+field against the analytic error-function solution for a step excitation into a half-space conductor.
 
 ## 6. Convergence criteria
 

@@ -20,6 +20,8 @@ namespace motorsim {
  */
 enum class SolverKind { SOR, CG, Harmonic };
 
+enum class PreconditionerKind { None, Jacobi, SSOR };
+
 struct InitialGuess {
     const std::vector<double>* Az0{nullptr};
     const std::vector<double>* AzImag0{nullptr};
@@ -45,6 +47,7 @@ struct SolveOptions {
     std::size_t maxIters{20000};
     double tol{1e-6};
     double omega{1.7};
+    PreconditionerKind preconditioner{PreconditionerKind::None};
     std::size_t snapshotEveryIters{0};
     double progressEverySec{2.0};
     bool warmStart{false};
@@ -96,6 +99,12 @@ SolveResult solveAz_CG(Grid2D& grid,
                        const SolveOptions& options,
                        const InitialGuess* initialGuess = nullptr,
                        ProgressSink* progress = nullptr);
+
+SolveResult solveTransientStep(Grid2D& grid,
+                               const SolveOptions& options,
+                               double dt,
+                               const std::vector<double>& previousAz,
+                               ProgressSink* progress = nullptr);
 
 /**
  * @brief Compute magnetic flux density components from the solved vector potential.

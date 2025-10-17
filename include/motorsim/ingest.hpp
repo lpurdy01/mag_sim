@@ -299,6 +299,12 @@ struct ScenarioSpec {
     Outputs outputs;
     std::vector<TimelineFrame> timeline;
 
+    struct TransientSettings {
+        bool enabled{false};
+        double dt{0.0};
+        std::size_t nSteps{0};
+    } transient;
+
     struct SolverSettings {
         bool solverSpecified{false};
         std::string solverId{"sor"};
@@ -318,6 +324,8 @@ struct ScenarioSpec {
         double harmonicFrequencyHz{0.0};
         bool harmonicOmegaSpecified{false};
         double harmonicOmega{0.0};
+        bool preconditionerSpecified{false};
+        std::string preconditionerId{"none"};
     } solverSettings;
 };
 

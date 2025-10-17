@@ -73,6 +73,23 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   regression `tests/skin_depth_test.cpp` validates skin-depth decay against the
   analytic \(e^{-x/\delta}\) profile for a half-space conductor, enforcing a
   ≤15% slope error on the bundled scenario.
+- **Stage 4 (Transient magnetodynamics foundations)**: Introduced a
+  Crank–Nicolson-style transient wrapper that augments the existing matrix-free
+  operator with \(\sigma/\Delta t\) mass terms and reuses the CG machinery (and
+  preconditioners) to march conductive regions forward in time. Timeline frames
+  now opt into transient solves via the `"transient"` block, and the main loop
+  detects when scripted rotor angles are absent so the coupled circuit/mechanical
+  subsystems advance in lock-step with the EM step. The regression
+  `tests/diffusion_test.cpp` drives the new
+  `inputs/tests/diffusion_test.json` scenario to check magnetic diffusion into a
+  conducting slab against the analytic erfc profile, enforcing a ≤20% envelope
+  error while archiving the recovered surface field amplitude.
+- **Stage 5 (Solver UX/perf prep)**: Added a `--pc {none|jacobi|ssor}` CLI flag
+  and matching scenario schema to control CG preconditioners. Jacobi and a
+  matrix-free SSOR sweep are exposed as first-class options, documented in the
+  solver guide alongside usage tips. The default remains unpreconditioned, but
+  CI, the local workflow helper, and the docs now spell out when Jacobi or SSOR
+  provide faster convergence on conductive or highly anisotropic cases.
 
 ## Completed Milestones
 - **VTK export and verification**: Implemented via `motorsim::write_vti_field_map` with regression coverage in `tests/output_quantity_test.cpp` and exercised in CI through the rotor ripple timeline artefacts. Exports now bundle combined `B`/`H` vector arrays plus geometry outline polydata companions to streamline ParaView workflows. The `python/verify_vtk.py` utility (documented in `docs/vtk_output.md`) runs during CI to sanity-check the generated `.vti` files.
@@ -88,4 +105,10 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
 - Rotor timeline bundles now rotate a multi-segment rotor and high-µ stator, emit outline polydata that ParaView can load without crashing, and log symmetry metrics (`opposition60_120`, `repeat0_180`) plus relative probe/back-EMF errors in the regression summary to track solver accuracy over time.
 
 ## Remaining work
-- The roadmap milestones listed above are complete. Future efforts can focus on extending scenario libraries, refining solver performance, or integrating additional analytical benchmarks (e.g., full stator/rotor sweeps or 3D extrusions) as new research questions arise.
+- The transient magnetodynamics wrapper currently advances quasi-static
+  diffusion with fixed geometry; extending Stage 4.2 to a full induction-motor
+  toy example (conductive rotor bars plus the circuit/mechanical coupling) and
+  exploring semi-implicit stepping for larger \(\Delta t\) remain future
+  enhancements. Additional UX polish (e.g., non-uniform grid bands and parallel
+  CG kernels) can build on the new preconditioner hooks once the transient
+  pipeline settles.

@@ -49,6 +49,7 @@ declare -a regression_bins=(
   back_emf_probe_test
   rotor_ripple_test
   skin_depth_test
+  diffusion_test
   mechanical_spinup_test
   pm_motor_spinup_test
 )

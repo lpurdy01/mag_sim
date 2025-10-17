@@ -6,10 +6,13 @@ import argparse
 import json
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 
-DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
+Number = Union[int, float]
+
+
+DEFAULT_PROFILES: Dict[str, Dict[str, Number]] = {
     "ci": {
         "nx": 65,
         "ny": 65,
@@ -21,9 +24,12 @@ DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
         "spinup_cycles": 1,
         "spinup_load_angle_deg": 30.0,
         "spinup_initial_angle_deg": -30.0,
-        "spinup_load_torque": 0.6,
-        "spinup_damping": 0.00015,
+        "spinup_load_torque": 0.12,
+        "spinup_damping": 0.00003,
         "spinup_frames_per_cycle": 10,
+        "outer_segments": 48,
+        "bore_segments": 36,
+        "rotor_segments": 24,
     },
     "hires": {
         "nx": 401,
@@ -39,6 +45,9 @@ DEFAULT_PROFILES: Dict[str, Dict[str, float | int]] = {
         "spinup_load_torque": 1.2,
         "spinup_damping": 0.0002,
         "spinup_frames_per_cycle": 100,
+        "outer_segments": 384,
+        "bore_segments": 288,
+        "rotor_segments": 256,
     },
 }
 
@@ -75,6 +84,24 @@ def compute_phase_currents(current_amp: float, omega: float, time: float) -> Tup
     ib = current_amp * math.sin(theta - 2.0 * math.pi / 3.0)
     ic = current_amp * math.sin(theta + 2.0 * math.pi / 3.0)
     return ia, ib, ic
+
+
+def quantize_numbers(value: object, ndigits: int = 6) -> object:
+    """Round floats recursively so CI fixtures stay compact."""
+
+    if isinstance(value, float):
+        quantized = round(value, ndigits)
+        # Avoid signed zero noise in the JSON dumps.
+        if quantized == 0.0:
+            quantized = 0.0
+        return quantized
+    if isinstance(value, list):
+        return [quantize_numbers(item, ndigits) for item in value]
+    if isinstance(value, tuple):
+        return [quantize_numbers(item, ndigits) for item in value]
+    if isinstance(value, dict):
+        return {key: quantize_numbers(val, ndigits) for key, val in value.items()}
+    return value
 
 
 def generate_scenario(
@@ -127,9 +154,9 @@ def generate_scenario(
     turns_per_slot = phase_turns / 2.0
     slot_fill_fraction = 0.55
     line_voltage_rms = 20.0  # peak phase voltage driving the RL network
-    rotor_inertia = 0.0025
-    rotor_damping = 0.0001
-    load_torque = 0.5
+    rotor_inertia = 0.0012
+    rotor_damping = 0.00005
+    load_torque = 0.3
 
     if mode == "spinup":
         rotor_damping = float(profile_cfg.get("spinup_damping", rotor_damping))
@@ -139,8 +166,12 @@ def generate_scenario(
     dt = 1.0 / electrical_hz / frames_per_cycle
     omega = 2.0 * math.pi * electrical_hz
 
-    outer_polygon = build_circle(r_out, 256)
-    bore_polygon = build_circle(r_in, 192)
+    outer_segments = int(profile_cfg.get("outer_segments", 256))
+    bore_segments = int(profile_cfg.get("bore_segments", 192))
+    rotor_segments = int(profile_cfg.get("rotor_segments", 160))
+
+    outer_polygon = build_circle(r_out, outer_segments)
+    bore_polygon = build_circle(r_in, bore_segments)
 
     slot_outer_radius = min(r_out - 0.002, r_in + slot_depth)
     slot_inner_radius = r_in
@@ -187,7 +218,7 @@ def generate_scenario(
     next_polygon_index += 1
 
     rotor_radius = r_in * 0.55
-    rotor_polygon = build_circle(rotor_radius, 160)
+    rotor_polygon = build_circle(rotor_radius, rotor_segments)
     rotor_polygon_index = next_polygon_index
     regions.append({"type": "polygon", "material": "rotor_steel", "vertices": rotor_polygon})
     next_polygon_index += 1
@@ -373,7 +404,8 @@ def generate_scenario(
     scenario["outputs"] = outputs
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(scenario, indent=2) + "\n", encoding="utf-8")
+    quantized = quantize_numbers(scenario)
+    output_path.write_text(json.dumps(quantized, indent=2) + "\n", encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:

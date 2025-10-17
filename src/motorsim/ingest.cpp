@@ -1748,6 +1748,10 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 spec.solverSettings.harmonicOmega =
                     requirePositive("solver.omega_rad_per_s", solverNode.at("omega_rad_per_s").get<double>());
             }
+            if (solverNode.contains("preconditioner")) {
+                spec.solverSettings.preconditionerSpecified = true;
+                spec.solverSettings.preconditionerId = solverNode.at("preconditioner").get<std::string>();
+            }
         } else {
             throw std::runtime_error("solver must be either a string or an object");
         }
@@ -1787,6 +1791,20 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     if (json.contains("quiet")) {
         spec.solverSettings.quietSpecified = true;
         spec.solverSettings.quiet = json.at("quiet").get<bool>();
+    }
+
+    if (json.contains("transient")) {
+        const auto& transientNode = json.at("transient");
+        if (!transientNode.is_object()) {
+            throw std::runtime_error("transient must be an object");
+        }
+        spec.transient.enabled = transientNode.value("enabled", true);
+        if (transientNode.contains("dt")) {
+            spec.transient.dt = requirePositive("transient.dt", transientNode.at("dt").get<double>());
+        }
+        if (transientNode.contains("n_steps")) {
+            spec.transient.nSteps = transientNode.at("n_steps").get<std::size_t>();
+        }
     }
 
     return spec;

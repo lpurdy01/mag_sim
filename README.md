@@ -15,9 +15,21 @@ ctest --test-dir build --output-on-failure
 
 `build/motor_sim` loads JSON scenarios that describe regions, currents, and
 optional permanent magnets. The automated regression suite lives in the
-`tests/` directory and includes the analytic \(\mu_0 I / (2\pi r)\) wire case,
-the planar permeability interface comparison, a magnet strip scenario, and a
-two-wire cancellation sanity check.
+`tests/` directory and spans the analytic \(\mu_0 I / (2\pi r)\) wire case, the
+planar permeability interface comparison, a magnet strip scenario, torque and
+back-EMF probes, rotor ripple timelines, a frequency-domain skin-depth check,
+and a transient magnetic-diffusion fixture. Each scenario ships with a compact
+JSON under `inputs/tests/` so CI-friendly runs stay quick while maintaining
+coverage across the solver features.
+
+Runtime flags worth highlighting:
+
+* `--solver {sor|cg|harmonic}` chooses between Gauss–Seidel, PCG, and the
+  frequency-domain formulation.
+* `--pc {none|jacobi|ssor}` selects the CG preconditioner. Jacobi is a good
+  default on lightly conductive grids; SSOR speeds up highly anisotropic cases.
+* `--progress-history <csv>` together with `--progress-every 0` captures
+  per-iteration residuals for later plotting or CI artefacts.
 
 ## VS Code & Codespaces quickstart
 
@@ -101,7 +113,9 @@ that `motor_sim` can solve frame-by-frame. Both generators expose compact
   0.55 copper fill fraction so the stator’s ampere-turn budget matches the
   magnet linkage. The generator also carves the magnet out of the rotor iron and
   assigns it a near-air permeability (μᵣ≈1.05) so the trimmed 1×10⁵ A/m
-  magnetisation produces bore flux on the same order as the stator coils.
+  magnetisation produces bore flux on the same order as the stator coils. The CI
+  profile keeps polygon tessellation lean and rounds coordinates to six decimals
+  so the stored scenario stays readable while still honouring slot symmetry.
   Solving the generated JSON with `--vtk-series` writes
   `pm_motor_spinup_frame_###.vti`, torque CSVs, and a `pm_motor_spinup_mechanical.csv`
   history that `python/check_pm_spinup.py` validates. See

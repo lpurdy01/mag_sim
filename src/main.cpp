@@ -36,7 +36,8 @@ void printUsage() {
     std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
                  " [--list-outputs] [--outputs IDs] [--max-iters N] [--tol VALUE]"
                  " [--omega VALUE] [--parallel-frames] [--vtk-series PATH]"
-                " [--solver {sor|cg|harmonic}] [--harmonic-frequency HZ] [--harmonic-omega RAD_S]"
+                " [--solver {sor|cg|harmonic}] [--pc {none|jacobi|ssor}]"
+                " [--harmonic-frequency HZ] [--harmonic-omega RAD_S]"
                 " [--warm-start] [--no-warm-start] [--use-prolongation]"
                  " [--no-prolongation] [--coarse-nx N] [--coarse-ny N]"
                  " [--progress-every SEC] [--snapshot-every N]"
@@ -618,6 +619,27 @@ bool tryParseSolverKind(const std::string& text, motorsim::SolverKind& out) {
     return false;
 }
 
+bool tryParsePreconditioner(const std::string& text, motorsim::PreconditionerKind& out) {
+    std::string lower;
+    lower.reserve(text.size());
+    for (unsigned char ch : text) {
+        lower.push_back(static_cast<char>(std::tolower(ch)));
+    }
+    if (lower == "none") {
+        out = motorsim::PreconditionerKind::None;
+        return true;
+    }
+    if (lower == "jacobi") {
+        out = motorsim::PreconditionerKind::Jacobi;
+        return true;
+    }
+    if (lower == "ssor") {
+        out = motorsim::PreconditionerKind::SSOR;
+        return true;
+    }
+    return false;
+}
+
 class FrameProgressSinkImpl : public motorsim::ProgressSink {
 public:
     using SnapshotProvider = std::function<std::optional<std::string>(const motorsim::ProgressSample&)>;
@@ -654,7 +676,9 @@ FrameRunResult solveFrame(motorsim::ScenarioFrame& frame, const motorsim::SolveO
                           const OutputFilter& filter, bool timelineActive, std::size_t frameDigits,
                           bool writeMidline, FrameProgressState* progressState,
                           const std::vector<double>* warmStartGuess,
-                          motorsim::CircuitSimulator* circuitSim) {
+                          motorsim::CircuitSimulator* circuitSim,
+                          const std::vector<double>* transientPrevAz,
+                          double transientDt) {
     FrameRunResult result{};
     std::ostringstream out;
     std::ostringstream err;
@@ -676,6 +700,8 @@ FrameRunResult solveFrame(motorsim::ScenarioFrame& frame, const motorsim::SolveO
 
     motorsim::SolveOptions solveOptions = options;
 
+    const bool transientActive = frame.spec.transient.enabled && transientPrevAz != nullptr && (transientDt > 0.0);
+
     FrameProgressSinkImpl::SnapshotProvider snapshotProvider;
     if (progressState && options.snapshotEveryIters > 0) {
         snapshotProvider = [timelineActive, frameDigits, frame](const motorsim::ProgressSample& sample) {
@@ -694,12 +720,31 @@ FrameRunResult solveFrame(motorsim::ScenarioFrame& frame, const motorsim::SolveO
 
     motorsim::InitialGuess guess{};
     const motorsim::InitialGuess* guessPtr = nullptr;
-    if (warmStartGuess && warmStartGuess->size() == grid.Az.size()) {
+    if (!transientActive && warmStartGuess && warmStartGuess->size() == grid.Az.size()) {
         guess.Az0 = warmStartGuess;
         guessPtr = &guess;
     }
 
-    const motorsim::SolveResult report = motorsim::solveAz(grid, solveOptions, guessPtr, progressState ? &sink : nullptr);
+    std::vector<double> emptyPrev;
+    const std::vector<double>& transientPrev = (transientActive && transientPrevAz && transientPrevAz->size() == grid.Az.size())
+                                                   ? *transientPrevAz
+                                                   : emptyPrev;
+
+    if (transientActive && transientPrev.empty() && transientPrevAz && transientPrevAz->size() != grid.Az.size()) {
+        emptyPrev.assign(grid.Az.size(), 0.0);
+    }
+
+    if (transientActive && transientPrevAz && transientPrevAz->size() == grid.Az.size()) {
+        grid.Az = *transientPrevAz;
+    }
+
+    motorsim::SolveResult report{};
+    if (transientActive) {
+        report = motorsim::solveTransientStep(grid, solveOptions, transientDt, transientPrev,
+                                              progressState ? &sink : nullptr);
+    } else {
+        report = motorsim::solveAz(grid, solveOptions, guessPtr, progressState ? &sink : nullptr);
+    }
     if (!report.converged) {
         err << "Frame " << frame.index
             << ": solver did not converge. relResidual=" << report.relResidual << '\n';
@@ -1266,12 +1311,12 @@ FrameRunResult solveFrame(motorsim::ScenarioFrame& frame, const motorsim::SolveO
         }
     }
 
-    result.solverSuccess = true;
+    result.solverSuccess = report.converged;
     result.outputError = outputError;
     result.stdoutLog = out.str();
     result.stderrLog = err.str();
     result.AzSolution = grid.Az;
-    progressGuard.markFinal(report.iters, report.relResidual, true);
+    progressGuard.markFinal(report.iters, report.relResidual, report.converged);
     return result;
 }
 
@@ -1293,6 +1338,7 @@ int main(int argc, char** argv) {
     std::optional<double> harmonicOmegaOverride;
     std::optional<std::string> vtkSeriesPath;
     std::optional<std::string> solverOverride;
+    std::optional<std::string> preconditionerOverride;
     std::optional<bool> warmStartOverride;
     std::optional<bool> prolongationOverride;
     std::optional<std::size_t> coarseNxOverride;
@@ -1435,6 +1481,18 @@ int main(int argc, char** argv) {
                 return 1;
             }
             solverOverride = value;
+        } else if (arg == "--pc") {
+            if (i + 1 >= argc) {
+                std::cerr << "--pc requires an argument (none, jacobi, or ssor)\n";
+                printUsage();
+                return 1;
+            }
+            const std::string value = argv[++i];
+            if (value != "none" && value != "jacobi" && value != "ssor") {
+                std::cerr << "--pc must be 'none', 'jacobi', or 'ssor'\n";
+                return 1;
+            }
+            preconditionerOverride = value;
         } else if (arg == "--warm-start") {
             warmStartOverride = true;
         } else if (arg == "--no-warm-start") {
@@ -1713,6 +1771,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::string preconditionerId = "none";
+    if (spec.solverSettings.preconditionerSpecified) {
+        preconditionerId = spec.solverSettings.preconditionerId;
+    }
+    if (preconditionerOverride) {
+        preconditionerId = *preconditionerOverride;
+    }
+    if (!tryParsePreconditioner(preconditionerId, options.preconditioner)) {
+        std::cerr << "Unknown preconditioner identifier: " << preconditionerId << "\n";
+        return 1;
+    }
+
     if (options.kind == motorsim::SolverKind::Harmonic) {
         double omega = 0.0;
         if (harmonicOmegaOverride) {
@@ -1869,7 +1939,7 @@ int main(int argc, char** argv) {
                     }
                     results[idx] = solveFrame(frames[idx], options, filter, timelineActive,
                                               frameDigits, writeMidline, progressStates[idx].get(),
-                                              nullptr, nullptr);
+                                              nullptr, nullptr, nullptr, 0.0);
                 }
             });
         }
@@ -1877,17 +1947,31 @@ int main(int argc, char** argv) {
             worker.join();
         }
     } else {
-        std::vector<double> previousAz;
-        bool havePrevious = false;
+        std::vector<double> warmAz;
+        bool haveWarmAz = false;
+        std::vector<double> transientAz;
+        bool haveTransientAz = false;
         for (std::size_t idx = 0; idx < frames.size(); ++idx) {
             const std::vector<double>* guessPtr =
-                (options.warmStart && timelineActive && havePrevious) ? &previousAz : nullptr;
+                (options.warmStart && timelineActive && haveWarmAz) ? &warmAz : nullptr;
             motorsim::CircuitSimulator* circuitPtr = circuitsActive ? &circuitSim : nullptr;
             if (mechanicalActive) {
                 mechanicalSim.apply_state(frames[idx]);
             }
+            const std::vector<double>* transientPrev = nullptr;
+            double frameTransientDt = 0.0;
+            if (frames[idx].spec.transient.enabled) {
+                const std::size_t cellCount = frames[idx].spec.nx * frames[idx].spec.ny;
+                if (!haveTransientAz || transientAz.size() != cellCount) {
+                    transientAz.assign(cellCount, 0.0);
+                    haveTransientAz = true;
+                }
+                transientPrev = &transientAz;
+                frameTransientDt = frames[idx].spec.transient.dt;
+            }
             results[idx] = solveFrame(frames[idx], options, filter, timelineActive, frameDigits,
-                                      writeMidline, progressStates[idx].get(), guessPtr, circuitPtr);
+                                      writeMidline, progressStates[idx].get(), guessPtr, circuitPtr,
+                                      transientPrev, frameTransientDt);
             if (mechanicalActive && results[idx].solverSuccess) {
                 ScenarioFrame* nextFramePtr = (idx + 1 < frames.size()) ? &frames[idx + 1] : nullptr;
                 mechanicalSim.handle_solved_frame(frames[idx], results[idx].torqueSamples, nextFramePtr);
@@ -1895,9 +1979,18 @@ int main(int argc, char** argv) {
             if (circuitsActive && results[idx].solverSuccess && idx + 1 < frames.size()) {
                 circuitSim.prepare_next_frame(idx, frames[idx], &frames[idx + 1]);
             }
-            if (options.warmStart && timelineActive && results[idx].solverSuccess) {
-                previousAz = std::move(results[idx].AzSolution);
-                havePrevious = true;
+            if (results[idx].solverSuccess) {
+                if (frames[idx].spec.transient.enabled) {
+                    transientAz = results[idx].AzSolution;
+                    haveTransientAz = true;
+                }
+                if (options.warmStart && timelineActive) {
+                    warmAz = results[idx].AzSolution;
+                    haveWarmAz = true;
+                } else if (frames[idx].spec.transient.enabled && !options.warmStart) {
+                    warmAz = results[idx].AzSolution;
+                    haveWarmAz = true;
+                }
             }
         }
     }

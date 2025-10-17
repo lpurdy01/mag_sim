@@ -109,6 +109,9 @@ benchmarking CG:
 * Enabling coarse-to-fine prolongation (`--use-prolongation`) provides a
   high-quality initial guess for fine grids, keeping CG iteration counts
   comparable to SOR while meeting tighter tolerances.
+* Switching the preconditioner via `--pc {none|jacobi|ssor}` can cut iteration
+  counts dramatically on conductive grids. Jacobi tends to pay off once
+  \(\sigma > 0\); SSOR is helpful when permeability contrasts exceed 100×.
 
 ## 3. Benchmark workflow
 

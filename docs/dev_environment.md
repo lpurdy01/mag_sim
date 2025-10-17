@@ -41,6 +41,8 @@ Key runtime flags for `motor_sim`:
 
 * `--solver {sor|cg}` toggles between the legacy Gauss–Seidel solver and the new preconditioned conjugate gradient (default is
   SOR for continuity).
+* `--pc {none|jacobi|ssor}` selects the preconditioner used by CG. Jacobi is a solid first step on lightly conductive grids,
+  while SSOR accelerates highly anisotropic problems.
 * `--warm-start` reuses the previous frame's field as the initial guess when traversing a timeline, dramatically cutting CG
   iterations.
 * `--use-prolongation` seeds the fine-grid solve from an automatically selected coarse solve; adjust with `--coarse-nx/--coarse-ny`.
