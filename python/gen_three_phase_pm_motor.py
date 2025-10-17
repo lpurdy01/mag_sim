@@ -27,9 +27,12 @@ DEFAULT_PROFILES: Dict[str, Dict[str, Number]] = {
         "spinup_load_torque": 0.12,
         "spinup_damping": 0.00003,
         "spinup_frames_per_cycle": 10,
-        "outer_segments": 48,
-        "bore_segments": 36,
-        "rotor_segments": 24,
+        "outer_segments": 24,
+        "bore_segments": 18,
+        "rotor_segments": 12,
+        "torque_segments": 30,
+        "bore_probe_segments": 24,
+        "quantize_digits": 4,
     },
     "hires": {
         "nx": 401,
@@ -48,6 +51,9 @@ DEFAULT_PROFILES: Dict[str, Dict[str, Number]] = {
         "outer_segments": 384,
         "bore_segments": 288,
         "rotor_segments": 256,
+        "torque_segments": 384,
+        "bore_probe_segments": 288,
+        "quantize_digits": 6,
     },
 }
 
@@ -144,7 +150,7 @@ def generate_scenario(
     r_in = 0.040
     r_out = 0.055
     bore_fraction = 0.6
-    current_amp = 30.0
+    current_amp = 35.0
     electrical_hz = 60.0
     magnet_strength = 1.0e5
     magnet_mu_r = 1.05
@@ -154,9 +160,9 @@ def generate_scenario(
     turns_per_slot = phase_turns / 2.0
     slot_fill_fraction = 0.55
     line_voltage_rms = 20.0  # peak phase voltage driving the RL network
-    rotor_inertia = 0.0012
+    rotor_inertia = 0.0008
     rotor_damping = 0.00005
-    load_torque = 0.3
+    load_torque = 0.12
 
     if mode == "spinup":
         rotor_damping = float(profile_cfg.get("spinup_damping", rotor_damping))
@@ -169,6 +175,9 @@ def generate_scenario(
     outer_segments = int(profile_cfg.get("outer_segments", 256))
     bore_segments = int(profile_cfg.get("bore_segments", 192))
     rotor_segments = int(profile_cfg.get("rotor_segments", 160))
+    torque_segments = int(profile_cfg.get("torque_segments", max(64, rotor_segments)))
+    bore_probe_segments = int(profile_cfg.get("bore_probe_segments", max(64, bore_segments)))
+    quantize_digits = int(profile_cfg.get("quantize_digits", 6))
 
     outer_polygon = build_circle(r_out, outer_segments)
     bore_polygon = build_circle(r_in, bore_segments)
@@ -251,9 +260,9 @@ def generate_scenario(
         }
     ]
 
-    bore_probe_polygon = build_circle(r_in * bore_fraction, 96)
+    bore_probe_polygon = build_circle(r_in * bore_fraction, bore_probe_segments)
     torque_loop_radius = rotor_radius + 0.004
-    torque_probe_polygon = build_circle(torque_loop_radius, 128)
+    torque_probe_polygon = build_circle(torque_loop_radius, torque_segments)
 
     prefix = "pm_motor_spinup" if mode == "spinup" else "pm_motor"
     torque_id = f"{prefix}_torque"
@@ -404,7 +413,7 @@ def generate_scenario(
     scenario["outputs"] = outputs
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    quantized = quantize_numbers(scenario)
+    quantized = quantize_numbers(scenario, ndigits=quantize_digits)
     output_path.write_text(json.dumps(quantized, indent=2) + "\n", encoding="utf-8")
 
 

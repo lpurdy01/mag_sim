@@ -52,6 +52,7 @@ declare -a regression_bins=(
   diffusion_test
   mechanical_spinup_test
   pm_motor_spinup_test
+  induction_spinup_test
 )
 
 for bin in "${regression_bins[@]}"; do
@@ -102,6 +103,16 @@ cp outputs/pm_motor_spinup_frame_000.vti ci_artifacts/
 cp outputs/pm_motor_spinup_ci.pvd ci_artifacts/
 cp outputs/pm_motor_spinup_mechanical.csv ci_artifacts/
 cp outputs/pm_motor_spinup_outlines.vtp ci_artifacts/
+
+echo "[ci-check] Induction motor spin-up demo"
+python3 python/gen_three_phase_induction_motor.py --profile ci --mode spinup --out inputs/three_phase_induction_motor_spinup_ci.json
+"$BUILD_DIR/motor_sim" --scenario inputs/three_phase_induction_motor_spinup_ci.json --solve --vtk-series outputs/induction_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000 --solver cg
+python3 python/check_pm_spinup.py --mechanical outputs/induction_motor_mechanical.csv --scenario inputs/three_phase_induction_motor_spinup_ci.json --rotor induction_rotor --min-angle-rise 6 --min-speed-rise 6 --max-backstep 2
+python3 python/animate_three_phase.py --pvd outputs/induction_motor_spinup_ci.pvd --scenario inputs/three_phase_induction_motor_spinup_ci.json --save ci_artifacts/induction_motor_spinup.gif --frame-png ci_artifacts/induction_motor_spinup.png
+cp outputs/induction_motor_frame_000.vti ci_artifacts/
+cp outputs/induction_motor_spinup_ci.pvd ci_artifacts/
+cp outputs/induction_motor_mechanical.csv ci_artifacts/
+cp outputs/induction_motor_outlines.vtp ci_artifacts/
 
 echo "[ci-check] Rendering visualisations"
 export MPLBACKEND=Agg

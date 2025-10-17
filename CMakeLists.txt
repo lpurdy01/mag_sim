@@ -202,6 +202,20 @@ target_include_directories(pm_motor_spinup_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME pm_motor_spinup COMMAND pm_motor_spinup_test)
 
+add_executable(induction_spinup_test
+    tests/induction_spinup_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(induction_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME induction_spinup COMMAND induction_spinup_test)
+
 add_executable(diffusion_test
     tests/diffusion_test.cpp
     src/motorsim/solver.cpp

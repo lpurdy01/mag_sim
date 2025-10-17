@@ -13,19 +13,23 @@
   "materials": [
     {
       "name": "air",
-      "mu_r": 1.0
+      "mu_r": 1.0,
+      "sigma": 0.0
     },
     {
       "name": "stator_steel",
-      "mu_r": 400.0
+      "mu_r": 600.0,
+      "sigma": 0.0
     },
     {
-      "name": "rotor_steel",
-      "mu_r": 800.0
+      "name": "rotor_core",
+      "mu_r": 400.0,
+      "sigma": 500000.0
     },
     {
-      "name": "pm_magnet",
-      "mu_r": 1.05
+      "name": "rotor_bar",
+      "mu_r": 1.0,
+      "sigma": 18000000.0
     }
   ],
   "regions": [
@@ -347,120 +351,215 @@
     },
     {
       "type": "polygon",
-      "material": "rotor_steel",
+      "material": "rotor_core",
       "vertices": [
         [
-          0.022,
+          0.0232,
           0.0
         ],
         [
-          0.0191,
-          0.011
+          0.0209,
+          0.0101
         ],
         [
-          0.011,
-          0.0191
+          0.0145,
+          0.0181
         ],
         [
-          0.0,
-          0.022
+          0.0052,
+          0.0226
         ],
         [
-          -0.011,
-          0.0191
+          -0.0052,
+          0.0226
         ],
         [
-          -0.0191,
-          0.011
+          -0.0145,
+          0.0181
         ],
         [
-          -0.022,
+          -0.0209,
+          0.0101
+        ],
+        [
+          -0.0232,
           0.0
         ],
         [
-          -0.0191,
-          -0.011
+          -0.0209,
+          -0.0101
         ],
         [
-          -0.011,
-          -0.0191
+          -0.0145,
+          -0.0181
         ],
         [
-          0.0,
-          -0.022
+          -0.0052,
+          -0.0226
         ],
         [
-          0.011,
-          -0.0191
+          0.0052,
+          -0.0226
         ],
         [
-          0.0191,
-          -0.011
+          0.0145,
+          -0.0181
+        ],
+        [
+          0.0209,
+          -0.0101
         ]
       ]
     },
     {
       "type": "polygon",
-      "material": "pm_magnet",
+      "material": "rotor_bar",
       "vertices": [
         [
-          -0.0187,
-          -0.0121
+          0.0081,
+          -0.0008
         ],
         [
-          0.0187,
-          -0.0121
+          0.0226,
+          -0.0024
         ],
         [
-          0.0187,
-          0.0121
+          0.0226,
+          0.0024
         ],
         [
-          -0.0187,
-          0.0121
+          0.0081,
+          0.0008
         ]
       ]
-    }
-  ],
-  "magnet_regions": [
+    },
     {
       "type": "polygon",
+      "material": "rotor_bar",
       "vertices": [
         [
-          -0.0187,
-          -0.0121
+          0.0048,
+          0.0066
         ],
         [
-          0.0187,
-          -0.0121
+          0.0134,
+          0.0184
         ],
         [
-          0.0187,
-          0.0121
+          0.0092,
+          0.0208
         ],
         [
-          -0.0187,
-          0.0121
+          0.0033,
+          0.0074
         ]
-      ],
-      "magnetization": [
-        100000.0,
-        0.0
+      ]
+    },
+    {
+      "type": "polygon",
+      "material": "rotor_bar",
+      "vertices": [
+        [
+          -0.0033,
+          0.0074
+        ],
+        [
+          -0.0092,
+          0.0208
+        ],
+        [
+          -0.0134,
+          0.0184
+        ],
+        [
+          -0.0048,
+          0.0066
+        ]
+      ]
+    },
+    {
+      "type": "polygon",
+      "material": "rotor_bar",
+      "vertices": [
+        [
+          -0.0081,
+          0.0008
+        ],
+        [
+          -0.0226,
+          0.0024
+        ],
+        [
+          -0.0226,
+          -0.0024
+        ],
+        [
+          -0.0081,
+          -0.0008
+        ]
+      ]
+    },
+    {
+      "type": "polygon",
+      "material": "rotor_bar",
+      "vertices": [
+        [
+          -0.0048,
+          -0.0066
+        ],
+        [
+          -0.0134,
+          -0.0184
+        ],
+        [
+          -0.0092,
+          -0.0208
+        ],
+        [
+          -0.0033,
+          -0.0074
+        ]
+      ]
+    },
+    {
+      "type": "polygon",
+      "material": "rotor_bar",
+      "vertices": [
+        [
+          0.0033,
+          -0.0074
+        ],
+        [
+          0.0092,
+          -0.0208
+        ],
+        [
+          0.0134,
+          -0.0184
+        ],
+        [
+          0.0048,
+          -0.0066
+        ]
       ]
     }
   ],
+  "magnet_regions": [],
   "rotors": [
     {
-      "name": "pm_rotor",
+      "name": "induction_rotor",
       "pivot": [
         0.0,
         0.0
       ],
       "polygons": [
-        8
-      ],
-      "magnets": [
-        0
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
       ]
     }
   ],
@@ -490,7 +589,7 @@
         ]
       ],
       "I": 0.0,
-      "turns": 60.0,
+      "turns": 50.0,
       "fill_fraction": 0.55
     },
     {
@@ -518,7 +617,7 @@
         ]
       ],
       "I": 0.0,
-      "turns": 60.0,
+      "turns": 50.0,
       "fill_fraction": 0.55
     },
     {
@@ -546,7 +645,7 @@
         ]
       ],
       "I": 0.0,
-      "turns": 60.0,
+      "turns": 50.0,
       "fill_fraction": 0.55
     },
     {
@@ -574,7 +673,7 @@
         ]
       ],
       "I": 0.0,
-      "turns": 60.0,
+      "turns": 50.0,
       "fill_fraction": 0.55
     },
     {
@@ -602,7 +701,7 @@
         ]
       ],
       "I": 0.0,
-      "turns": 60.0,
+      "turns": 50.0,
       "fill_fraction": 0.55
     },
     {
@@ -630,417 +729,323 @@
         ]
       ],
       "I": 0.0,
-      "turns": 60.0,
+      "turns": 50.0,
       "fill_fraction": 0.55
-    }
-  ],
-  "circuits": [
-    {
-      "id": "stator_three_phase",
-      "nodes": [
-        "neutral",
-        "phase_a",
-        "phase_b",
-        "phase_c"
-      ],
-      "elements": [
-        {
-          "type": "resistor",
-          "id": "R_a",
-          "nodes": [
-            "phase_a",
-            "neutral"
-          ],
-          "resistance": 0.4
-        },
-        {
-          "type": "inductor",
-          "id": "L_a",
-          "nodes": [
-            "phase_a",
-            "neutral"
-          ],
-          "inductance": 0.012
-        },
-        {
-          "type": "voltage_source",
-          "id": "Va",
-          "nodes": [
-            "phase_a",
-            "neutral"
-          ],
-          "value": 0.0
-        },
-        {
-          "type": "coil_link",
-          "id": "coil_a_pos",
-          "inductor": "L_a",
-          "region": "A_pos",
-          "turns": 60.0
-        },
-        {
-          "type": "coil_link",
-          "id": "coil_a_neg",
-          "inductor": "L_a",
-          "region": "A_neg",
-          "turns": 60.0
-        },
-        {
-          "type": "resistor",
-          "id": "R_b",
-          "nodes": [
-            "phase_b",
-            "neutral"
-          ],
-          "resistance": 0.4
-        },
-        {
-          "type": "inductor",
-          "id": "L_b",
-          "nodes": [
-            "phase_b",
-            "neutral"
-          ],
-          "inductance": 0.012
-        },
-        {
-          "type": "voltage_source",
-          "id": "Vb",
-          "nodes": [
-            "phase_b",
-            "neutral"
-          ],
-          "value": 0.0
-        },
-        {
-          "type": "coil_link",
-          "id": "coil_b_pos",
-          "inductor": "L_b",
-          "region": "B_pos",
-          "turns": 60.0
-        },
-        {
-          "type": "coil_link",
-          "id": "coil_b_neg",
-          "inductor": "L_b",
-          "region": "B_neg",
-          "turns": 60.0
-        },
-        {
-          "type": "resistor",
-          "id": "R_c",
-          "nodes": [
-            "phase_c",
-            "neutral"
-          ],
-          "resistance": 0.4
-        },
-        {
-          "type": "inductor",
-          "id": "L_c",
-          "nodes": [
-            "phase_c",
-            "neutral"
-          ],
-          "inductance": 0.012
-        },
-        {
-          "type": "voltage_source",
-          "id": "Vc",
-          "nodes": [
-            "phase_c",
-            "neutral"
-          ],
-          "value": 0.0
-        },
-        {
-          "type": "coil_link",
-          "id": "coil_c_pos",
-          "inductor": "L_c",
-          "region": "C_pos",
-          "turns": 60.0
-        },
-        {
-          "type": "coil_link",
-          "id": "coil_c_neg",
-          "inductor": "L_c",
-          "region": "C_neg",
-          "turns": 60.0
-        }
-      ]
     }
   ],
   "mechanical": {
     "rotors": [
       {
-        "name": "pm_rotor",
-        "inertia": 0.0008,
-        "damping": 0.0,
-        "load_torque": 0.12,
-        "initial_angle_deg": -30.0,
+        "name": "induction_rotor",
+        "inertia": 0.0011,
+        "damping": 0.0001,
+        "load_torque": 0.08,
+        "initial_angle_deg": -20.0,
         "initial_speed_rpm": 0.0,
-        "torque_probe": "pm_motor_spinup_torque"
+        "torque_probe": "induction_motor_torque"
       }
     ]
+  },
+  "transient": {
+    "dt": 0.0014,
+    "n_steps": 36
   },
   "timeline": [
     {
       "t": 0.0,
       "phase_currents": {
         "A": 0.0,
-        "B": -30.3109,
-        "C": 30.3109
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 0.0
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -17.3205
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 17.3205
-        }
-      ]
+        "B": -36.3731,
+        "C": 36.3731
+      }
     },
     {
-      "t": 0.0017,
+      "t": 0.0014,
       "phase_currents": {
-        "A": 20.5725,
-        "B": -34.8083,
-        "C": 14.2358
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 11.7557
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -19.8904
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 8.1347
-        }
-      ]
+        "A": 21.0,
+        "B": -42.0,
+        "C": 21.0
+      }
     },
     {
-      "t": 0.0033,
+      "t": 0.0028,
       "phase_currents": {
-        "A": 33.287,
-        "B": -26.0101,
-        "C": -7.2769
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 19.0211
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -14.8629
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -4.1582
-        }
-      ]
+        "A": 36.3731,
+        "B": -36.3731,
+        "C": 0.0
+      }
     },
     {
-      "t": 0.005,
+      "t": 0.0042,
       "phase_currents": {
-        "A": 33.287,
-        "B": -7.2769,
-        "C": -26.0101
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 19.0211
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -4.1582
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -14.8629
-        }
-      ]
+        "A": 42.0,
+        "B": -21.0,
+        "C": -21.0
+      }
     },
     {
-      "t": 0.0067,
+      "t": 0.0056,
       "phase_currents": {
-        "A": 20.5725,
-        "B": 14.2358,
-        "C": -34.8083
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 11.7557
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 8.1347
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -19.8904
-        }
-      ]
+        "A": 36.3731,
+        "B": 0.0,
+        "C": -36.3731
+      }
+    },
+    {
+      "t": 0.0069,
+      "phase_currents": {
+        "A": 21.0,
+        "B": 21.0,
+        "C": -42.0
+      }
     },
     {
       "t": 0.0083,
       "phase_currents": {
         "A": 0.0,
-        "B": 30.3109,
-        "C": -30.3109
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": 0.0
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 17.3205
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -17.3205
-        }
-      ]
+        "B": 36.3731,
+        "C": -36.3731
+      }
     },
     {
-      "t": 0.01,
+      "t": 0.0097,
       "phase_currents": {
-        "A": -20.5725,
-        "B": 34.8083,
-        "C": -14.2358
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -11.7557
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 19.8904
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": -8.1347
-        }
-      ]
+        "A": -21.0,
+        "B": 42.0,
+        "C": -21.0
+      }
     },
     {
-      "t": 0.0117,
+      "t": 0.0111,
       "phase_currents": {
-        "A": -33.287,
-        "B": 26.0101,
-        "C": 7.2769
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -19.0211
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 14.8629
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 4.1582
-        }
-      ]
+        "A": -36.3731,
+        "B": 36.3731,
+        "C": 0.0
+      }
     },
     {
-      "t": 0.0133,
+      "t": 0.0125,
       "phase_currents": {
-        "A": -33.287,
-        "B": 7.2769,
-        "C": 26.0101
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -19.0211
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": 4.1582
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 14.8629
-        }
-      ]
+        "A": -42.0,
+        "B": 21.0,
+        "C": 21.0
+      }
     },
     {
-      "t": 0.015,
+      "t": 0.0139,
       "phase_currents": {
-        "A": -20.5725,
-        "B": -14.2358,
-        "C": 34.8083
-      },
-      "voltage_sources": [
-        {
-          "circuit": "stator_three_phase",
-          "source": "Va",
-          "value": -11.7557
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vb",
-          "value": -8.1347
-        },
-        {
-          "circuit": "stator_three_phase",
-          "source": "Vc",
-          "value": 19.8904
-        }
-      ]
+        "A": -36.3731,
+        "B": 0.0,
+        "C": 36.3731
+      }
+    },
+    {
+      "t": 0.0153,
+      "phase_currents": {
+        "A": -21.0,
+        "B": -21.0,
+        "C": 42.0
+      }
+    },
+    {
+      "t": 0.0167,
+      "phase_currents": {
+        "A": 0.0,
+        "B": -36.3731,
+        "C": 36.3731
+      }
+    },
+    {
+      "t": 0.0181,
+      "phase_currents": {
+        "A": 21.0,
+        "B": -42.0,
+        "C": 21.0
+      }
+    },
+    {
+      "t": 0.0194,
+      "phase_currents": {
+        "A": 36.3731,
+        "B": -36.3731,
+        "C": 0.0
+      }
+    },
+    {
+      "t": 0.0208,
+      "phase_currents": {
+        "A": 42.0,
+        "B": -21.0,
+        "C": -21.0
+      }
+    },
+    {
+      "t": 0.0222,
+      "phase_currents": {
+        "A": 36.3731,
+        "B": 0.0,
+        "C": -36.3731
+      }
+    },
+    {
+      "t": 0.0236,
+      "phase_currents": {
+        "A": 21.0,
+        "B": 21.0,
+        "C": -42.0
+      }
+    },
+    {
+      "t": 0.025,
+      "phase_currents": {
+        "A": 0.0,
+        "B": 36.3731,
+        "C": -36.3731
+      }
+    },
+    {
+      "t": 0.0264,
+      "phase_currents": {
+        "A": -21.0,
+        "B": 42.0,
+        "C": -21.0
+      }
+    },
+    {
+      "t": 0.0278,
+      "phase_currents": {
+        "A": -36.3731,
+        "B": 36.3731,
+        "C": 0.0
+      }
+    },
+    {
+      "t": 0.0292,
+      "phase_currents": {
+        "A": -42.0,
+        "B": 21.0,
+        "C": 21.0
+      }
+    },
+    {
+      "t": 0.0306,
+      "phase_currents": {
+        "A": -36.3731,
+        "B": 0.0,
+        "C": 36.3731
+      }
+    },
+    {
+      "t": 0.0319,
+      "phase_currents": {
+        "A": -21.0,
+        "B": -21.0,
+        "C": 42.0
+      }
+    },
+    {
+      "t": 0.0333,
+      "phase_currents": {
+        "A": 0.0,
+        "B": -36.3731,
+        "C": 36.3731
+      }
+    },
+    {
+      "t": 0.0347,
+      "phase_currents": {
+        "A": 21.0,
+        "B": -42.0,
+        "C": 21.0
+      }
+    },
+    {
+      "t": 0.0361,
+      "phase_currents": {
+        "A": 36.3731,
+        "B": -36.3731,
+        "C": 0.0
+      }
+    },
+    {
+      "t": 0.0375,
+      "phase_currents": {
+        "A": 42.0,
+        "B": -21.0,
+        "C": -21.0
+      }
+    },
+    {
+      "t": 0.0389,
+      "phase_currents": {
+        "A": 36.3731,
+        "B": 0.0,
+        "C": -36.3731
+      }
+    },
+    {
+      "t": 0.0403,
+      "phase_currents": {
+        "A": 21.0,
+        "B": 21.0,
+        "C": -42.0
+      }
+    },
+    {
+      "t": 0.0417,
+      "phase_currents": {
+        "A": 0.0,
+        "B": 36.3731,
+        "C": -36.3731
+      }
+    },
+    {
+      "t": 0.0431,
+      "phase_currents": {
+        "A": -21.0,
+        "B": 42.0,
+        "C": -21.0
+      }
+    },
+    {
+      "t": 0.0444,
+      "phase_currents": {
+        "A": -36.3731,
+        "B": 36.3731,
+        "C": 0.0
+      }
+    },
+    {
+      "t": 0.0458,
+      "phase_currents": {
+        "A": -42.0,
+        "B": 21.0,
+        "C": 21.0
+      }
+    },
+    {
+      "t": 0.0472,
+      "phase_currents": {
+        "A": -36.3731,
+        "B": 0.0,
+        "C": 36.3731
+      }
+    },
+    {
+      "t": 0.0486,
+      "phase_currents": {
+        "A": -21.0,
+        "B": -21.0,
+        "C": 42.0
+      }
     }
   ],
   "outputs": [
     {
       "type": "vtk_field_series",
-      "id": "pm_motor_spinup_series",
+      "id": "induction_motor_series",
       "dir": "outputs",
-      "basename": "pm_motor_spinup_frame",
+      "basename": "induction_motor_frame",
       "quantities": [
         "B",
         "H"
@@ -1048,247 +1053,247 @@
     },
     {
       "type": "polyline_outlines",
-      "id": "pm_motor_spinup_outlines",
-      "path": "outputs/pm_motor_spinup_outlines.vtp"
+      "id": "induction_motor_outlines",
+      "path": "outputs/induction_motor_outlines.vtp"
     },
     {
       "type": "bore_avg_B",
-      "id": "pm_motor_spinup_bore",
-      "path": "outputs/pm_motor_spinup_bore.csv",
+      "id": "induction_motor_bore",
+      "path": "outputs/induction_motor_bore.csv",
       "vertices": [
         [
-          0.024,
+          0.026,
           0.0
         ],
         [
-          0.0232,
-          0.0062
+          0.0251,
+          0.0067
         ],
         [
-          0.0208,
-          0.012
+          0.0225,
+          0.013
         ],
         [
-          0.017,
-          0.017
+          0.0184,
+          0.0184
         ],
         [
-          0.012,
-          0.0208
+          0.013,
+          0.0225
         ],
         [
-          0.0062,
-          0.0232
+          0.0067,
+          0.0251
         ],
         [
           0.0,
-          0.024
+          0.026
         ],
         [
-          -0.0062,
-          0.0232
+          -0.0067,
+          0.0251
         ],
         [
-          -0.012,
-          0.0208
+          -0.013,
+          0.0225
         ],
         [
-          -0.017,
-          0.017
+          -0.0184,
+          0.0184
         ],
         [
-          -0.0208,
-          0.012
+          -0.0225,
+          0.013
         ],
         [
-          -0.0232,
-          0.0062
+          -0.0251,
+          0.0067
         ],
         [
-          -0.024,
+          -0.026,
           0.0
         ],
         [
-          -0.0232,
-          -0.0062
+          -0.0251,
+          -0.0067
         ],
         [
-          -0.0208,
-          -0.012
+          -0.0225,
+          -0.013
         ],
         [
-          -0.017,
-          -0.017
+          -0.0184,
+          -0.0184
         ],
         [
-          -0.012,
-          -0.0208
+          -0.013,
+          -0.0225
         ],
         [
-          -0.0062,
-          -0.0232
+          -0.0067,
+          -0.0251
         ],
         [
           0.0,
-          -0.024
+          -0.026
         ],
         [
-          0.0062,
-          -0.0232
+          0.0067,
+          -0.0251
         ],
         [
-          0.012,
-          -0.0208
+          0.013,
+          -0.0225
         ],
         [
-          0.017,
-          -0.017
+          0.0184,
+          -0.0184
         ],
         [
-          0.0208,
-          -0.012
+          0.0225,
+          -0.013
         ],
         [
-          0.0232,
-          -0.0062
+          0.0251,
+          -0.0067
         ]
       ]
     },
     {
       "type": "probe",
-      "id": "pm_motor_spinup_torque",
+      "id": "induction_motor_torque",
       "probe_type": "torque",
       "method": "stress_tensor",
       "loop": {
         "type": "polygon",
         "vertices": [
           [
-            0.026,
+            0.0262,
             0.0
           ],
           [
-            0.0254,
+            0.0256,
             0.0054
           ],
           [
-            0.0238,
-            0.0106
+            0.0239,
+            0.0107
           ],
           [
-            0.021,
-            0.0153
+            0.0212,
+            0.0154
           ],
           [
-            0.0174,
-            0.0193
+            0.0175,
+            0.0195
           ],
           [
-            0.013,
-            0.0225
+            0.0131,
+            0.0227
           ],
           [
-            0.008,
-            0.0247
+            0.0081,
+            0.0249
           ],
           [
             0.0027,
-            0.0259
+            0.0261
           ],
           [
             -0.0027,
-            0.0259
+            0.0261
           ],
           [
-            -0.008,
-            0.0247
+            -0.0081,
+            0.0249
           ],
           [
-            -0.013,
-            0.0225
+            -0.0131,
+            0.0227
           ],
           [
-            -0.0174,
-            0.0193
+            -0.0175,
+            0.0195
           ],
           [
-            -0.021,
-            0.0153
+            -0.0212,
+            0.0154
           ],
           [
-            -0.0238,
-            0.0106
+            -0.0239,
+            0.0107
           ],
           [
-            -0.0254,
+            -0.0256,
             0.0054
           ],
           [
-            -0.026,
+            -0.0262,
             0.0
           ],
           [
-            -0.0254,
+            -0.0256,
             -0.0054
           ],
           [
-            -0.0238,
-            -0.0106
+            -0.0239,
+            -0.0107
           ],
           [
-            -0.021,
-            -0.0153
+            -0.0212,
+            -0.0154
           ],
           [
-            -0.0174,
-            -0.0193
+            -0.0175,
+            -0.0195
           ],
           [
-            -0.013,
-            -0.0225
+            -0.0131,
+            -0.0227
           ],
           [
-            -0.008,
-            -0.0247
+            -0.0081,
+            -0.0249
           ],
           [
             -0.0027,
-            -0.0259
+            -0.0261
           ],
           [
             0.0027,
-            -0.0259
+            -0.0261
           ],
           [
-            0.008,
-            -0.0247
+            0.0081,
+            -0.0249
           ],
           [
-            0.013,
-            -0.0225
+            0.0131,
+            -0.0227
           ],
           [
-            0.0174,
-            -0.0193
+            0.0175,
+            -0.0195
           ],
           [
-            0.021,
-            -0.0153
+            0.0212,
+            -0.0154
           ],
           [
-            0.0238,
-            -0.0106
+            0.0239,
+            -0.0107
           ],
           [
-            0.0254,
+            0.0256,
             -0.0054
           ]
         ]
       },
-      "path": "outputs/pm_motor_spinup_torque.csv"
+      "path": "outputs/induction_motor_torque.csv"
     },
     {
       "type": "back_emf_probe",
-      "id": "pm_motor_spinup_phase_a_emf",
+      "id": "induction_motor_phase_a_emf",
       "component": "Bmag",
       "region": {
         "type": "polygon",
@@ -1311,11 +1316,11 @@
           ]
         ]
       },
-      "path": "outputs/pm_motor_spinup_phase_a_emf.csv"
+      "path": "outputs/induction_motor_phase_a_emf.csv"
     },
     {
       "type": "back_emf_probe",
-      "id": "pm_motor_spinup_phase_b_emf",
+      "id": "induction_motor_phase_b_emf",
       "component": "Bmag",
       "region": {
         "type": "polygon",
@@ -1338,11 +1343,11 @@
           ]
         ]
       },
-      "path": "outputs/pm_motor_spinup_phase_b_emf.csv"
+      "path": "outputs/induction_motor_phase_b_emf.csv"
     },
     {
       "type": "back_emf_probe",
-      "id": "pm_motor_spinup_phase_c_emf",
+      "id": "induction_motor_phase_c_emf",
       "component": "Bmag",
       "region": {
         "type": "polygon",
@@ -1365,14 +1370,14 @@
           ]
         ]
       },
-      "path": "outputs/pm_motor_spinup_phase_c_emf.csv"
+      "path": "outputs/induction_motor_phase_c_emf.csv"
     },
     {
       "type": "mechanical_trace",
-      "id": "pm_motor_spinup_mechanical",
-      "path": "outputs/pm_motor_spinup_mechanical.csv",
+      "id": "induction_motor_mechanical",
+      "path": "outputs/induction_motor_mechanical.csv",
       "rotors": [
-        "pm_rotor"
+        "induction_rotor"
       ]
     }
   ]

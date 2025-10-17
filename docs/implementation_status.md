@@ -59,10 +59,14 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   for local smoke tests so developers can iterate without modifying the stored
   regression JSON. The generator now carves the magnet out of the rotor iron,
   assigns it μᵣ≈1.05, and trims the magnet strength (1×10⁵ A/m) alongside the
-  phase drive (30 A peak warm-start currents, 20 V peak). The rotor bore field
+  phase drive (35 A peak warm-start currents, 20 V peak). The rotor bore field
   therefore stays on the same tens-of-millitesla scale as the stator-only demo
   instead of spiking into the 50–200 T range that occurred when the magnet
-  inherited the 800× permeability of the surrounding steel.
+  inherited the 800× permeability of the surrounding steel. Follow-on cleanup
+  reduced the CI tessellation counts (24 stator vertices, 18 for the bore, 12 for
+  the rotor loop) so the committed spin-up fixture sits near 1.4k lines, and the
+  `python/check_pm_spinup.py` helper now evaluates absolute angle/speed gains to
+  accommodate rotors that accelerate in either direction.
 - **Stage 3 (Frequency-domain induction path)**: Extended the material schema
   with per-material conductivities (`sigma`) and taught the rasteriser and grid
   container to track `sigma`, complex impressed currents, and an imaginary
@@ -83,7 +87,11 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   `tests/diffusion_test.cpp` drives the new
   `inputs/tests/diffusion_test.json` scenario to check magnetic diffusion into a
   conducting slab against the analytic erfc profile, enforcing a ≤20% envelope
-  error while archiving the recovered surface field amplitude.
+  error while archiving the recovered surface field amplitude. Stage 4.2 now ships
+  an induction spin-up path: `python/gen_three_phase_induction_motor.py` emits a
+  conductive-bar rotor demo, `tests/induction_spinup_test.cpp` verifies the coupled
+  transient/mechanical loop accelerates the rotor while staying below synchronous
+  speed, and CI captures the accompanying VTK/mechanical artefacts.
 - **Stage 5 (Solver UX/perf prep)**: Added a `--pc {none|jacobi|ssor}` CLI flag
   and matching scenario schema to control CG preconditioners. Jacobi and a
   matrix-free SSOR sweep are exposed as first-class options, documented in the
@@ -105,10 +113,8 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
 - Rotor timeline bundles now rotate a multi-segment rotor and high-µ stator, emit outline polydata that ParaView can load without crashing, and log symmetry metrics (`opposition60_120`, `repeat0_180`) plus relative probe/back-EMF errors in the regression summary to track solver accuracy over time.
 
 ## Remaining work
-- The transient magnetodynamics wrapper currently advances quasi-static
-  diffusion with fixed geometry; extending Stage 4.2 to a full induction-motor
-  toy example (conductive rotor bars plus the circuit/mechanical coupling) and
-  exploring semi-implicit stepping for larger \(\Delta t\) remain future
-  enhancements. Additional UX polish (e.g., non-uniform grid bands and parallel
-  CG kernels) can build on the new preconditioner hooks once the transient
-  pipeline settles.
+- Additional UX polish (e.g., non-uniform grid bands and parallel CG kernels)
+  can build on the new preconditioner hooks once the transient pipeline settles.
+  Longer transient runs that co-simulate the RL network, slip-tuned voltage
+  sources, and coarse-to-fine prolongation for induction demos remain on the
+  wishlist alongside the optional mechanical enhancements from Stage 5.

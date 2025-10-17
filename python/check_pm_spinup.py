@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate that a PM motor spin-up run produced accelerating rotor motion."""
+"""Validate mechanical spin-up traces emitted by synchronous or induction demos."""
 
 from __future__ import annotations
 
@@ -59,30 +59,37 @@ def main() -> None:
     angles = [p[1] for p in paired]
     speeds = [p[2] for p in paired]
 
-    min_step = min((angles[i + 1] - angles[i]) for i in range(len(angles) - 1))
-    if min_step < -abs(args.max_backstep):
+    angle_delta = angles[-1] - angles[0]
+    direction = 1.0 if angle_delta >= 0.0 else -1.0
+    progress = [direction * (angles[i + 1] - angles[i]) for i in range(len(angles) - 1)]
+    min_progress = min(progress)
+    if min_progress < -abs(args.max_backstep):
         raise SystemExit(
-            f"Rotor angle regressed by {min_step:.3f} deg which exceeds allowed backstep {args.max_backstep:.3f} deg"
+            "Rotor angle regressed by "
+            f"{(-direction * min_progress):.3f} deg which exceeds allowed backstep {abs(args.max_backstep):.3f} deg"
         )
 
-    angle_rise = angles[-1] - angles[0]
-    speed_rise = speeds[-1] - speeds[0]
-
-    if angle_rise < args.min_angle_rise:
+    angle_magnitude = abs(angle_delta)
+    if angle_magnitude < args.min_angle_rise:
         raise SystemExit(
-            f"Insufficient angle rise for rotor '{args.rotor}': {angle_rise:.2f} deg < {args.min_angle_rise:.2f} deg"
+            f"Insufficient angle change for rotor '{args.rotor}': |Δθ|={angle_magnitude:.2f} deg < {args.min_angle_rise:.2f} deg"
         )
-    if speed_rise < args.min_speed_rise:
-        raise SystemExit(
-            f"Insufficient speed rise for rotor '{args.rotor}': {speed_rise:.2f} rad/s < {args.min_speed_rise:.2f} rad/s"
-        )
-    if speeds[-1] <= 0.0:
-        raise SystemExit(f"Final rotor speed is non-positive ({speeds[-1]:.3f} rad/s)")
 
-    rpm = speeds[-1] * 60.0 / (2.0 * math.pi)
+    speed_delta = speeds[-1] - speeds[0]
+    speed_magnitude = abs(speeds[-1]) - abs(speeds[0])
+    if speed_magnitude < args.min_speed_rise:
+        raise SystemExit(
+            f"Insufficient speed change for rotor '{args.rotor}': |Δω|={speed_magnitude:.2f} rad/s < {args.min_speed_rise:.2f} rad/s"
+        )
+    if abs(speeds[-1]) <= 0.0:
+        raise SystemExit(f"Final rotor speed magnitude is zero ({speeds[-1]:.3f} rad/s)")
+
+    rpm = abs(speeds[-1]) * 60.0 / (2.0 * math.pi)
+    direction_label = "increased" if direction >= 0.0 else "decreased"
     print(
-        f"Spin-up check passed: Δangle={angle_rise:.2f} deg, Δω={speed_rise:.2f} rad/s, final ω={speeds[-1]:.2f} rad/s"
-        f" ({rpm:.1f} rpm) over {len(times)} samples"
+        f"Spin-up check passed: Δθ={angle_delta:.2f} deg (|Δθ|={angle_magnitude:.2f} deg, {direction_label}), "
+        f"Δω={speed_delta:.2f} rad/s (|Δω|={speed_magnitude:.2f} rad/s), final |ω|={abs(speeds[-1]):.2f} rad/s "
+        f"({rpm:.1f} rpm) over {len(times)} samples"
     )
 
 

@@ -1610,7 +1610,8 @@ int main(int argc, char** argv) {
 
     std::unordered_set<std::string> availableOutputIds;
     availableOutputIds.reserve(spec.outputs.fieldMaps.size() + spec.outputs.lineProbes.size() +
-                              spec.outputs.probes.size() + spec.outputs.backEmfProbes.size());
+                              spec.outputs.probes.size() + spec.outputs.backEmfProbes.size() +
+                              spec.outputs.mechanicalTraces.size());
     for (const auto& request : spec.outputs.fieldMaps) {
         availableOutputIds.insert(request.id);
     }
@@ -1630,6 +1631,9 @@ int main(int argc, char** argv) {
         availableOutputIds.insert(request.id);
     }
     for (const auto& request : spec.outputs.boreProbes) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.mechanicalTraces) {
         availableOutputIds.insert(request.id);
     }
 
@@ -1689,6 +1693,16 @@ int main(int argc, char** argv) {
                 std::cout << ']';
             }
             std::cout << "\n";
+        }
+        for (const auto& request : spec.outputs.mechanicalTraces) {
+            std::cout << "  - [mechanical_trace] id=" << request.id << ", rotors=";
+            for (std::size_t idx = 0; idx < request.rotors.size(); ++idx) {
+                if (idx > 0) {
+                    std::cout << ',';
+                }
+                std::cout << request.rotors[idx];
+            }
+            std::cout << ", path=" << request.path << "\n";
         }
     }
 

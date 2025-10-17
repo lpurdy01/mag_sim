@@ -14,6 +14,7 @@ The analytical validation ladder mirrors the "Next-Stage Development Plan — Ti
 | 5 | `tests/rotor_ripple_test` (`inputs/tests/rotor_ripple_test.json`) | Quasi-static PM rotor in a stator field | Torque sign flips as the rotor sweeps 0°→180° and the simulated peak-to-peak ripple exceeds 0.3&nbsp;N·m·m⁻¹. |
 | 6 | `tests/skin_depth_test` (`inputs/tests/skin_depth_test.json`) | Classical skin-depth decay in a conducting half-space | Linear-fit slope of \(|\mathbf{B}|\) vs depth matches \(-1/\delta\) within 15%. |
 | 7 | `tests/diffusion_test` (`inputs/tests/diffusion_test.json`) | Semi-infinite magnetic diffusion following the error-function solution | Max relative error of sampled \(B_x\) vs \(\mathrm{erfc}\) profile stays below 20%. |
+| 8 | `tests/induction_spinup_test` (`inputs/tests/induction_spinup_test.json`) | Slip-limited acceleration of a conductive rotor | Rotor angle/speed rise > 5 deg / 5 rad·s⁻¹, final speed < 80% synchronous, slip within (0.05, 0.95). |
 
 All tests execute via `ctest` (see `CMakeLists.txt`) and run as part of the GitHub Actions workflow. They share compact domains so the Gauss–Seidel solver converges within a few seconds per frame.
 
@@ -30,6 +31,10 @@ All tests execute via `ctest` (see `CMakeLists.txt`) and run as part of the GitH
 - **Mechanical spin-up:** `tests/pm_motor_spinup_test.cpp` loads the coupled PM motor spin-up scenario, solving the EM field,
   RL circuits, and RK4 mechanical loop frame-by-frame. The regression asserts that rotor angle and speed rise over the timeline,
   mirroring the CI spin-up demo that writes `pm_motor_spinup_mechanical.csv` for further inspection.
+- **Induction spin-up:** `tests/induction_spinup_test.cpp` exercises the transient Crank–Nicolson solver and the mechanical
+  integrator on the conductive-bar rotor. It reuses the torque probe to advance the rotor, checks that acceleration is positive,
+  and ensures the final speed remains below synchronous so slip stays realistic. CI archives the accompanying mechanical trace,
+  VTK series, and outline polydata.
 
 ## Running the ladder locally
 

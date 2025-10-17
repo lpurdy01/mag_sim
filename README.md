@@ -109,14 +109,24 @@ that `motor_sim` can solve frame-by-frame. Both generators expose compact
 * **PM motor spin-up** –
   `python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inputs/three_phase_pm_motor_spinup_ci.json`
   adds the permanent-magnet rotor, lumped RL circuits, and the RK4 mechanical
-  integrator. Slot polygons now carry explicit turn counts (60 per slot) and a
-  0.55 copper fill fraction so the stator’s ampere-turn budget matches the
-  magnet linkage. The generator also carves the magnet out of the rotor iron and
-  assigns it a near-air permeability (μᵣ≈1.05) so the trimmed 1×10⁵ A/m
-  magnetisation produces bore flux on the same order as the stator coils. The CI
-  profile keeps polygon tessellation lean and rounds coordinates to six decimals
-  so the stored scenario stays readable while still honouring slot symmetry.
-  Solving the generated JSON with `--vtk-series` writes
-  `pm_motor_spinup_frame_###.vti`, torque CSVs, and a `pm_motor_spinup_mechanical.csv`
-  history that `python/check_pm_spinup.py` validates. See
-  `docs/three_phase_pm_motor.md` for scenario parameters and workflow guidance.
+  integrator. Slot polygons carry explicit turn counts (60 per slot) and a 0.55
+  copper fill fraction so the stator’s ampere-turn budget matches the magnet
+  linkage. The generator carves the magnet out of the rotor iron and assigns it
+  a near-air permeability (μᵣ≈1.05) so the trimmed 1×10⁵ A/m magnetisation
+  produces bore flux on the same order as the stator coils. The CI profile keeps
+  polygon tessellation lean (tens of vertices per circle) and rounds coordinates
+  to four decimals so the stored scenario stays readable while still honouring
+  slot symmetry. Solving the generated JSON with `--vtk-series` writes
+  `pm_motor_spinup_frame_###.vti`, torque CSVs, and a
+  `pm_motor_spinup_mechanical.csv` history that `python/check_pm_spinup.py`
+  validates. See `docs/three_phase_pm_motor.md` for scenario parameters and
+  workflow guidance.
+* **Induction motor spin-up** –
+  `python/gen_three_phase_induction_motor.py --profile ci --mode spinup --out inputs/three_phase_induction_motor_spinup_ci.json`
+  swaps the permanent magnet for a conductive-bar cage, enables the transient
+  Crank–Nicolson solve, and lets the RK4 mechanical loop react to eddy-current
+  torque. The helper emits VTK series, outline polydata, and a mechanical trace
+  (`induction_motor_mechanical.csv`) that the shared
+  `python/check_pm_spinup.py --rotor induction_rotor` validator can inspect. See
+  `docs/three_phase_induction_motor.md` for the full walkthrough and CI fixture
+  details.

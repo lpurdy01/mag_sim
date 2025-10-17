@@ -1,8 +1,8 @@
 # Three-Phase PM Motor Scenario
 
 This walkthrough builds on the rotating-field stator demo by adding a
-surface-mounted permanent-magnet rotor (trimmed to 1×10⁵ A/m with μᵣ≈1.05),
-per-phase RL circuits, and a lightweight mechanical model driven by 30 A peak stator
+  surface-mounted permanent-magnet rotor (trimmed to 1×10⁵ A/m with μᵣ≈1.05),
+  per-phase RL circuits, and a lightweight mechanical model driven by 35 A peak stator
 currents. Use it to explore torque production, back-EMF, and circuit response in
 a synchronous motor setting. The generator now supports both a locked-rotor mode
 (matching earlier releases) and a spin-up mode that lets the mechanical
@@ -100,21 +100,22 @@ python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup \
   --out inputs/tests/pm_motor_spinup_test.json
 ```
 
-The JSON looks bulky because the generator rasterises each circular boundary
-with a few hundred segments to keep the Maxwell-stress torque probe smooth, and
-because the timeline samples a full electrical cycle (10 frames) so the
-mechanical solver still sees enough motion to verify acceleration. Key
+The JSON clocks in at roughly 1.4k lines—the generator rounds coordinates to
+four decimal places for the CI profile and keeps each circular boundary to a
+few dozen segments (24 for the stator, 18 for the bore, 12 for the rotor, 30
+for the torque loop). The timeline spans a single electrical cycle (10 frames)
+so the mechanical solver still sees enough motion to verify acceleration. Key
 baked-in values for the CI fixture are:
 
 | Quantity | Value |
 | --- | --- |
 | Grid | 65×65 Cartesian cells over a 0.14 m square |
 | Electrical frequency | 60 Hz (10 frames per cycle, 1 cycle) |
-| Rotor inertia / damping | 2.5×10⁻³ kg·m², 1.0×10⁻⁴ N·m·s |
-| Load torque | 0.5 N·m opposing rotation |
+| Rotor inertia / damping | 8.0×10⁻⁴ kg·m², 5.0×10⁻⁵ N·m·s |
+| Load torque | 0.12 N·m opposing rotation |
 | Magnet strength | 1×10⁵ A/m surface-mounted block |
 | Slot turns / fill | 60 turns per slot, 0.55 copper fill fraction |
-| Phase drive | 30 A peak warm-start currents with 20 V peak phase voltage |
+| Phase drive | 35 A peak warm-start currents with 20 V peak phase voltage |
 
 Rather than editing the JSON manually, re-run the generator when you need to
 tweak those knobs so the derived polygons stay consistent.
@@ -149,7 +150,9 @@ mechanical changes or iterating on torque probes.
 - Run `python/check_three_phase_field.py` against the generated `.pvd` to verify
   the bore angle rotates monotonically and maintains a strong |B| magnitude.
 - Use `python/check_pm_spinup.py` on spin-up runs to assert that rotor angle and
-  speed increase throughout the timeline.
+  speed change monotonically in magnitude throughout the timeline (the helper
+  reports absolute angle/speed gains, so it also tolerates rotors that spin in
+  the negative direction as in the induction demo).
 - The mechanical integrator respects timeline rotor overrides; locked mode
   retains them while spin-up drops them so the solver can demonstrate the coupled
   evolution.
@@ -157,3 +160,5 @@ mechanical changes or iterating on torque probes.
   virtual-work torque checks over neighbouring frames.
 - Keep generated VTK/MP4 artefacts out of the repository. CI uploads small
   samples for review when the workflow executes the PM motor pipeline.
+- Looking for a transient induction counterpart? See
+  `docs/three_phase_induction_motor.md` for the conductive-bar spin-up workflow.
