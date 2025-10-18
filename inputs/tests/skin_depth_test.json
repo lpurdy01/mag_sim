@@ -1,0 +1,35 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {"Lx": 0.2, "Ly": 0.1, "nx": 65, "ny": 65},
+  "boundary": {"type": "dirichlet"},
+  "materials": [
+    {"name": "air", "mu_r": 1.0, "sigma": 0.0},
+    {"name": "conductor", "mu_r": 1.0, "sigma": 5.96e7}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"},
+    {"type": "halfspace", "material": "conductor", "normal": [-1.0, 0.0], "offset": 0.0}
+  ],
+  "sources": [
+    {
+      "type": "current_region",
+      "id": "drive_sheet",
+      "label": "Drive Sheet",
+      "phase": "A",
+      "orientation": 1.0,
+      "vertices": [
+        [-0.095, -0.04],
+        [-0.085, -0.04],
+        [-0.085, 0.04],
+        [-0.095, 0.04]
+      ],
+      "I": 2.0e6
+    }
+  ],
+  "outputs": [],
+  "solver": {
+    "kind": "harmonic",
+    "frequency_hz": 100.0
+  }
+}

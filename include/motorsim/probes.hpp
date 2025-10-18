@@ -35,6 +35,8 @@ double integrate_polygon_flux_component(const Grid2D& grid, double originX, doub
 double integrate_rect_flux_component(const Grid2D& grid, double originX, double originY, double dx, double dy,
                                      double minX, double maxX, double minY, double maxY, FluxComponent component);
 
+double compute_magnetic_coenergy(const Grid2D& grid, double dx, double dy);
+
 std::vector<BackEmfSample> compute_back_emf_series(const std::vector<std::size_t>& frameIndices,
                                                    const std::vector<double>& times,
                                                    const std::vector<double>& fluxes);

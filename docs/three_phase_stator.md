@@ -67,11 +67,20 @@ for larger offline runs.
 
 ## Notes
 
-- The stator slots are modelled as uniform current regions that draw their
-  per-frame currents from `phase_currents` entries in the timeline.
+- The stator slots are modelled as polygonal `current_region` sources. Each
+  slot carries 60 turns with a 0.55 copper fill fraction so the deposited
+  ampere-turns match the intended winding pack without overdriving the bore
+  field. The timeline provides per-frame phase currents via the
+  `phase_currents` block.
+- With the default 30 A peak phase currents the CI profile’s bore probe reports
+  roughly 0.03 T, so the rotating stator field remains visible when the PM
+  motor rotor is introduced.
 - The bore-average sanity check (`python/check_three_phase_field.py`) unwraps
   the bore field angle, verifies monotonic rotation, enforces an R² > 0.95 fit
   against a straight line, and guards against magnitude collapse. The CI
   workflow runs it automatically.
+- Looking for a fully coupled permanent-magnet motor walkthrough? See
+  `docs/three_phase_pm_motor.md` for the rotor, circuit, and mechanical
+  co-simulation demo.
 - Keep binary artefacts (MP4/VTI samples) out of git history. The CI workflow
   uploads a small bundle with the demo VTK frame, bore CSV, and animation.

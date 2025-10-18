@@ -63,13 +63,15 @@ Declare probes inside the scenario `outputs` array:
 The solver writes a CSV with a single row:
 
 ```text
-Fx,Fy,Tz
--1.234567890123e+02,5.678901234567e+01,-2.468013579240e-03
+Fx,Fy,Tz,CoEnergy
+-1.234567890123e+02,5.678901234567e+01,-2.468013579240e-03,1.234500000000e-01
 ```
 
 Values represent force (newtons per metre) and torque (newton-metres per metre)
 about the global origin in SI units. When timelines are active the file name is
-extended with the usual `_frame_###` suffix.
+extended with the usual `_frame_###` suffix. The optional `CoEnergy` column
+captures the magnetic co-energy integral for the entire slice, enabling
+finite-difference virtual-work checks without recomputing the field.
 
 ## Usage tips
 
@@ -79,7 +81,32 @@ extended with the usual `_frame_###` suffix.
   inflating the loop to avoid sampling immediately adjacent to discretisation
   artefacts.
 * Combine with timeline frames to capture torque ripple across electrical angles
-  or to cross-check against virtual-work calculations in future releases.
+  or to cross-check against virtual-work calculations using the magnetic
+  co-energy helper described below.
+
+## Virtual-work cross-check
+
+The solver now exposes `motorsim::compute_magnetic_coenergy`, which evaluates
+the magnetic co-energy (including permanent-magnet contributions),
+
+\[
+W_m = \tfrac{1}{2}\int_{A} \mathbf{B} \cdot (\mathbf{H} + \mathbf{M}) \, \mathrm{d}A,
+\]
+
+over the 2D slice. When magnetisation is zero this reduces to the familiar
+\(\tfrac{1}{2}\int \mathbf{B}\cdot\mathbf{H}\,\mathrm{d}A\). Combined with timeline frames at neighbouring rotor
+angles the virtual-work estimate follows directly from a finite difference,
+
+\[
+\tau_z \approx \frac{W_m(\theta + \Delta\theta) - W_m(\theta - \Delta\theta)}{2\,\Delta\theta}.
+\]
+
+`tests/torque_validation_test.cpp` exercises the full pipeline by solving the
+rotor dipole scenario at ±5° offsets, evaluating both the Maxwell stress torque
+and the co-energy difference, and enforcing a ≤10 % agreement on the CI grid.
+Any probe requesting torque automatically triggers `computeH()` and records the
+co-energy alongside the stress-tensor integral, making the diagnostic available
+for future report/CSV exports and the three-phase PM motor walkthrough.
 
 The `tests/probe_output_test.cpp` fixture exercises the ingestion and evaluation
 path with a synthetic field that generates a known downward force, providing a

@@ -6,6 +6,12 @@ with `tools/solver_benchmark`. All reported numbers come from single-threaded
 runs so you can scale them directly with per-core performance when planning
 work in lightweight environments such as GitHub Codespaces.
 
+The newly introduced harmonic solve (`--solver harmonic`) reuses the CG backend
+on a doubled system (real/imaginary components). Complexity follows the CG
+trends quoted below; expect roughly a 2× increase in per-iteration cost versus a
+purely real solve because the normal equations require two operator applications
+per iteration.
+
 ## 1. Complexity heuristics
 
 * Each SOR sweep visits every interior cell once, so the cost per iteration is
@@ -38,6 +44,9 @@ Hardware/software snapshot:
 * GitHub Codespaces container (Intel Xeon-class core; solver runs on one thread).
 * Ubuntu 22.04 container with GCC 13.3, CMake 3.22.
 * Build type: `Debug` (default `cmake-configure`).
+* SIMD hints: enabled by default via the `MOTORSIM_ENABLE_SIMD_HINTS` CMake option
+  (adds `-DMOTORSIM_SIMD_HINTS`). Disable the hints with
+  `-DMOTORSIM_ENABLE_SIMD_HINTS=OFF` when comparing against historical runs.
 * Benchmarks executed via `tools/solver_benchmark --repeats 3`.
 
 ### 2.1 Convergence comparison
@@ -100,6 +109,9 @@ benchmarking CG:
 * Enabling coarse-to-fine prolongation (`--use-prolongation`) provides a
   high-quality initial guess for fine grids, keeping CG iteration counts
   comparable to SOR while meeting tighter tolerances.
+* Switching the preconditioner via `--pc {none|jacobi|ssor}` can cut iteration
+  counts dramatically on conductive grids. Jacobi tends to pay off once
+  \(\sigma > 0\); SSOR is helpful when permeability contrasts exceed 100×.
 
 ## 3. Benchmark workflow
 

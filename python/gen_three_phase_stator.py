@@ -76,7 +76,9 @@ def generate_scenario(profile: str, output_path: Path) -> None:
     r_in = 0.040
     r_out = 0.055
     bore_fraction = 0.6
-    current_amp = 200.0
+    current_amp = 30.0
+    slot_turns = 60.0
+    slot_fill_fraction = 0.55
     electrical_hz = 60.0
 
     total_frames = frames_per_cycle * cycles
@@ -112,6 +114,8 @@ def generate_scenario(profile: str, output_path: Path) -> None:
                 "orientation": orientation,
                 "vertices": polygon,
                 "I": 0.0,
+                "turns": slot_turns,
+                "fill_fraction": slot_fill_fraction,
             }
         )
 
