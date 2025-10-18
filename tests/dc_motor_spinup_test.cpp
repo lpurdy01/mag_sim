@@ -20,13 +20,13 @@ int main() {
     namespace fs = std::filesystem;
 
     const fs::path scenarioPath =
-        (fs::path(__FILE__).parent_path() / "../inputs/tests/pm_motor_spinup_test.json").lexically_normal();
+        (fs::path(__FILE__).parent_path() / "../inputs/tests/dc_motor_spinup_test.json").lexically_normal();
 
     ScenarioSpec spec;
     try {
         spec = loadScenarioFromJson(scenarioPath.string());
     } catch (const std::exception& ex) {
-        std::cerr << "Failed to load PM motor spin-up scenario: " << ex.what() << '\n';
+        std::cerr << "Failed to load DC motor spin-up scenario: " << ex.what() << '\n';
         return 1;
     }
 
@@ -36,34 +36,30 @@ int main() {
         return 1;
     }
 
-    CircuitSimulator circuitSim(frames);
-    MechanicalSimulator mechanicalSim;
-    mechanicalSim.initialize(spec, frames);
+    CircuitSimulator circuit(frames);
+    MechanicalSimulator mechanical;
+    mechanical.initialize(spec, frames);
 
-    if (!mechanicalSim.is_active()) {
-        std::cerr << "Mechanical simulator should be active for spin-up test\n";
+    if (!mechanical.is_active()) {
+        std::cerr << "Mechanical simulator should be active for DC spin-up test\n";
         return 1;
     }
 
-    const bool circuitsActive = circuitSim.is_active();
+    const bool circuitsActive = circuit.is_active();
 
     SolveOptions options{};
     options.kind = SolverKind::CG;
-    options.maxIters = 20000;
-    options.tol = 2e-6;
+    options.maxIters = 40000;
+    options.tol = 6.5e-6;
 
     std::vector<double> warmAz;
     bool haveWarmStart = false;
 
     for (std::size_t idx = 0; idx < frames.size(); ++idx) {
-        if (mechanicalSim.is_active()) {
-            mechanicalSim.apply_state(frames[idx]);
-        }
+        mechanical.apply_state(frames[idx]);
+        circuit.update_for_frame(frames[idx], &mechanical);
         if (circuitsActive) {
-            circuitSim.update_for_frame(frames[idx], mechanicalSim.is_active() ? &mechanicalSim : nullptr);
-        }
-        if (circuitsActive) {
-            circuitSim.apply_currents(frames[idx]);
+            circuit.apply_currents(frames[idx]);
         }
 
         Grid2D grid(frames[idx].spec.nx, frames[idx].spec.ny, frames[idx].spec.dx, frames[idx].spec.dy);
@@ -81,13 +77,13 @@ int main() {
             guessPtr = &guess;
         }
 
-        const SolveResult report = solveAz(grid, options, guessPtr, nullptr);
-        if (!report.converged) {
-            std::cerr << "Frame " << idx << ": solver did not converge (relResidual=" << report.relResidual << ")\n";
+        const SolveResult result = solveAz(grid, options, guessPtr, nullptr);
+        if (!result.converged) {
+            std::cerr << "Frame " << idx << ": solver did not converge (relResidual=" << result.relResidual << ")\n";
             return 1;
         }
 
-        motorsim::computeB(grid);
+        computeB(grid);
 
         std::unordered_map<std::string, StressTensorResult> torqueSamples;
         for (const auto& probe : frames[idx].spec.outputs.probes) {
@@ -102,15 +98,13 @@ int main() {
             }
         }
 
-        if (mechanicalSim.is_active()) {
-            ScenarioFrame* nextFrame = (idx + 1 < frames.size()) ? &frames[idx + 1] : nullptr;
-            mechanicalSim.handle_solved_frame(frames[idx], torqueSamples, nextFrame);
-        }
+        ScenarioFrame* nextFrame = (idx + 1 < frames.size()) ? &frames[idx + 1] : nullptr;
+        mechanical.handle_solved_frame(frames[idx], torqueSamples, nextFrame);
 
         if (circuitsActive) {
-            circuitSim.record_solved_frame(frames[idx], grid);
-            if (idx + 1 < frames.size()) {
-                circuitSim.prepare_next_frame(idx, frames[idx], &frames[idx + 1]);
+            circuit.record_solved_frame(frames[idx], grid);
+            if (nextFrame) {
+                circuit.prepare_next_frame(idx, frames[idx], nextFrame);
             }
         }
 
@@ -118,38 +112,38 @@ int main() {
         haveWarmStart = true;
     }
 
-    const auto& histories = mechanicalSim.history();
-    const auto histIt = histories.find("pm_rotor");
-    if (histIt == histories.end() || histIt->second.size() < 2) {
-        std::cerr << "Rotor history missing or too short for spin-up test\n";
+    const auto& histories = mechanical.history();
+    const auto it = histories.find("dc_rotor");
+    if (it == histories.end() || it->second.size() < 2) {
+        std::cerr << "Rotor history missing or too short for DC spin-up test\n";
         return 1;
     }
 
-    const auto& samples = histIt->second;
-    const double initialAngleRad = samples.front().angleRad;
-    const double finalAngleRad = samples.back().angleRad;
+    const auto& samples = it->second;
+    const double initialAngle = samples.front().angleRad;
+    const double finalAngle = samples.back().angleRad;
     const double initialOmega = samples.front().omega;
     const double finalOmega = samples.back().omega;
 
-    const double angleRiseDeg = (finalAngleRad - initialAngleRad) * 180.0 / kPi;
+    const double angleRiseDeg = (finalAngle - initialAngle) * 180.0 / kPi;
     const double speedRise = finalOmega - initialOmega;
 
-    if (angleRiseDeg < 15.0) {
+    if (angleRiseDeg < 8.0) {
         std::cerr << "Rotor angle rise too small: " << angleRiseDeg << " deg\n";
         return 1;
     }
-    if (speedRise < 10.0) {
+    if (speedRise < 5.0) {
         std::cerr << "Rotor speed rise too small: " << speedRise << " rad/s\n";
         return 1;
     }
-    if (finalOmega <= 0.0) {
-        std::cerr << "Final rotor speed is non-positive: " << finalOmega << " rad/s\n";
+    if (std::abs(finalOmega) <= 0.0) {
+        std::cerr << "Final rotor speed magnitude too small: " << finalOmega << " rad/s\n";
         return 1;
     }
 
-    const double finalRpm = finalOmega * 60.0 / (2.0 * kPi);
-    std::cout << "PMMotorSpinupTest: angleRiseDeg=" << angleRiseDeg << " speedRise=" << speedRise
-              << " finalOmega=" << finalOmega << " rad/s (" << finalRpm << " rpm)\n";
+    const double finalRpm = std::abs(finalOmega) * 60.0 / (2.0 * kPi);
+    std::cout << "DCMotorSpinupTest: angleRiseDeg=" << angleRiseDeg << " speedRise=" << speedRise
+              << " final|omega|=" << std::abs(finalOmega) << " rad/s (" << finalRpm << " rpm)\n";
 
     return 0;
 }

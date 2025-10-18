@@ -45,6 +45,10 @@ struct ScenarioSpec {
         std::vector<std::size_t> polygonIndices;
         std::vector<std::size_t> magnetIndices;
         std::vector<std::size_t> wireIndices;
+        double initialAngleDeg{0.0};
+        bool hasInitialAngle{false};
+        double currentAngleDeg{0.0};
+        bool hasCurrentAngle{false};
     };
 
     struct Material {
@@ -223,6 +227,18 @@ struct ScenarioSpec {
             std::size_t inductorIndex{0};
             std::size_t regionIndex{0};
             double turns{0.0};
+            struct CommutatorSegment {
+                double startAngleDeg{0.0};
+                double endAngleDeg{0.0};
+                double orientation{1.0};
+            };
+            struct Commutator {
+                bool active{false};
+                std::size_t rotorIndex{std::numeric_limits<std::size_t>::max()};
+                std::string rotorName;
+                double defaultOrientation{1.0};
+                std::vector<CommutatorSegment> segments;
+            } commutator;
         };
 
         std::string id;

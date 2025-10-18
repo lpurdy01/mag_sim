@@ -155,7 +155,8 @@ add_executable(circuit_rk_test
     tests/circuit_rk_test.cpp
     src/motorsim/circuit.cpp
     src/motorsim/ingest.cpp
-    src/motorsim/probes.cpp)
+    src/motorsim/probes.cpp
+    src/motorsim/mechanical.cpp)
 target_include_directories(circuit_rk_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
@@ -201,6 +202,32 @@ target_include_directories(pm_motor_spinup_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME pm_motor_spinup COMMAND pm_motor_spinup_test)
+
+add_executable(dc_commutator_test
+    tests/dc_commutator_test.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(dc_commutator_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME dc_commutator COMMAND dc_commutator_test)
+
+add_executable(dc_motor_spinup_test
+    tests/dc_motor_spinup_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(dc_motor_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME dc_motor_spinup COMMAND dc_motor_spinup_test)
 
 add_executable(induction_spinup_test
     tests/induction_spinup_test.cpp

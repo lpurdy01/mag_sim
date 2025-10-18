@@ -326,6 +326,33 @@ voltage-driven circuits (via coil links) or by prescribing timeline currents.
 `tests/current_region_turns_test.cpp` integrates the rasterised density and
 asserts the ampere-turn budget stays within 5% of the analytic value.
 
+When a current region is driven by a `coil_link`, the circuit layer can override
+its effective orientation via a `commutator` object:
+
+```json
+{
+  "type": "coil_link",
+  "inductor": "arm_L",
+  "region": "armature_a",
+  "turns": 110.0,
+  "commutator": {
+    "rotor": "dc_rotor",
+    "default_orientation": 1.0,
+    "segments": [
+      {"start_deg": -90.0, "end_deg": 90.0, "orientation": 1.0},
+      {"start_deg": 90.0, "end_deg": 270.0, "orientation": -1.0}
+    ]
+  }
+}
+```
+
+At the start of each frame the circuit simulator normalises the associated
+rotor’s electrical angle, selects the segment whose `[start_deg, end_deg)` range
+contains it (wrapping across ±180° if needed), and multiplies the base region
+orientation by the selected `orientation`. The updated value is used for both
+current deposition and flux-linkage integration, letting commutated armatures
+flip polarity without editing the timeline geometry.
+
 Magnetised regions live in `magnet_regions`; each entry supplies a shape
 (`polygon` with vertices or `rect` with `x_range`/`y_range`) plus a
 magnetisation vector `magnetization` given either as `[Mx, My]` or `{ "Mx": ...,

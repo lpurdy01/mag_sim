@@ -1,9 +1,11 @@
 #include "motorsim/circuit.hpp"
 
 #include "motorsim/probes.hpp"
+#include "motorsim/mechanical.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -20,17 +22,50 @@ double safe_orientation(double orientation) {
     return orientation;
 }
 
+double normalize_angle(double degrees) {
+    double value = std::fmod(degrees, 360.0);
+    if (value < 0.0) {
+        value += 360.0;
+    }
+    return value;
+}
+
 }  // namespace
+
+double CircuitSimulator::evaluate_commutator(const CoilLinkData& link, double angleDeg) {
+    if (!link.commutator.active || link.commutator.segments.empty()) {
+        return 1.0;
+    }
+
+    const double angle = normalize_angle(angleDeg);
+    for (const auto& segment : link.commutator.segments) {
+        const double start = normalize_angle(segment.startDeg);
+        const double end = normalize_angle(segment.endDeg);
+        const double span = normalize_angle(segment.endDeg - segment.startDeg);
+        if (span < kTiny) {
+            return segment.orientation;
+        }
+        const bool wraps = start > end;
+        const bool inRange = wraps ? (angle >= start || angle < end)
+                                   : (angle >= start && angle < end);
+        if (inRange) {
+            return segment.orientation;
+        }
+    }
+    return link.commutator.defaultOrientation;
+}
 
 void CircuitSimulator::initialize(const std::vector<ScenarioFrame>& frames) {
     circuits_.clear();
     active_ = false;
+    baseSpec_ = nullptr;
 
     if (frames.empty()) {
         return;
     }
 
     const ScenarioSpec& baseSpec = frames.front().spec;
+    baseSpec_ = &baseSpec;
     if (baseSpec.circuits.empty()) {
         return;
     }
@@ -99,6 +134,21 @@ void CircuitSimulator::initialize(const std::vector<ScenarioFrame>& frames) {
             entry.inductorIndex = link.inductorIndex;
             entry.regionIndex = link.regionIndex;
             entry.turns = link.turns;
+            entry.baseOrientation = safe_orientation(baseSpec.currentRegions[link.regionIndex].orientation);
+            if (link.commutator.active) {
+                entry.commutator.active = true;
+                entry.commutator.rotorIndex = link.commutator.rotorIndex;
+                entry.commutator.rotorName = link.commutator.rotorName;
+                entry.commutator.defaultOrientation = link.commutator.defaultOrientation;
+                entry.commutator.segments.reserve(link.commutator.segments.size());
+                for (const auto& seg : link.commutator.segments) {
+                    CoilLinkData::CommutatorSegment segment{};
+                    segment.startDeg = seg.startAngleDeg;
+                    segment.endDeg = seg.endAngleDeg;
+                    segment.orientation = seg.orientation;
+                    entry.commutator.segments.push_back(segment);
+                }
+            }
             data.inductors[entry.inductorIndex].coilLinkIndices.push_back(data.coilLinks.size());
             data.coilLinks.push_back(entry);
         }
@@ -170,6 +220,62 @@ void CircuitSimulator::initialize(const std::vector<ScenarioFrame>& frames) {
     }
 
     active_ = !circuits_.empty();
+}
+
+void CircuitSimulator::update_for_frame(ScenarioFrame& frame, const MechanicalSimulator* mechanical) {
+    if (!active_) {
+        return;
+    }
+    if (frame.spec.currentRegions.empty()) {
+        return;
+    }
+
+    const auto getAngleDeg = [&](const CoilLinkData& link) -> std::optional<double> {
+        if (!link.commutator.active) {
+            return std::nullopt;
+        }
+        if (mechanical && !link.commutator.rotorName.empty()) {
+            if (auto angle = mechanical->rotor_angle_deg(link.commutator.rotorName)) {
+                return angle;
+            }
+        }
+        if (link.commutator.rotorIndex < frame.spec.rotors.size()) {
+            const auto& rotor = frame.spec.rotors[link.commutator.rotorIndex];
+            if (rotor.hasCurrentAngle) {
+                return rotor.currentAngleDeg;
+            }
+            if (rotor.hasInitialAngle) {
+                return rotor.initialAngleDeg;
+            }
+        }
+        if (baseSpec_ && link.commutator.rotorIndex < baseSpec_->rotors.size()) {
+            const auto& rotor = baseSpec_->rotors[link.commutator.rotorIndex];
+            if (rotor.hasCurrentAngle) {
+                return rotor.currentAngleDeg;
+            }
+            if (rotor.hasInitialAngle) {
+                return rotor.initialAngleDeg;
+            }
+        }
+        return std::nullopt;
+    };
+
+    for (auto& circuit : circuits_) {
+        for (const auto& link : circuit.coilLinks) {
+            if (link.regionIndex >= frame.spec.currentRegions.size()) {
+                continue;
+            }
+            double orientation = link.baseOrientation;
+            if (link.commutator.active) {
+                double factor = link.commutator.defaultOrientation;
+                if (auto angle = getAngleDeg(link)) {
+                    factor = evaluate_commutator(link, *angle);
+                }
+                orientation *= factor;
+            }
+            frame.spec.currentRegions[link.regionIndex].orientation = orientation;
+        }
+    }
 }
 
 bool CircuitSimulator::solve_dense_linear_system(std::vector<double>& matrix,

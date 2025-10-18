@@ -4,11 +4,14 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <limits>
 
 #include "motorsim/grid.hpp"
 #include "motorsim/ingest.hpp"
 
 namespace motorsim {
+
+class MechanicalSimulator;
 
 class CircuitSimulator {
 public:
@@ -19,6 +22,8 @@ public:
     void initialize(const std::vector<ScenarioFrame>& frames);
 
     [[nodiscard]] bool is_active() const { return active_; }
+
+    void update_for_frame(ScenarioFrame& frame, const MechanicalSimulator* mechanical);
 
     void apply_currents(ScenarioFrame& frame);
 
@@ -47,6 +52,19 @@ private:
         std::size_t inductorIndex{0};
         std::size_t regionIndex{0};
         double turns{0.0};
+        double baseOrientation{1.0};
+        struct CommutatorSegment {
+            double startDeg{0.0};
+            double endDeg{0.0};
+            double orientation{1.0};
+        };
+        struct CommutatorData {
+            bool active{false};
+            std::size_t rotorIndex{std::numeric_limits<std::size_t>::max()};
+            std::string rotorName;
+            double defaultOrientation{1.0};
+            std::vector<CommutatorSegment> segments;
+        } commutator;
     };
 
     struct InductorState {
@@ -77,11 +95,14 @@ private:
     };
 
     std::vector<CircuitData> circuits_;
+    const ScenarioSpec* baseSpec_{nullptr};
     bool active_{false};
 
     static bool solve_dense_linear_system(std::vector<double>& matrix,
                                           std::vector<double>& rhs,
                                           std::size_t dim);
+
+    static double evaluate_commutator(const CoilLinkData& link, double angleDeg);
 
     void compute_rhs(const CircuitData& circuit,
                      const std::vector<double>& inductorCurrents,

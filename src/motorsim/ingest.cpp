@@ -582,6 +582,24 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 parseIndexList(rotorNode.at("wires"), spec.wires.size(), "wires", rotor.wireIndices);
             }
 
+            if (rotorNode.contains("initial_angle_deg")) {
+                rotor.initialAngleDeg = rotorNode.at("initial_angle_deg").get<double>();
+                rotor.hasInitialAngle = true;
+            } else if (rotorNode.contains("initial_angle")) {
+                rotor.initialAngleDeg = rotorNode.at("initial_angle").get<double>();
+                rotor.hasInitialAngle = true;
+            } else if (rotorNode.contains("initial_angle_rad")) {
+                rotor.initialAngleDeg = rotorNode.at("initial_angle_rad").get<double>() * 180.0 / kPi;
+                rotor.hasInitialAngle = true;
+            }
+            if (rotor.hasInitialAngle) {
+                rotor.currentAngleDeg = rotor.initialAngleDeg;
+                rotor.hasCurrentAngle = true;
+            } else {
+                rotor.currentAngleDeg = 0.0;
+                rotor.hasCurrentAngle = false;
+            }
+
             spec.rotors.push_back(std::move(rotor));
         }
     }
@@ -775,11 +793,65 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     link.inductorIndex = inductorIndex;
                     link.regionIndex = regionIndex;
                     link.turns = turns;
+                    if (element.contains("commutator")) {
+                        const auto& commNode = element.at("commutator");
+                        if (!commNode.is_object()) {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' coil_link commutator must be an object");
+                        }
+                        ScenarioSpec::Circuit::CoilLink::Commutator comm{};
+                        comm.active = true;
+                        comm.defaultOrientation = commNode.value("default_orientation",
+                                                                  commNode.value("default", 1.0));
+                        if (commNode.contains("rotor_index")) {
+                            comm.rotorIndex = commNode.at("rotor_index").get<std::size_t>();
+                            if (comm.rotorIndex >= spec.rotors.size()) {
+                                throw std::runtime_error("Circuit '" + circuit.id +
+                                                         "' commutator rotor_index out of range");
+                            }
+                            comm.rotorName = spec.rotors[comm.rotorIndex].name;
+                        } else if (commNode.contains("rotor")) {
+                            comm.rotorName = commNode.at("rotor").get<std::string>();
+                            const auto it = rotorNameToIndex.find(comm.rotorName);
+                            if (it == rotorNameToIndex.end()) {
+                                throw std::runtime_error("Circuit '" + circuit.id +
+                                                         "' commutator references unknown rotor '" + comm.rotorName + "'");
+                            }
+                            comm.rotorIndex = it->second;
+                        } else {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' commutator must specify rotor or rotor_index");
+                        }
+
+                        if (!commNode.contains("segments")) {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' commutator requires a segments array");
+                        }
+                        const auto& segmentsNode = commNode.at("segments");
+                        if (!segmentsNode.is_array() || segmentsNode.empty()) {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' commutator segments must be a non-empty array");
+                        }
+                        comm.segments.reserve(segmentsNode.size());
+                        for (const auto& seg : segmentsNode) {
+                            if (!seg.is_object()) {
+                                throw std::runtime_error("Circuit '" + circuit.id +
+                                                         "' commutator segment entries must be objects");
+                            }
+                            ScenarioSpec::Circuit::CoilLink::CommutatorSegment segment{};
+                            segment.startAngleDeg = seg.value("start_deg", seg.value("start", 0.0));
+                            segment.endAngleDeg = seg.value("end_deg", seg.value("end", 0.0));
+                            segment.orientation = seg.value("orientation", seg.value("value", 1.0));
+                            comm.segments.push_back(segment);
+                        }
+                        link.commutator = std::move(comm);
+                    }
                     auto& currentRegion = spec.currentRegions[regionIndex];
                     if (currentRegion.turns <= 0.0 || std::abs(currentRegion.turns - 1.0) < 1e-12) {
                         currentRegion.turns = turns;
                     } else if (std::abs(currentRegion.turns - turns) > 1e-9) {
-                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link turns mismatch for region index " +
+                        throw std::runtime_error("Circuit '" + circuit.id +
+                                                 "' coil_link turns mismatch for region index " +
                                                  std::to_string(regionIndex));
                     }
                     currentRegion.copperArea = currentRegion.area * currentRegion.fillFraction;
@@ -2013,6 +2085,12 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
         std::vector<double> rotorAngles(baseSpec.rotors.size(), 0.0);
         std::vector<bool> rotorActive(baseSpec.rotors.size(), false);
 
+        for (std::size_t r = 0; r < baseSpec.rotors.size(); ++r) {
+            const auto& baseRotor = baseSpec.rotors[r];
+            workingSpec.rotors[r].currentAngleDeg = baseRotor.hasInitialAngle ? baseRotor.initialAngleDeg : 0.0;
+            workingSpec.rotors[r].hasCurrentAngle = baseRotor.hasInitialAngle;
+        }
+
         if (frame.hasRotorAngle && !baseSpec.rotors.empty()) {
             rotorAngles[0] = frame.rotorAngleDeg;
             rotorActive[0] = true;
@@ -2034,6 +2112,9 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
             const double angleRad = rotorAngles[r] * kPi / 180.0;
             const double cosA = std::cos(angleRad);
             const double sinA = std::sin(angleRad);
+
+            workingSpec.rotors[r].currentAngleDeg = rotorAngles[r];
+            workingSpec.rotors[r].hasCurrentAngle = true;
 
             for (std::size_t idx : rotor.polygonIndices) {
                 if (idx >= baseSpec.polygons.size() || idx >= workingSpec.polygons.size()) {

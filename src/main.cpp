@@ -1972,6 +1972,9 @@ int main(int argc, char** argv) {
             if (mechanicalActive) {
                 mechanicalSim.apply_state(frames[idx]);
             }
+            if (circuitsActive) {
+                circuitSim.update_for_frame(frames[idx], mechanicalActive ? &mechanicalSim : nullptr);
+            }
             const std::vector<double>* transientPrev = nullptr;
             double frameTransientDt = 0.0;
             if (frames[idx].spec.transient.enabled) {

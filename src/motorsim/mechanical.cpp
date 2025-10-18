@@ -50,7 +50,12 @@ void MechanicalSimulator::initialize(const ScenarioSpec& baseSpec,
         state.inertia = rotorConfig.inertia;
         state.damping = rotorConfig.damping;
         state.loadTorque = rotorConfig.loadTorque;
-        state.angleRad = rotorConfig.hasInitialAngle ? rotorConfig.initialAngleDeg * kPi / 180.0 : 0.0;
+        if (rotorConfig.hasInitialAngle) {
+            state.angleRad = rotorConfig.initialAngleDeg * kPi / 180.0;
+        } else {
+            const auto& baseRotor = baseSpec.rotors[state.rotorIndex];
+            state.angleRad = baseRotor.hasInitialAngle ? baseRotor.initialAngleDeg * kPi / 180.0 : 0.0;
+        }
         state.omega = rotorConfig.hasInitialSpeed ? rotorConfig.initialSpeedRadPerSec : 0.0;
         state.torqueProbeId = rotorConfig.torqueProbeId;
         state.hasTorqueProbe = rotorConfig.hasTorqueProbe;
@@ -73,6 +78,11 @@ void MechanicalSimulator::apply_state(ScenarioFrame& frame) const {
     }
     for (const auto& state : rotors_) {
         apply_state_to_frame(frame, state);
+        if (state.rotorIndex < frame.spec.rotors.size()) {
+            auto& rotorEntry = frame.spec.rotors[state.rotorIndex];
+            rotorEntry.currentAngleDeg = state.angleRad * 180.0 / kPi;
+            rotorEntry.hasCurrentAngle = true;
+        }
     }
 }
 
@@ -166,6 +176,9 @@ void MechanicalSimulator::apply_state_to_frame(ScenarioFrame& frame, const Rotor
         return;
     }
     rotateRotorGeometry(baseSpec_->rotors[state.rotorIndex], state.angleRad, frame.spec);
+    auto& rotorEntry = frame.spec.rotors[state.rotorIndex];
+    rotorEntry.currentAngleDeg = state.angleRad * 180.0 / kPi;
+    rotorEntry.hasCurrentAngle = true;
 }
 
 void MechanicalSimulator::rotateRotorGeometry(const ScenarioSpec::Rotor& rotor,

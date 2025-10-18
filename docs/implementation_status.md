@@ -37,6 +37,17 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   the turn count so the circuit and field models stay in sync, and the new
   `tests/current_region_turns_test.cpp` regression integrates the deposited
   density to keep the ampere-turn budget within 5% of the analytic target.
+  Follow-up work introduced commutator metadata on `coil_link` entries so coil
+  orientation can depend on rotor angle. `CircuitSimulator` now reads per-link
+  segment tables, queries the current `dc_rotor` angle from the mechanical or
+  timeline state, and applies the requested sign flip before depositing currents
+  or integrating flux. The DC motor generator (`python/gen_dc_motor.py`) uses
+  this plumbing to emit a brushed armature demo alongside a four-frame
+  `commutator_test` fixture. `tests/dc_commutator_test.cpp` confirms the
+  orientation switching logic, while `tests/dc_motor_spinup_test.cpp` exercises
+  the full EM/circuit/mechanical loop with balanced stator and rotor ampere-turn
+  budgets. Documentation lives in `docs/dc_commutated_motor.md`, and CI now runs
+  the generator, solver, and mechanical validator to archive the new artefacts.
 - **Stage 2.2 (Mechanical coupling)**: Introduced a light-weight rotor
   dynamics module that integrates speed and position via RK4 using the torque
   reported by Maxwell-stress probes. Scenarios can now declare inertial,
