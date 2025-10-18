@@ -74,8 +74,8 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   therefore stays on the same tens-of-millitesla scale as the stator-only demo
   instead of spiking into the 50–200 T range that occurred when the magnet
   inherited the 800× permeability of the surrounding steel. Follow-on cleanup
-  reduced the CI tessellation counts (24 stator vertices, 18 for the bore, 12 for
-  the rotor loop) so the committed spin-up fixture sits near 1.4k lines, and the
+  reduced the CI tessellation counts (18 stator vertices, 12 for the bore, 10 for
+  the rotor loop) so the committed spin-up fixture stays close to 1.3k lines, and the
   `python/check_pm_spinup.py` helper now evaluates absolute angle/speed gains to
   accommodate rotors that accelerate in either direction.
 - **Stage 3 (Frequency-domain induction path)**: Extended the material schema
@@ -122,6 +122,30 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
 - Accuracy reports: `ci_artifacts/test_accuracy_report.txt` aggregates analytic/regression solver comparisons, now including force, torque, and back-EMF validation summaries captured from the dedicated regression binaries; additional torque/back-EMF CSVs are copied directly from `outputs/`.
 - Sample VTK: `outputs/rotor_ripple_field_frame_000.vti` (and subsequent frames) are exported on every CI run and verified with `python/verify_vtk.py`. Companion outline polydata and `_labels.csv` mapping files are uploaded for ParaView inspection.
 - Rotor timeline bundles now rotate a multi-segment rotor and high-µ stator, emit outline polydata that ParaView can load without crashing, and log symmetry metrics (`opposition60_120`, `repeat0_180`) plus relative probe/back-EMF errors in the regression summary to track solver accuracy over time.
+
+## High-compute follow-up runs
+
+The CI fixtures intentionally stay coarse (≤65×65 grids with short timelines).
+When more compute is available, regenerate the following scenarios with their
+`hires` profiles to produce denser artefacts, longer spin-ups, or complete
+electrical cycles:
+
+- `python/gen_three_phase_stator.py --profile hires --out inputs/three_phase_stator_hires.json`
+  followed by `./build/motor_sim --scenario inputs/three_phase_stator_hires.json --solve --vtk-series outputs/three_phase_hires.pvd`
+  to render the 401×401 bore field sweep.
+- `python/gen_three_phase_pm_motor.py --profile hires --mode spinup --out inputs/pm_motor_spinup_hires.json`
+  then `./build/motor_sim --scenario inputs/pm_motor_spinup_hires.json --solve --vtk-series outputs/pm_motor_hires.pvd`
+  for a multi-cycle permanent-magnet spin-up with higher polygon resolution.
+- `python/gen_three_phase_induction_motor.py --profile hires --mode spinup --out inputs/induction_motor_hires.json`
+  and `./build/motor_sim --scenario inputs/induction_motor_hires.json --solve --vtk-series outputs/induction_motor_hires.pvd`
+  to capture the transient slip behaviour over several mechanical revolutions.
+- `python/gen_dc_motor.py --profile hires --mode spinup --out inputs/dc_motor_spinup_hires.json`
+  with `./build/motor_sim --scenario inputs/dc_motor_spinup_hires.json --solve --vtk-series outputs/dc_motor_hires.pvd`
+  to inspect the commutated armature waveforms and torque under finer discretisation.
+- For all of the above, re-run `python/check_pm_spinup.py` with the emitted
+  `--mechanical` traces and loosened thresholds to validate the long-horizon
+  acceleration, and archive the residual CSVs (`--progress-history 1`) alongside
+  the high-resolution VTK artefacts.
 
 ## Remaining work
 - Additional UX polish (e.g., non-uniform grid bands and parallel CG kernels)

@@ -65,6 +65,11 @@ int main() {
     const double baseOrientationA = spec.currentRegions[regionA].orientation;
     const double baseOrientationB = spec.currentRegions[regionB].orientation;
 
+    bool sawPositive = false;
+    bool sawNegative = false;
+    int signTransitions = 0;
+    double previousFactor = 0.0;
+
     for (auto& frame : frames) {
         circuit.update_for_frame(frame, nullptr);
         circuit.apply_currents(frame);
@@ -78,6 +83,15 @@ int main() {
                                      ? frame.spec.rotors.front().currentAngleDeg
                                      : frame.spec.rotors.front().initialAngleDeg;
         const double factor = expected_factor(angleDeg);
+        if (factor > 0.0) {
+            sawPositive = true;
+        } else {
+            sawNegative = true;
+        }
+        if (previousFactor != 0.0 && factor * previousFactor < 0.0) {
+            ++signTransitions;
+        }
+        previousFactor = factor;
 
         const double orientationA = frame.spec.currentRegions[regionA].orientation;
         const double orientationB = frame.spec.currentRegions[regionB].orientation;
@@ -90,6 +104,15 @@ int main() {
             std::cerr << "Orientation mismatch for armature_b at angle " << angleDeg << " deg\n";
             return 1;
         }
+    }
+
+    if (!sawPositive || !sawNegative) {
+        std::cerr << "Commutator test did not cover both polarities" << '\n';
+        return 1;
+    }
+    if (signTransitions == 0) {
+        std::cerr << "Commutator test did not cross a commutation boundary" << '\n';
+        return 1;
     }
 
     std::cout << "DCCommutatorTest: verified orientation across " << frames.size() << " frames\n";

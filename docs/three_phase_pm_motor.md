@@ -100,9 +100,9 @@ python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup \
   --out inputs/tests/pm_motor_spinup_test.json
 ```
 
-The JSON clocks in at roughly 1.4k lines—the generator rounds coordinates to
-four decimal places for the CI profile and keeps each circular boundary to a
-few dozen segments (24 for the stator, 18 for the bore, 12 for the rotor, 30
+The JSON clocks in at roughly 1.3k lines—the generator rounds coordinates to
+three decimal places for the CI profile and keeps each circular boundary to a
+few dozen segments (18 for the stator, 12 for the bore, 10 for the rotor, 24
 for the torque loop). The timeline spans a single electrical cycle (10 frames)
 so the mechanical solver still sees enough motion to verify acceleration. Key
 baked-in values for the CI fixture are:

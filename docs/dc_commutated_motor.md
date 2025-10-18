@@ -76,7 +76,9 @@ current deposition and flux linkage integrals respect the commutator state.
 
 * `tests/dc_commutator_test.cpp` loads the `commutator_test` fixture, advances
   through the scripted angles, and asserts that the armature region orientations
-  switch signs at ±90° exactly as the JSON specifies.
+  switch signs at ±90° exactly as the JSON specifies. The harness now checks
+  that both polarities occur and that at least one sign transition happens, so
+  the commutator crossing is exercised explicitly.
 * `tests/dc_motor_spinup_test.cpp` reuses the spin-up scenario, performs full CG
   solves with torque probes, and requires ≥8° of electrical rotation and ≥5 rad/s
   of speed gain.
