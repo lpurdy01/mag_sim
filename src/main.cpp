@@ -2294,6 +2294,122 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (!solverFailure && !filter.skip && timelineActive &&
+        !frames.front().spec.outputs.probes.empty()) {
+        struct ProbeSeriesSample {
+            std::size_t frameIndex{0};
+            double time{0.0};
+            motorsim::StressTensorResult result{};
+            bool hasCoEnergy{false};
+            double coEnergy{0.0};
+        };
+
+        std::unordered_map<std::string, std::vector<ProbeSeriesSample>> probeSeries;
+        for (std::size_t idx = 0; idx < results.size(); ++idx) {
+            if (!results[idx].solverSuccess) {
+                continue;
+            }
+            const auto& samples = results[idx].torqueSamples;
+            if (samples.empty()) {
+                continue;
+            }
+            const double time = frames[idx].time;
+            const std::size_t frameIndex = frames[idx].index;
+            const bool hasCoEnergy = results[idx].hasMagneticCoenergy;
+            const double coEnergy = results[idx].magneticCoenergy;
+            for (const auto& sample : samples) {
+                if (!shouldEmitId(sample.first)) {
+                    continue;
+                }
+                ProbeSeriesSample entry{};
+                entry.frameIndex = frameIndex;
+                entry.time = time;
+                entry.result = sample.second;
+                entry.hasCoEnergy = hasCoEnergy;
+                entry.coEnergy = coEnergy;
+                probeSeries[sample.first].push_back(entry);
+            }
+        }
+
+        for (const auto& request : frames.front().spec.outputs.probes) {
+            if (!shouldEmitId(request.id)) {
+                continue;
+            }
+            auto seriesIt = probeSeries.find(request.id);
+            if (seriesIt == probeSeries.end() || seriesIt->second.empty()) {
+                std::cerr << "Probe '" << request.id << "' produced no timeline samples\n";
+                outputFailure = true;
+                continue;
+            }
+
+            auto& samples = seriesIt->second;
+            std::sort(samples.begin(), samples.end(),
+                      [](const ProbeSeriesSample& a, const ProbeSeriesSample& b) {
+                          if (a.time == b.time) {
+                              return a.frameIndex < b.frameIndex;
+                          }
+                          return a.time < b.time;
+                      });
+
+            const bool includeCoEnergy = std::any_of(samples.begin(), samples.end(),
+                                                     [](const ProbeSeriesSample& sample) {
+                                                         return sample.hasCoEnergy;
+                                                     });
+
+            const std::filesystem::path outPath(request.path);
+            ensureParentDirectory(outPath);
+            std::ofstream ofs(outPath);
+            if (!ofs.is_open()) {
+                std::cerr << "Failed to open probe series output path " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+
+            ofs << "frame,time_s,Fx,Fy,Tz";
+            if (includeCoEnergy) {
+                ofs << ",CoEnergy";
+            }
+            ofs << "\n";
+            ofs << std::scientific << std::setprecision(12);
+            for (const auto& sample : samples) {
+                ofs << sample.frameIndex << ',' << sample.time << ',' << sample.result.forceX << ','
+                    << sample.result.forceY << ',' << sample.result.torqueZ;
+                if (includeCoEnergy) {
+                    if (sample.hasCoEnergy) {
+                        ofs << ',' << sample.coEnergy;
+                    } else {
+                        ofs << ',';
+                    }
+                }
+                ofs << '\n';
+            }
+            ofs.close();
+            if (!ofs) {
+                std::cerr << "Failed while writing probe series to " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+
+            if (!quiet) {
+                const char* quantityLabel = "torque";
+                switch (request.quantity) {
+                    case motorsim::ScenarioSpec::Outputs::Probe::Quantity::Force:
+                        quantityLabel = "force";
+                        break;
+                    case motorsim::ScenarioSpec::Outputs::Probe::Quantity::ForceAndTorque:
+                        quantityLabel = "force_and_torque";
+                        break;
+                    case motorsim::ScenarioSpec::Outputs::Probe::Quantity::Torque:
+                    default:
+                        quantityLabel = "torque";
+                        break;
+                }
+                std::cout << "Probe '" << request.id << "' (" << quantityLabel << ") wrote "
+                          << samples.size() << " sample(s) to " << outPath << '\n';
+            }
+        }
+    }
+
     if (!filter.skip && !frames.front().spec.outputs.polylineOutlines.empty()) {
         const auto loops = buildOutlineLoops(frames.front().spec);
         for (const auto& request : frames.front().spec.outputs.polylineOutlines) {

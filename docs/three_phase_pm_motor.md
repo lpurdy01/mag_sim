@@ -87,8 +87,10 @@ the same.
   mirrors the same exports with a `pm_motor_spinup_*` prefix and adds
   `pm_motor_spinup_mechanical.csv` capturing time, angle, speed, and torque for
   each rotor sample.
-- Torque CSVs include a co-energy column so virtual-work finite differences can
-  be computed alongside the Maxwell stress data.
+- Torque CSVs now include a consolidated timeline series (frame,time,Fx,Fy,Tz,
+  CoEnergy) alongside the per-frame `*_frame_###.csv` debug files, so virtual-work
+  finite differences can be computed directly from the aggregated
+  `pm_motor_spinup_torque.csv` without stitching outputs manually.
 
 ### CI spin-up fixture at a glance
 

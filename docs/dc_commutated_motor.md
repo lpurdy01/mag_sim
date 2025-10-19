@@ -21,7 +21,10 @@ floating-point coordinates to three decimals so JSON fixtures stay readable. The
 `mode` selects the timeline wiring:
 
 * `spinup` – enables the RK4 mechanical simulator, runs a few dozen frames of
-  torque-driven acceleration, and emits VTK, torque, and mechanical traces.
+  torque-driven acceleration, and emits VTK, torque, and mechanical traces. The
+  CLI now consolidates the per-frame torque probe samples into
+  `dc_motor_torque.csv` with columns for the frame index, time, Fx/Fy, Tz, and
+  the magnetic co-energy alongside the existing `*_frame_###.csv` debug files.
   The CI profile now stops after two electrical cycles (24 frames) so the
   regression rotor history remains strictly increasing; the hires preset keeps
   the longer six-cycle spin-up for offline inspection.
@@ -94,8 +97,9 @@ Actions workflow.
 `run_ci_checks.sh` and `.github/workflows/ci.yml` regenerate a fresh
 `inputs/dc_motor_spinup_ci.json`, solve it, validate the mechanical trace with
 `python/check_pm_spinup.py --rotor dc_rotor`, and archive the VTK series,
-mechanical CSV, torque CSV, and outlines. That makes the brushed DC demo visible
-alongside the three-phase stator, PM motor, and induction motor artefacts.
+mechanical CSV, aggregated torque CSV, and outlines. That makes the brushed DC
+demo visible alongside the three-phase stator, PM motor, and induction motor
+artefacts.
 
 ## Tuning notes
 

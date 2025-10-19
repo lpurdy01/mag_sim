@@ -81,6 +81,10 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   fixture now caps the CI profile at two electrical cycles (24 frames) so the
   archived mechanical trace remains monotonic for the commutator regression,
   while the hires preset retains the longer six-cycle sweep for offline studies.
+  Timeline solves now consolidate Maxwell-stress probe results into
+  `*_torque.csv` series with frame/time/force/torque/co-energy columns so CI and
+  the documentation no longer rely on stitching the per-frame `*_frame_###.csv`
+  files by hand.
 - **Stage 3 (Frequency-domain induction path)**: Extended the material schema
   with per-material conductivities (`sigma`) and taught the rasteriser and grid
   container to track `sigma`, complex impressed currents, and an imaginary
