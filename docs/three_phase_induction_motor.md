@@ -69,7 +69,10 @@ mechanical simulator evolves the angle based on torque feedback.
   stator field.
 - **Outputs** – VTK series, outline polydata, bore-field CSVs, three back-EMF
   probes (one per positive slot), and the mechanical trace mirror the PM demo so
-  ParaView workflows stay familiar.
+  ParaView workflows stay familiar. The torque probe aggregates its timeline to
+  `induction_motor_torque.csv` (with `time_s,frame_index,Fx,Fy,Tz[,CoEnergy]`) so
+  slip and torque comparisons are easy to chart without collecting each
+  `_frame_###` file manually.
 
 ## Regression fixture
 

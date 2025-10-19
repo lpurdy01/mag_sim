@@ -79,9 +79,13 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   phase drive (35 A peak warm-start currents, 20 V peak). The rotor bore field
   therefore stays on the same tens-of-millitesla scale as the stator-only demo
   instead of spiking into the 50–200 T range that occurred when the magnet
-  inherited the 800× permeability of the surrounding steel. Follow-on cleanup
-  reduced the CI tessellation counts (18 stator vertices, 12 for the bore, 10 for
-  the rotor loop) so the committed spin-up fixture stays close to 1.3k lines, and the
+  inherited the 800× permeability of the surrounding steel. Timeline solves now
+  aggregate torque probe samples into the requested base path
+  (`time_s,frame_index,Fx,Fy,Tz[,CoEnergy]`) so the PM, DC, and induction
+  spin-up demos expose ready-to-plot torque histories without scraping
+  individual `_frame_###` files. Follow-on cleanup reduced the CI tessellation
+  counts (18 stator vertices, 12 for the bore, 10 for the rotor loop) so the
+  committed spin-up fixture stays close to 1.3k lines, and the
   `python/check_pm_spinup.py` helper now evaluates absolute angle/speed gains to
   accommodate rotors that accelerate in either direction. The brushed DC spin-up
   fixture now caps the CI profile at two electrical cycles (24 frames) so the

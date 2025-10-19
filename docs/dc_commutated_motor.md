@@ -94,11 +94,13 @@ Actions workflow.
 `run_ci_checks.sh` and `.github/workflows/ci.yml` regenerate a fresh
 `inputs/dc_motor_spinup_ci.json`, solve it, validate the mechanical trace with
 `python/check_pm_spinup.py --rotor dc_rotor`, and archive the VTK series,
-mechanical CSV, torque CSV, and outlines. The solver also emits
-`dc_motor_currents.csv` (the `circuit_trace` output) so
-`python/generate_rotor_animation.py` can render a rotor-only GIF/PNG alongside
-the field-mapped ParaView sequence. The brushed DC demo therefore ships with the
-same artefact set as the synchronous and induction motors.
+mechanical CSV, the aggregated torque CSV, and outlines. The torque file now
+lists `time_s,frame_index,Fx,Fy,Tz[,CoEnergy]` so the commutator waveforms can be
+plotted directly against the timeline. The solver also emits `dc_motor_currents.csv`
+(the `circuit_trace` output) so `python/generate_rotor_animation.py` can render a
+rotor-only GIF/PNG alongside the field-mapped ParaView sequence. The brushed DC
+demo therefore ships with the same artefact set as the synchronous and induction
+motors.
 
 ## Tuning notes
 

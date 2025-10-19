@@ -87,8 +87,11 @@ the same.
   mirrors the same exports with a `pm_motor_spinup_*` prefix and adds
   `pm_motor_spinup_mechanical.csv` capturing time, angle, speed, and torque for
   each rotor sample.
-- Torque CSVs include a co-energy column so virtual-work finite differences can
-  be computed alongside the Maxwell stress data.
+- Torque CSVs now aggregate timeline samples at the base path (for example
+  `pm_motor_spinup_torque.csv`). Each row records `time_s,frame_index,Fx,Fy,Tz`
+  and, when available, `CoEnergy`, so finite-difference virtual-work checks can
+  be run directly against the solved timeline without chasing individual
+  `_frame_###` files.
 - Both modes emit a `circuit_trace` CSV (`pm_motor_currents.csv` or
   `pm_motor_spinup_currents.csv`) listing per-coil ampere-turn histories. The
   file feeds the `python/generate_rotor_animation.py` helper so slot colours in

@@ -68,10 +68,15 @@ Fx,Fy,Tz,CoEnergy
 ```
 
 Values represent force (newtons per metre) and torque (newton-metres per metre)
-about the global origin in SI units. When timelines are active the file name is
-extended with the usual `_frame_###` suffix. The optional `CoEnergy` column
-captures the magnetic co-energy integral for the entire slice, enabling
-finite-difference virtual-work checks without recomputing the field.
+about the global origin in SI units. The optional `CoEnergy` column captures the
+magnetic co-energy integral for the entire slice, enabling finite-difference
+virtual-work checks without recomputing the field.
+
+When timelines are active the solver still emits per-frame CSVs with the
+`_frame_###` suffix for detailed inspection, but it also aggregates the samples
+into the requested base path (for example `outputs/dc_motor_torque.csv`). The
+timeline CSV adds `time_s` and `frame_index` columns ahead of the stress tensor
+values so downstream scripts can correlate torque with the simulation clock.
 
 ## Usage tips
 

@@ -2227,6 +2227,98 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (!solverFailure && !filter.skip && timelineActive && !frames.front().spec.outputs.probes.empty()) {
+        for (const auto& request : frames.front().spec.outputs.probes) {
+            if (!shouldEmitId(request.id)) {
+                continue;
+            }
+
+            struct AggregatedTorqueRow {
+                double time;
+                std::size_t frameIndex;
+                motorsim::StressTensorResult sample;
+                bool hasCoEnergy;
+                double coEnergy;
+            };
+
+            std::vector<AggregatedTorqueRow> rows;
+            rows.reserve(frames.size());
+            std::vector<std::size_t> missingFrames;
+            bool includeCoEnergy = false;
+
+            for (std::size_t idx = 0; idx < frames.size(); ++idx) {
+                const auto sampleIt = results[idx].torqueSamples.find(request.id);
+                if (sampleIt == results[idx].torqueSamples.end()) {
+                    if (results[idx].solverSuccess) {
+                        missingFrames.push_back(frames[idx].index);
+                    }
+                    continue;
+                }
+
+                AggregatedTorqueRow row{frames[idx].time,
+                                        frames[idx].index,
+                                        sampleIt->second,
+                                        results[idx].hasMagneticCoenergy,
+                                        results[idx].magneticCoenergy};
+                includeCoEnergy = includeCoEnergy || row.hasCoEnergy;
+                rows.push_back(row);
+            }
+
+            if (rows.empty()) {
+                std::cerr << "Torque probe '" << request.id
+                          << "' produced no samples for aggregated timeline output.\n";
+                outputFailure = true;
+                continue;
+            }
+
+            if (!missingFrames.empty()) {
+                std::cerr << "Torque probe '" << request.id << "' missing samples for frame indices";
+                for (std::size_t idx = 0; idx < missingFrames.size(); ++idx) {
+                    std::cerr << (idx == 0 ? ' ' : ',') << missingFrames[idx];
+                }
+                std::cerr << "\n";
+                outputFailure = true;
+            }
+
+            const std::filesystem::path outPath(request.path);
+            ensureParentDirectory(outPath);
+            std::ofstream ofs(outPath);
+            if (!ofs.is_open()) {
+                std::cerr << "Failed to open torque probe output path " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+
+            ofs << "time_s,frame_index,Fx,Fy,Tz";
+            if (includeCoEnergy) {
+                ofs << ",CoEnergy";
+            }
+            ofs << '\n';
+            ofs << std::scientific << std::setprecision(12);
+            for (const auto& row : rows) {
+                ofs << row.time << ',' << row.frameIndex << ',' << row.sample.forceX << ',' << row.sample.forceY << ','
+                    << row.sample.torqueZ;
+                if (includeCoEnergy) {
+                    ofs << ',';
+                    if (row.hasCoEnergy) {
+                        ofs << row.coEnergy;
+                    }
+                }
+                ofs << '\n';
+            }
+            ofs.close();
+            if (!ofs) {
+                std::cerr << "Failed while writing aggregated torque probe output to " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+            if (!quiet) {
+                std::cout << "Torque probe '" << request.id << "' wrote " << rows.size()
+                          << " aggregated sample(s) to " << outPath << '\n';
+            }
+        }
+    }
+
     if (!solverFailure && !filter.skip && !frames.front().spec.outputs.mechanicalTraces.empty()) {
         if (!mechanicalActive) {
             for (const auto& request : frames.front().spec.outputs.mechanicalTraces) {

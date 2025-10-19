@@ -128,10 +128,11 @@ that `motor_sim` can solve frame-by-frame. Both generators expose compact
   polygon tessellation lean (tens of vertices per circle) and rounds coordinates
   to four decimals so the stored scenario stays readable while still honouring
   slot symmetry. Solving the generated JSON with `--vtk-series` writes
-  `pm_motor_spinup_frame_###.vti`, torque CSVs, and a
-  `pm_motor_spinup_mechanical.csv` history that `python/check_pm_spinup.py`
-  validates. See `docs/three_phase_pm_motor.md` for scenario parameters and
-  workflow guidance.
+  `pm_motor_spinup_frame_###.vti`, an aggregated
+  `pm_motor_spinup_torque.csv` (columns: `time_s,frame_index,Fx,Fy,Tz[,CoEnergy]`),
+  and a `pm_motor_spinup_mechanical.csv` history that
+  `python/check_pm_spinup.py` validates. See `docs/three_phase_pm_motor.md` for
+  scenario parameters and workflow guidance.
 * **DC motor spin-up** –
   `python/gen_dc_motor.py --profile ci --mode spinup --out inputs/dc_motor_spinup_ci.json`
   introduces a commutated armature whose coil links reference rotor angle driven
@@ -140,10 +141,11 @@ that `motor_sim` can solve frame-by-frame. Both generators expose compact
   armature slots at 12 V / 0.75 Ω) and exposes copper fill percentages so the
   deposited current density stays realistic. During timeline solves the circuit
   layer flips coil orientation as `dc_rotor` sweeps through ±90° so the torque
-  sign remains positive. Outputs mirror the other demos—VTK field frames,
-  `dc_motor_torque.csv`, outlines, and a `dc_motor_mechanical.csv` trace that the
-  shared spin-up checker can validate with `--rotor dc_rotor`. See
-  `docs/dc_commutated_motor.md` for commutator schema details and tuning tips.
+  sign remains positive. Outputs mirror the other demos—VTK field frames, an
+  aggregated `dc_motor_torque.csv` (time-stamped torque samples), outlines, and a
+  `dc_motor_mechanical.csv` trace that the shared spin-up checker can validate
+  with `--rotor dc_rotor`. See `docs/dc_commutated_motor.md` for commutator
+  schema details and tuning tips.
 * **Induction motor spin-up** –
   `python/gen_three_phase_induction_motor.py --profile ci --mode spinup --out inputs/three_phase_induction_motor_spinup_ci.json`
   swaps the permanent magnet for a conductive-bar cage, enables the transient
