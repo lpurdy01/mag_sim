@@ -50,6 +50,33 @@ magnitude, and the rotor ripple frames feed their per-frame `_outlines.vtp`
 files back into the renderer via `--outline-vtp` so the rotating rotor geometry
 is visible in the PNGs.
 
+## Rotor geometry animations
+
+The new `python/generate_rotor_animation.py` helper renders rotor/stator motion
+using the geometry declared in a scenario JSON. It consumes the mechanical
+trace CSV (time, angle, speed) emitted by `motor_sim` and, when available, the
+circuit trace CSV (`circuit_trace` output) so stator slots can be coloured by
+their ampere-turns. Example invocation:
+
+```
+python3 python/generate_rotor_animation.py \
+  --scenario inputs/dc_motor_spinup_ci.json \
+  --rotor dc_rotor \
+  --mechanical outputs/dc_motor_mechanical.csv \
+  --circuit-trace outputs/dc_motor_currents.csv \
+  --gif ci_artifacts/dc_motor_rotor.gif \
+  --frame-png ci_artifacts/dc_motor_rotor.png
+```
+
+If a circuit trace is not supplied the script falls back to the timeline
+`phase_currents` data embedded in the scenario (useful for synchronous demos
+that prescribe the waveforms). When neither source is available the slots are
+rendered with neutral colours, still illustrating the rotor’s motion. The CLI
+supports frame limiting (`--max-frames`), alternate figure sizes, and PNG-only
+exports for quick smoke tests. CI runs this helper for the PM, induction, and
+DC motor demos so the uploaded artefacts include geometry-focused animations in
+addition to the full-field ParaView series.
+
 ## ParaView overlays
 
 When loading solver outputs directly in ParaView, open both the `.vti` field

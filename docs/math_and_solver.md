@@ -32,9 +32,10 @@ where \(J_z\) is the impressed current density in the \(z\) direction. In the sp
 
 The solver operates on a structured, uniform grid of size \((n_x, n_y)\) with spacings \(\Delta x, \Delta y\). All quantities are stored at cell centres:
 
-- \(A_z\): vector potential solution.
-- \(J_z\): source term.
+- \(A_z\): vector potential solution. In harmonic solves the code also stores an imaginary component \(A_z^{(i)}\).
+- \(J_z\): source term. A companion array stores the imaginary impressed current density when frequency-domain sources are used.
 - \(\nu = 1/\mu\): inverse permeability.
+- \(\sigma\): electrical conductivity (S/m), required for eddy-current calculations.
 
 ### 3.1 Variable-coefficient five-point stencil
 
@@ -92,9 +93,10 @@ SOR remains useful as a smoother and a robust fallback when diagnostics are requ
 ### 5.2 Preconditioned Conjugate Gradient (PCG)
 
 For production runs the simulator now provides a preconditioned conjugate gradient solver tailored to the symmetric positive
-definite system. The PCG iteration is expressed in matrix-free form using the residual assembly routine shown earlier. A Jacobi
-preconditioner (diagonal inverse of the operator) is applied to each residual update. The update equations follow the standard
-PCG recurrence:
+definite system. The PCG iteration is expressed in matrix-free form using the residual assembly routine shown earlier. Users can
+select a preconditioner at runtime via `--pc {none|jacobi|ssor}` (or the matching scenario schema). The Jacobi option applies the
+diagonal inverse of the operator, while the SSOR mode runs a matrix-free symmetric Gauss–Seidel sweep that respects the
+structured 5-point stencil. The update equations follow the standard PCG recurrence:
 \[
 \begin{aligned}
 r_k &= b - A x_k, & z_k &= M^{-1} r_k, & p_k &= z_k + \beta_{k-1} p_{k-1}, \\
@@ -104,6 +106,23 @@ r_k &= b - A x_k, & z_k &= M^{-1} r_k, & p_k &= z_k + \beta_{k-1} p_{k-1}, \\
 with \(\beta_{k-1} = (r_k^T z_k) / (r_{k-1}^T z_{k-1})\). The implementation enforces Neumann symmetry by mirroring boundary
 values between iterations and monitors stagnation. If the relative residual fails to improve over a configurable window the
 solver emits guidance suggesting warm starts, prolongation, or falling back to SOR for inspection.
+
+### 5.3 Transient magnetodynamics
+
+Conductive regions introduce the magneto-quasistatic equation
+\[
+\sigma \frac{\partial A_z}{\partial t} + \nabla\cdot\left(\nu \nabla A_z\right) = -J_{\text{imp}},
+\]
+which, after linearising with a Crank–Nicolson step and assuming quasi-static magnetisation, yields the linear system
+\[
+\left(\frac{\sigma}{\Delta t}I + \mathcal{A}\right) A_z^{n+1} = \frac{\sigma}{\Delta t} A_z^n + J_{\text{imp}}^{n+1},
+\]
+where \(\mathcal{A}(\cdot) = -\nabla\cdot(\nu \nabla \cdot)\) is the same operator used in the magnetostatic solve. The
+implementation reuses the CG/PCG back-end by augmenting the matrix-free stencil with the \(\sigma/\Delta t\) diagonal term and
+supplying the adjusted right-hand side. Scenario JSON enables transient marching by adding a top-level `"transient"` block with
+`dt` and `n_steps`, and timeline frames advance sequentially so coupled circuit and mechanical subsystems remain synchronised
+with the EM state. The bundled diffusion regression (`tests/diffusion_test.cpp`) exercises this pathway and compares the recovered
+field against the analytic error-function solution for a step excitation into a half-space conductor.
 
 ## 6. Convergence criteria
 
@@ -193,7 +212,50 @@ This reference captures the mathematical foundations and numerical choices embed
 For runtime and scaling heuristics, consult `docs/solver_performance.md`, which summarises
 benchmark data from the bundled tooling.
 
-## 11. Scenario Spec v0.2
+## 11. Frequency-domain magneto-quasistatics
+
+Conductive regions introduce eddy currents when the magnetic field varies in time.
+The simulator's first step toward induction modelling solves the steady-state
+magneto-quasistatic system for sinusoidal excitation. Assuming a phasor
+dependence \(e^{j\omega t}\) and a scalar potential \(A_z\) split into real and
+imaginary parts (\(A_z = A_r + j A_i\)), the governing equations become
+
+\[
+\begin{aligned}
+\nabla \cdot (\nu \nabla A_r) - \omega \sigma A_i &= J_r, \\
+\nabla \cdot (\nu \nabla A_i) + \omega \sigma A_r &= J_i,
+\end{aligned}
+\]
+
+where \(\sigma\) is the electrical conductivity and \(J = J_r + j J_i\) is the
+impressed current density. The discrete operator therefore couples the real and
+imaginary systems through the frequency-dependent \(\omega \sigma\) term.
+
+The implementation keeps the matrix-free structure used by the magnetostatic
+solver. A helper applies the block operator
+
+\[
+\mathbf{H} =
+\begin{bmatrix}
+L & -\omega S \\
+\omega S & L
+\end{bmatrix},
+\]
+
+where \(L\) is the familiar diffusion stencil and \(S\) holds per-cell
+conductivities. Because \(\mathbf{H}\) is not symmetric, the code forms the
+normal equations \(\mathbf{H}^T \mathbf{H} x = \mathbf{H}^T b\) and solves them
+with conjugate gradients. Dirichlet boundaries enforce the phasor gauge, and a
+Jacobi-like preconditioner can be added later without changing the interface.
+
+Post-processing mirrors the magnetostatic pipeline: `computeBHarmonic` evaluates
+the complex curl of \(A_z\) to recover \(\mathbf{B}\), and `computeHHarmonic`
+applies \(\mathbf{H} = \nu \mathbf{B} - \mathbf{M}/\mu_r\) to obtain the magnetic
+field intensity phasor. The new `materials[].sigma` property, propagated through
+`Grid2D::sigma`, enables eddy terms while keeping legacy magnetostatic scenarios
+unchanged (\(\sigma = 0\)).
+
+## 12. Scenario Spec v0.2
 
 The solver ingests simulation descriptions authored as JSON documents. Version
 `0.2` extends the original schema with heterogeneous material regions while
@@ -208,7 +270,7 @@ following top-level members:
 | `boundary`  | object | Optional boundary condition override, e.g. `{ "type": "neumann" }`; defaults to Dirichlet when omitted. |
 | `materials` | array  | Each entry defines `{name, mu_r}` with unique names. |
 | `regions`   | array  | Evaluated in authoring order. Entries may be `{"type": "uniform", "material": ...}` to set the background, `{"type": "halfspace", "normal": [nx, ny], "offset": c, "material": ...}` for planar masks, and `{"type": "polygon", "vertices": [[x1, y1], …], "material": ...}` to paint arbitrary simple polygons. |
-| `sources`   | array  | Currently limited to wires: `{ "type": "wire", "x", "y", "radius", "I" }` with cylindrical patches of uniform `J_z`. |
+| `sources`   | array  | Excites the field solve. Each entry is either a circular `{ "type": "wire", "x", "y", "radius", "I" }` or a polygonal `{ "type": "current_region", "vertices": [...], "I", "turns", "fill_fraction" }`. |
 | `magnet_regions` | array | Optional list of magnetised shapes with uniform magnetisation vectors, e.g. polygon loops or axis-aligned rectangles. |
 | `outputs`   | array  | Optional list of export requests. `field_map` records support `quantity` values `"B"`, `"H"`, `"BH"`, or `"energy_density"`; `line_probe` records accept `"Bmag"`, `"Bx"`, `"By"`, `"Hx"`, `"Hy"`, `"Hmag"`, or `"energy_density"`. All outputs are emitted as CSV. |
 
@@ -239,16 +301,64 @@ Two helper layers keep authoring ergonomic:
    fulfilled at runtime. The legacy `--write-midline` flag remains available for
    ad-hoc dumps.
 
-The `sources` list supports multiple wire entries. Each is rasterised as a disk
-with constant current density `J_z = I / (π r²)` applied to cells whose centres
-fall inside the radius. `tests/two_wire_cancel_test.cpp` integrates these cells
-to confirm that the deposited current matches the requested value to within
-15%, providing a regression guard on the rasteriser. Magnetised regions live in
-`magnet_regions`; each entry supplies a shape (`polygon` with vertices or
-`rect` with `x_range`/`y_range`) plus a magnetisation vector `magnetization`
-given either as `[Mx, My]` or `{ "Mx": ..., "My": ... }`. Overlapping entries
-add their vectors. Bound currents are generated from the resulting discrete
-curl, so partial coverage and composite magnets are supported.
+The `sources` list accepts both circular wires and polygonal current regions.
+`wire` entries remain a thin wrapper around the analytic Biot–Savart source:
+the rasteriser paints a disk of radius `r` with uniform current density
+`J_z = I / (π r²)` wherever the cell centre lies inside the loop. The
+`tests/two_wire_cancel_test.cpp` regression integrates the deposited density to
+confirm that it recovers the requested current to within 15% on the coarse CI
+grid.
+
+`current_region` entries describe coil slots via arbitrary simple polygons.
+Each region stores an orientation (±1), optional `phase` label, the conductor
+current `I`, the number of turns threading the slot, and a copper packing
+factor `fill_fraction`. During rasterisation the simulator distributes the net
+ampere-turns evenly across the polygon,
+
+```
+J_z = (orientation × I × turns × fill_fraction) / area_polygon,
+```
+
+so that the integrated current density matches the requested ampere-turns even
+when the slot is only partially filled. The packing factor is clamped to `[1e-4,
+1]` to avoid singular densities, and authors can drive the same slot from
+voltage-driven circuits (via coil links) or by prescribing timeline currents.
+`tests/current_region_turns_test.cpp` integrates the rasterised density and
+asserts the ampere-turn budget stays within 5% of the analytic value.
+
+When a current region is driven by a `coil_link`, the circuit layer can override
+its effective orientation via a `commutator` object:
+
+```json
+{
+  "type": "coil_link",
+  "inductor": "arm_L",
+  "region": "armature_a",
+  "turns": 110.0,
+  "commutator": {
+    "rotor": "dc_rotor",
+    "default_orientation": 1.0,
+    "segments": [
+      {"start_deg": -90.0, "end_deg": 90.0, "orientation": 1.0},
+      {"start_deg": 90.0, "end_deg": 270.0, "orientation": -1.0}
+    ]
+  }
+}
+```
+
+At the start of each frame the circuit simulator normalises the associated
+rotor’s electrical angle, selects the segment whose `[start_deg, end_deg)` range
+contains it (wrapping across ±180° if needed), and multiplies the base region
+orientation by the selected `orientation`. The updated value is used for both
+current deposition and flux-linkage integration, letting commutated armatures
+flip polarity without editing the timeline geometry.
+
+Magnetised regions live in `magnet_regions`; each entry supplies a shape
+(`polygon` with vertices or `rect` with `x_range`/`y_range`) plus a
+magnetisation vector `magnetization` given either as `[Mx, My]` or `{ "Mx": ...,
+"My": ... }`. Overlapping entries add their vectors. Bound currents are
+generated from the resulting discrete curl, so partial coverage and composite
+magnets are supported.
 
 Reserved future fields (e.g. a `timeline` array for time-varying studies) can be
 introduced without breaking the base schema because the parser ignores unknown
@@ -271,6 +381,10 @@ self-documenting and reproducible. Two request flavours remain available:
   `Bmag`, `Hx`, `Hy`, `Hmag`, or `energy_density`), and an output path. The
   ingestor validates that the requested line lands on an existing grid column or
   row.
+* **Mechanical traces** (`{"type":"mechanical_trace", "id":"pm_spinup", "rotors":["pm_rotor"]}`)
+  log rotor state samples after each solved frame. The CSV header is
+  `time_s,rotor,angle_deg,omega_rad_s,omega_rpm,torque_Nm`, making it easy to
+  validate spin-up behaviour or feed coupled ODE solvers during post-processing.
 
 Python authors can build these records via
 `scenario_api.FieldMapOutput`/`LineProbeOutput`. Downstream tooling such as

@@ -1,9 +1,11 @@
 #include "motorsim/ingest.hpp"
 #include "motorsim/io_csv.hpp"
 #include "motorsim/io_vtk.hpp"
+#include "motorsim/mechanical.hpp"
 #include "motorsim/probes.hpp"
 #include "motorsim/solver.hpp"
 #include "motorsim/types.hpp"
+#include "motorsim/circuit.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -19,6 +21,7 @@
 #include <numeric>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <mutex>
 #include <system_error>
 #include <string>
@@ -33,9 +36,12 @@ void printUsage() {
     std::cout << "Usage: motor_sim [--scenario PATH] [--solve] [--write-midline]"
                  " [--list-outputs] [--outputs IDs] [--max-iters N] [--tol VALUE]"
                  " [--omega VALUE] [--parallel-frames] [--vtk-series PATH]"
-                 " [--solver {sor|cg}] [--warm-start] [--no-warm-start] [--use-prolongation]"
+                " [--solver {sor|cg|harmonic}] [--pc {none|jacobi|ssor}]"
+                " [--harmonic-frequency HZ] [--harmonic-omega RAD_S]"
+                " [--warm-start] [--no-warm-start] [--use-prolongation]"
                  " [--no-prolongation] [--coarse-nx N] [--coarse-ny N]"
-                 " [--progress-every SEC] [--snapshot-every N] [--quiet] [--no-quiet]\n";
+                 " [--progress-every SEC] [--snapshot-every N]"
+                 " [--progress-history PATH] [--quiet] [--no-quiet]\n";
 }
 
 std::vector<std::string> splitCommaSeparated(const std::string& text) {
@@ -70,7 +76,11 @@ struct FrameRunResult {
     std::string stdoutLog;
     std::string stderrLog;
     std::unordered_map<std::string, double> backEmfFluxes;
+    std::unordered_map<std::string, motorsim::StressTensorResult> torqueSamples;
     std::vector<double> AzSolution;
+    std::vector<motorsim::ProgressSample> progressHistory;
+    bool hasMagneticCoenergy{false};
+    double magneticCoenergy{0.0};
     struct VtkSeriesFrame {
         std::string id;
         std::string path;
@@ -406,7 +416,14 @@ std::filesystem::path makeFramePath(const std::string& basePath, bool timelineAc
     std::filesystem::path base(basePath);
     const std::filesystem::path dir = base.parent_path();
     std::ostringstream stem;
-    stem << base.stem().string() << "_frame_";
+    const std::string stemName = base.stem().string();
+    constexpr std::string_view frameTag{"_frame"};
+    if (stemName.size() >= frameTag.size() &&
+        stemName.compare(stemName.size() - frameTag.size(), frameTag.size(), frameTag) == 0) {
+        stem << stemName << '_';
+    } else {
+        stem << stemName << "_frame_";
+    }
     stem << std::setfill('0') << std::setw(static_cast<int>(digits)) << frameIndex;
     const std::string extension = base.extension().string();
     return dir / (stem.str() + extension);
@@ -595,6 +612,31 @@ bool tryParseSolverKind(const std::string& text, motorsim::SolverKind& out) {
         out = motorsim::SolverKind::CG;
         return true;
     }
+    if (lower == "harmonic" || lower == "harmonic_cg") {
+        out = motorsim::SolverKind::Harmonic;
+        return true;
+    }
+    return false;
+}
+
+bool tryParsePreconditioner(const std::string& text, motorsim::PreconditionerKind& out) {
+    std::string lower;
+    lower.reserve(text.size());
+    for (unsigned char ch : text) {
+        lower.push_back(static_cast<char>(std::tolower(ch)));
+    }
+    if (lower == "none") {
+        out = motorsim::PreconditionerKind::None;
+        return true;
+    }
+    if (lower == "jacobi") {
+        out = motorsim::PreconditionerKind::Jacobi;
+        return true;
+    }
+    if (lower == "ssor") {
+        out = motorsim::PreconditionerKind::SSOR;
+        return true;
+    }
     return false;
 }
 
@@ -602,12 +644,17 @@ class FrameProgressSinkImpl : public motorsim::ProgressSink {
 public:
     using SnapshotProvider = std::function<std::optional<std::string>(const motorsim::ProgressSample&)>;
 
-    FrameProgressSinkImpl(FrameProgressState* state, SnapshotProvider provider)
-        : state_(state), provider_(std::move(provider)) {}
+    FrameProgressSinkImpl(FrameProgressState* state,
+                          SnapshotProvider provider,
+                          std::vector<motorsim::ProgressSample>* history)
+        : state_(state), provider_(std::move(provider)), history_(history) {}
 
     bool onProgress(const motorsim::ProgressSample& sample) override {
         if (state_) {
             state_->update(sample.iter, sample.relResidual);
+        }
+        if (history_) {
+            history_->push_back(sample);
         }
         return true;
     }
@@ -622,16 +669,24 @@ public:
 private:
     FrameProgressState* state_{nullptr};
     SnapshotProvider provider_{};
+    std::vector<motorsim::ProgressSample>* history_{nullptr};
 };
 
-FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::SolveOptions& options,
+FrameRunResult solveFrame(motorsim::ScenarioFrame& frame, const motorsim::SolveOptions& options,
                           const OutputFilter& filter, bool timelineActive, std::size_t frameDigits,
                           bool writeMidline, FrameProgressState* progressState,
-                          const std::vector<double>* warmStartGuess) {
+                          const std::vector<double>* warmStartGuess,
+                          motorsim::CircuitSimulator* circuitSim,
+                          const std::vector<double>* transientPrevAz,
+                          double transientDt) {
     FrameRunResult result{};
     std::ostringstream out;
     std::ostringstream err;
     FrameProgressGuard progressGuard(progressState);
+
+    if (circuitSim) {
+        circuitSim->apply_currents(frame);
+    }
 
     motorsim::Grid2D grid(frame.spec.nx, frame.spec.ny, frame.spec.dx, frame.spec.dy);
     try {
@@ -644,6 +699,8 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     }
 
     motorsim::SolveOptions solveOptions = options;
+
+    const bool transientActive = frame.spec.transient.enabled && transientPrevAz != nullptr && (transientDt > 0.0);
 
     FrameProgressSinkImpl::SnapshotProvider snapshotProvider;
     if (progressState && options.snapshotEveryIters > 0) {
@@ -659,16 +716,35 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
             return std::optional<std::string>(name.str());
         };
     }
-    FrameProgressSinkImpl sink(progressState, snapshotProvider);
+    FrameProgressSinkImpl sink(progressState, snapshotProvider, &result.progressHistory);
 
     motorsim::InitialGuess guess{};
     const motorsim::InitialGuess* guessPtr = nullptr;
-    if (warmStartGuess && warmStartGuess->size() == grid.Az.size()) {
+    if (!transientActive && warmStartGuess && warmStartGuess->size() == grid.Az.size()) {
         guess.Az0 = warmStartGuess;
         guessPtr = &guess;
     }
 
-    const motorsim::SolveResult report = motorsim::solveAz(grid, solveOptions, guessPtr, progressState ? &sink : nullptr);
+    std::vector<double> emptyPrev;
+    const std::vector<double>& transientPrev = (transientActive && transientPrevAz && transientPrevAz->size() == grid.Az.size())
+                                                   ? *transientPrevAz
+                                                   : emptyPrev;
+
+    if (transientActive && transientPrev.empty() && transientPrevAz && transientPrevAz->size() != grid.Az.size()) {
+        emptyPrev.assign(grid.Az.size(), 0.0);
+    }
+
+    if (transientActive && transientPrevAz && transientPrevAz->size() == grid.Az.size()) {
+        grid.Az = *transientPrevAz;
+    }
+
+    motorsim::SolveResult report{};
+    if (transientActive) {
+        report = motorsim::solveTransientStep(grid, solveOptions, transientDt, transientPrev,
+                                              progressState ? &sink : nullptr);
+    } else {
+        report = motorsim::solveAz(grid, solveOptions, guessPtr, progressState ? &sink : nullptr);
+    }
     if (!report.converged) {
         err << "Frame " << frame.index
             << ": solver did not converge. relResidual=" << report.relResidual << '\n';
@@ -678,6 +754,9 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     }
 
     motorsim::computeB(grid);
+    if (circuitSim) {
+        circuitSim->record_solved_frame(frame, grid);
+    }
 
     const bool scenarioHasOutputs = !frame.spec.outputs.fieldMaps.empty() ||
                                     !frame.spec.outputs.lineProbes.empty() ||
@@ -705,6 +784,8 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     bool lineProbeNeedsEnergy = false;
     bool vtkSeriesNeedsH = false;
     bool vtkSeriesNeedsEnergy = false;
+    bool torqueProbeNeedsEnergy = false;
+    bool outputError = false;
 
     std::vector<motorsim::VtkOutlineLoop> outlineLoops;
     bool outlinesPrepared = false;
@@ -745,6 +826,16 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
             }
         }
 
+        for (const auto& request : frame.spec.outputs.probes) {
+            if (!shouldEmit(request.id)) {
+                continue;
+            }
+            if (request.quantity == motorsim::ScenarioSpec::Outputs::Probe::Quantity::Torque ||
+                request.quantity == motorsim::ScenarioSpec::Outputs::Probe::Quantity::ForceAndTorque) {
+                torqueProbeNeedsEnergy = true;
+            }
+        }
+
         for (const auto& request : frame.spec.outputs.vtkSeries) {
             if (!shouldEmit(request.id)) {
                 continue;
@@ -759,10 +850,20 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
 
     }
 
-    const bool needHField = fieldMapNeedsH || fieldMapNeedsEnergy || lineProbeNeedsH ||
-                            lineProbeNeedsEnergy || vtkSeriesNeedsH || vtkSeriesNeedsEnergy;
+    const bool needHField = fieldMapNeedsH || fieldMapNeedsEnergy || lineProbeNeedsH || lineProbeNeedsEnergy ||
+                            vtkSeriesNeedsH || vtkSeriesNeedsEnergy || torqueProbeNeedsEnergy;
     if (needHField) {
         motorsim::computeH(grid);
+        if (torqueProbeNeedsEnergy) {
+            try {
+                result.magneticCoenergy =
+                    motorsim::compute_magnetic_coenergy(grid, frame.spec.dx, frame.spec.dy);
+                result.hasMagneticCoenergy = true;
+            } catch (const std::exception& ex) {
+                err << "Frame " << frame.index << ": failed to compute magnetic co-energy: " << ex.what() << '\n';
+                outputError = true;
+            }
+        }
     }
 
     out << "Frame " << frame.index;
@@ -771,8 +872,6 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
     }
     out << ": solved in " << report.iters << " iterations, relResidual=" << report.relResidual
         << '\n';
-
-    bool outputError = false;
 
     if (scenarioHasOutputs && !filter.skip) {
         std::vector<double> gridXs;
@@ -1091,9 +1190,11 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
             }
 
             try {
-                const motorsim::StressTensorResult result = motorsim::evaluate_maxwell_stress_probe(
+                const motorsim::StressTensorResult probeResult = motorsim::evaluate_maxwell_stress_probe(
                     grid, frame.spec.originX, frame.spec.originY, frame.spec.dx, frame.spec.dy,
                     request.loopXs, request.loopYs);
+
+                result.torqueSamples[request.id] = probeResult;
 
                 const std::filesystem::path outPath =
                     makeFramePath(request.path, timelineActive, frame.index, frameDigits);
@@ -1103,9 +1204,17 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
                 if (!ofs.is_open()) {
                     throw std::runtime_error("Failed to open output file");
                 }
-                ofs << "Fx,Fy,Tz\n";
-                ofs << std::scientific << std::setprecision(12) << result.forceX << "," << result.forceY
-                    << "," << result.torqueZ << "\n";
+                ofs << "Fx,Fy,Tz";
+                if (result.hasMagneticCoenergy) {
+                    ofs << ",CoEnergy";
+                }
+                ofs << "\n";
+                ofs << std::scientific << std::setprecision(12) << probeResult.forceX << "," << probeResult.forceY
+                    << "," << probeResult.torqueZ;
+                if (result.hasMagneticCoenergy) {
+                    ofs << "," << result.magneticCoenergy;
+                }
+                ofs << "\n";
 
                 const char* quantityLabel = "torque";
                 switch (request.quantity) {
@@ -1122,8 +1231,12 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
                 }
 
                 out << "Frame " << frame.index << ": wrote probe '" << request.id << "' (" << quantityLabel
-                    << ", stress_tensor) to " << outPath << " [Fx=" << result.forceX
-                    << ", Fy=" << result.forceY << ", Tz=" << result.torqueZ << "]\n";
+                    << ", stress_tensor) to " << outPath << " [Fx=" << probeResult.forceX
+                    << ", Fy=" << probeResult.forceY << ", Tz=" << probeResult.torqueZ;
+                if (result.hasMagneticCoenergy) {
+                    out << ", Wm=" << result.magneticCoenergy;
+                }
+                out << "]\n";
             } catch (const std::exception& ex) {
                 err << "Frame " << frame.index << ": failed to evaluate probe '" << request.id
                     << "': " << ex.what() << '\n';
@@ -1198,12 +1311,12 @@ FrameRunResult solveFrame(const motorsim::ScenarioFrame& frame, const motorsim::
         }
     }
 
-    result.solverSuccess = true;
+    result.solverSuccess = report.converged;
     result.outputError = outputError;
     result.stdoutLog = out.str();
     result.stderrLog = err.str();
     result.AzSolution = grid.Az;
-    progressGuard.markFinal(report.iters, report.relResidual, true);
+    progressGuard.markFinal(report.iters, report.relResidual, report.converged);
     return result;
 }
 
@@ -1221,14 +1334,18 @@ int main(int argc, char** argv) {
     std::optional<int> maxItersOverride;
     std::optional<double> tolOverride;
     std::optional<double> omegaOverride;
+    std::optional<double> harmonicFreqOverride;
+    std::optional<double> harmonicOmegaOverride;
     std::optional<std::string> vtkSeriesPath;
     std::optional<std::string> solverOverride;
+    std::optional<std::string> preconditionerOverride;
     std::optional<bool> warmStartOverride;
     std::optional<bool> prolongationOverride;
     std::optional<std::size_t> coarseNxOverride;
     std::optional<std::size_t> coarseNyOverride;
     std::optional<double> progressEveryOverride;
     std::optional<std::size_t> snapshotEveryOverride;
+    std::optional<std::string> progressHistoryPath;
     std::optional<bool> quietOverride;
 
     for (int i = 1; i < argc; ++i) {
@@ -1316,18 +1433,66 @@ int main(int argc, char** argv) {
                 return 1;
             }
             omegaOverride = value;
+        } else if (arg == "--harmonic-frequency") {
+            if (i + 1 >= argc) {
+                std::cerr << "--harmonic-frequency requires a floating-point argument\n";
+                printUsage();
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--harmonic-frequency requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (!(value > 0.0)) {
+                std::cerr << "--harmonic-frequency must be positive\n";
+                return 1;
+            }
+            harmonicFreqOverride = value;
+        } else if (arg == "--harmonic-omega") {
+            if (i + 1 >= argc) {
+                std::cerr << "--harmonic-omega requires a floating-point argument\n";
+                printUsage();
+                return 1;
+            }
+            double value = 0.0;
+            try {
+                value = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "--harmonic-omega requires a valid floating-point argument\n";
+                return 1;
+            }
+            if (!(value > 0.0)) {
+                std::cerr << "--harmonic-omega must be positive\n";
+                return 1;
+            }
+            harmonicOmegaOverride = value;
         } else if (arg == "--solver") {
             if (i + 1 >= argc) {
-                std::cerr << "--solver requires an argument (sor or cg)\n";
+                std::cerr << "--solver requires an argument (sor, cg, or harmonic)\n";
                 printUsage();
                 return 1;
             }
             const std::string value = argv[++i];
-            if (value != "sor" && value != "cg") {
-                std::cerr << "--solver must be 'sor' or 'cg'\n";
+            if (value != "sor" && value != "cg" && value != "harmonic" && value != "harmonic_cg") {
+                std::cerr << "--solver must be 'sor', 'cg', or 'harmonic'\n";
                 return 1;
             }
             solverOverride = value;
+        } else if (arg == "--pc") {
+            if (i + 1 >= argc) {
+                std::cerr << "--pc requires an argument (none, jacobi, or ssor)\n";
+                printUsage();
+                return 1;
+            }
+            const std::string value = argv[++i];
+            if (value != "none" && value != "jacobi" && value != "ssor") {
+                std::cerr << "--pc must be 'none', 'jacobi', or 'ssor'\n";
+                return 1;
+            }
+            preconditionerOverride = value;
         } else if (arg == "--warm-start") {
             warmStartOverride = true;
         } else if (arg == "--no-warm-start") {
@@ -1400,6 +1565,17 @@ int main(int argc, char** argv) {
                 return 1;
             }
             snapshotEveryOverride = value;
+        } else if (arg == "--progress-history") {
+            if (i + 1 >= argc) {
+                std::cerr << "--progress-history requires a path argument\n";
+                return 1;
+            }
+            const std::string pathArg = std::string(argv[++i]);
+            if (pathArg.empty()) {
+                std::cerr << "--progress-history requires a non-empty path\n";
+                return 1;
+            }
+            progressHistoryPath = pathArg;
         } else if (arg == "--quiet") {
             quietOverride = true;
         } else if (arg == "--no-quiet") {
@@ -1434,7 +1610,8 @@ int main(int argc, char** argv) {
 
     std::unordered_set<std::string> availableOutputIds;
     availableOutputIds.reserve(spec.outputs.fieldMaps.size() + spec.outputs.lineProbes.size() +
-                              spec.outputs.probes.size() + spec.outputs.backEmfProbes.size());
+                              spec.outputs.probes.size() + spec.outputs.backEmfProbes.size() +
+                              spec.outputs.mechanicalTraces.size());
     for (const auto& request : spec.outputs.fieldMaps) {
         availableOutputIds.insert(request.id);
     }
@@ -1454,6 +1631,12 @@ int main(int argc, char** argv) {
         availableOutputIds.insert(request.id);
     }
     for (const auto& request : spec.outputs.boreProbes) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.mechanicalTraces) {
+        availableOutputIds.insert(request.id);
+    }
+    for (const auto& request : spec.outputs.circuitTraces) {
         availableOutputIds.insert(request.id);
     }
 
@@ -1509,6 +1692,30 @@ int main(int argc, char** argv) {
                         std::cout << ',';
                     }
                     std::cout << request.frameIndices[idx];
+                }
+                std::cout << ']';
+            }
+            std::cout << "\n";
+        }
+        for (const auto& request : spec.outputs.mechanicalTraces) {
+            std::cout << "  - [mechanical_trace] id=" << request.id << ", rotors=";
+            for (std::size_t idx = 0; idx < request.rotors.size(); ++idx) {
+                if (idx > 0) {
+                    std::cout << ',';
+                }
+                std::cout << request.rotors[idx];
+            }
+            std::cout << ", path=" << request.path << "\n";
+        }
+        for (const auto& request : spec.outputs.circuitTraces) {
+            std::cout << "  - [circuit_trace] id=" << request.id << ", path=" << request.path;
+            if (!request.circuits.empty()) {
+                std::cout << ", circuits=[";
+                for (std::size_t idx = 0; idx < request.circuits.size(); ++idx) {
+                    if (idx > 0) {
+                        std::cout << ',';
+                    }
+                    std::cout << request.circuits[idx];
                 }
                 std::cout << ']';
             }
@@ -1595,6 +1802,39 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::string preconditionerId = "none";
+    if (spec.solverSettings.preconditionerSpecified) {
+        preconditionerId = spec.solverSettings.preconditionerId;
+    }
+    if (preconditionerOverride) {
+        preconditionerId = *preconditionerOverride;
+    }
+    if (!tryParsePreconditioner(preconditionerId, options.preconditioner)) {
+        std::cerr << "Unknown preconditioner identifier: " << preconditionerId << "\n";
+        return 1;
+    }
+
+    if (options.kind == motorsim::SolverKind::Harmonic) {
+        double omega = 0.0;
+        if (harmonicOmegaOverride) {
+            omega = *harmonicOmegaOverride;
+        } else if (harmonicFreqOverride) {
+            constexpr double twoPi = 2.0 * 3.14159265358979323846;
+            omega = *harmonicFreqOverride * twoPi;
+        } else if (spec.solverSettings.harmonicOmegaSpecified) {
+            omega = spec.solverSettings.harmonicOmega;
+        } else if (spec.solverSettings.harmonicFrequencySpecified) {
+            constexpr double twoPi = 2.0 * 3.14159265358979323846;
+            omega = spec.solverSettings.harmonicFrequencyHz * twoPi;
+        }
+        if (!(omega > 0.0)) {
+            std::cerr << "Harmonic solver requires a positive drive frequency."
+                      << " Provide --harmonic-frequency/--harmonic-omega or set solver.frequency_hz in the scenario.\n";
+            return 1;
+        }
+        options.harmonicOmega = omega;
+    }
+
     bool warmStart = spec.solverSettings.warmStartSpecified ? spec.solverSettings.warmStart : false;
     if (warmStartOverride) {
         warmStart = *warmStartOverride;
@@ -1654,6 +1894,14 @@ int main(int argc, char** argv) {
         frameDigits = std::max<std::size_t>(3, std::to_string(maxIndex).size());
     }
 
+    motorsim::CircuitSimulator circuitSim;
+    circuitSim.initialize(frames);
+    const bool circuitsActive = circuitSim.is_active();
+
+    motorsim::MechanicalSimulator mechanicalSim;
+    mechanicalSim.initialize(spec, frames);
+    const bool mechanicalActive = mechanicalSim.is_active();
+
     bool runParallel = false;
     std::size_t threadCount = 1;
     if (parallelFramesFlag && frames.size() > 1) {
@@ -1672,6 +1920,22 @@ int main(int argc, char** argv) {
     if (options.warmStart && timelineActive && runParallel) {
         if (!quiet) {
             std::cout << "Warm start enabled; solving frames sequentially to preserve dependency order.\n";
+        }
+        runParallel = false;
+        threadCount = 1;
+    }
+
+    if (circuitsActive && runParallel) {
+        if (!quiet) {
+            std::cout << "Circuit coupling requires sequential frame solves. Disabling parallel execution.\n";
+        }
+        runParallel = false;
+        threadCount = 1;
+    }
+
+    if (mechanicalActive && runParallel) {
+        if (!quiet) {
+            std::cout << "Mechanical coupling requires sequential frame solves. Disabling parallel execution.\n";
         }
         runParallel = false;
         threadCount = 1;
@@ -1706,7 +1970,7 @@ int main(int argc, char** argv) {
                     }
                     results[idx] = solveFrame(frames[idx], options, filter, timelineActive,
                                               frameDigits, writeMidline, progressStates[idx].get(),
-                                              nullptr);
+                                              nullptr, nullptr, nullptr, 0.0);
                 }
             });
         }
@@ -1714,16 +1978,53 @@ int main(int argc, char** argv) {
             worker.join();
         }
     } else {
-        std::vector<double> previousAz;
-        bool havePrevious = false;
+        std::vector<double> warmAz;
+        bool haveWarmAz = false;
+        std::vector<double> transientAz;
+        bool haveTransientAz = false;
         for (std::size_t idx = 0; idx < frames.size(); ++idx) {
             const std::vector<double>* guessPtr =
-                (options.warmStart && timelineActive && havePrevious) ? &previousAz : nullptr;
+                (options.warmStart && timelineActive && haveWarmAz) ? &warmAz : nullptr;
+            motorsim::CircuitSimulator* circuitPtr = circuitsActive ? &circuitSim : nullptr;
+            if (mechanicalActive) {
+                mechanicalSim.apply_state(frames[idx]);
+            }
+            if (circuitsActive) {
+                circuitSim.update_for_frame(frames[idx], mechanicalActive ? &mechanicalSim : nullptr);
+            }
+            const std::vector<double>* transientPrev = nullptr;
+            double frameTransientDt = 0.0;
+            if (frames[idx].spec.transient.enabled) {
+                const std::size_t cellCount = frames[idx].spec.nx * frames[idx].spec.ny;
+                if (!haveTransientAz || transientAz.size() != cellCount) {
+                    transientAz.assign(cellCount, 0.0);
+                    haveTransientAz = true;
+                }
+                transientPrev = &transientAz;
+                frameTransientDt = frames[idx].spec.transient.dt;
+            }
             results[idx] = solveFrame(frames[idx], options, filter, timelineActive, frameDigits,
-                                      writeMidline, progressStates[idx].get(), guessPtr);
-            if (options.warmStart && timelineActive && results[idx].solverSuccess) {
-                previousAz = std::move(results[idx].AzSolution);
-                havePrevious = true;
+                                      writeMidline, progressStates[idx].get(), guessPtr, circuitPtr,
+                                      transientPrev, frameTransientDt);
+            if (mechanicalActive && results[idx].solverSuccess) {
+                ScenarioFrame* nextFramePtr = (idx + 1 < frames.size()) ? &frames[idx + 1] : nullptr;
+                mechanicalSim.handle_solved_frame(frames[idx], results[idx].torqueSamples, nextFramePtr);
+            }
+            if (circuitsActive && results[idx].solverSuccess && idx + 1 < frames.size()) {
+                circuitSim.prepare_next_frame(idx, frames[idx], &frames[idx + 1]);
+            }
+            if (results[idx].solverSuccess) {
+                if (frames[idx].spec.transient.enabled) {
+                    transientAz = results[idx].AzSolution;
+                    haveTransientAz = true;
+                }
+                if (options.warmStart && timelineActive) {
+                    warmAz = results[idx].AzSolution;
+                    haveWarmAz = true;
+                } else if (frames[idx].spec.transient.enabled && !options.warmStart) {
+                    warmAz = results[idx].AzSolution;
+                    haveWarmAz = true;
+                }
             }
         }
     }
@@ -1749,6 +2050,36 @@ int main(int argc, char** argv) {
         }
         if (result.outputError) {
             outputFailure = true;
+        }
+    }
+
+    if (progressHistoryPath) {
+        for (std::size_t idx = 0; idx < results.size(); ++idx) {
+            const auto& history = results[idx].progressHistory;
+            const std::filesystem::path outPath =
+                makeFramePath(*progressHistoryPath, timelineActive, frames[idx].index, frameDigits);
+            ensureParentDirectory(outPath);
+            std::ofstream ofs(outPath);
+            if (!ofs.is_open()) {
+                std::cerr << "Failed to open progress history path " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+            ofs << "iter,rel_residual,elapsed_seconds\n";
+            ofs << std::scientific << std::setprecision(12);
+            for (const auto& sample : history) {
+                ofs << sample.iter << ',' << sample.relResidual << ',' << sample.elapsedSeconds << '\n';
+            }
+            ofs.close();
+            if (!ofs) {
+                std::cerr << "Failed while writing progress history to " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+            if (!quiet) {
+                std::cout << "Progress history frame " << frames[idx].index << " wrote " << history.size()
+                          << " sample(s) to " << outPath << '\n';
+            }
         }
     }
 
@@ -1893,6 +2224,143 @@ int main(int argc, char** argv) {
             }
             std::cout << "Bore probe '" << request.id << "' wrote " << samples.size() << " samples to "
                       << outPath << '\n';
+        }
+    }
+
+    if (!solverFailure && !filter.skip && !frames.front().spec.outputs.mechanicalTraces.empty()) {
+        if (!mechanicalActive) {
+            for (const auto& request : frames.front().spec.outputs.mechanicalTraces) {
+                if (!shouldEmitId(request.id)) {
+                    continue;
+                }
+                std::cerr << "Mechanical trace '" << request.id
+                          << "' requested but mechanical simulator is inactive (timeline overrides rotor angles).\n";
+            }
+            outputFailure = true;
+        } else {
+            const auto& histories = mechanicalSim.history();
+            constexpr double kPi = 3.14159265358979323846;
+            constexpr double kTwoPi = 2.0 * kPi;
+            for (const auto& request : frames.front().spec.outputs.mechanicalTraces) {
+                if (!shouldEmitId(request.id)) {
+                    continue;
+                }
+
+                std::vector<std::string> rotorNames = request.rotors;
+                if (rotorNames.empty()) {
+                    rotorNames.reserve(histories.size());
+                    for (const auto& entry : histories) {
+                        rotorNames.push_back(entry.first);
+                    }
+                    std::sort(rotorNames.begin(), rotorNames.end());
+                    rotorNames.erase(std::unique(rotorNames.begin(), rotorNames.end()), rotorNames.end());
+                }
+
+                if (rotorNames.empty()) {
+                    std::cerr << "Mechanical trace '" << request.id
+                              << "' could not resolve any rotor histories to record.\n";
+                    outputFailure = true;
+                    continue;
+                }
+
+                const std::filesystem::path outPath(request.path);
+                ensureParentDirectory(outPath);
+                std::ofstream ofs(outPath);
+                if (!ofs.is_open()) {
+                    std::cerr << "Failed to open mechanical trace output path " << outPath << '\n';
+                    outputFailure = true;
+                    continue;
+                }
+
+                ofs << "time_s,rotor,angle_deg,omega_rad_s,omega_rpm,torque_Nm\n";
+                ofs << std::scientific << std::setprecision(12);
+
+                std::size_t totalSamples = 0;
+                bool missingRotor = false;
+
+                for (const auto& rotorName : rotorNames) {
+                    const auto histIt = histories.find(rotorName);
+                    if (histIt == histories.end()) {
+                        std::cerr << "Mechanical trace '" << request.id << "' references unknown rotor '"
+                                  << rotorName << "'\n";
+                        outputFailure = true;
+                        missingRotor = true;
+                        continue;
+                    }
+                    for (const auto& sample : histIt->second) {
+                        const double angleDeg = sample.angleRad * 180.0 / kPi;
+                        const double rpm = sample.omega * (60.0 / kTwoPi);
+                        ofs << sample.time << ',' << rotorName << ',' << angleDeg << ',' << sample.omega << ',' << rpm
+                            << ',' << sample.torque << '\n';
+                        ++totalSamples;
+                    }
+                }
+
+                ofs.close();
+                if (!ofs) {
+                    std::cerr << "Failed while writing mechanical trace to " << outPath << '\n';
+                    outputFailure = true;
+                    continue;
+                }
+
+                if (!missingRotor && !quiet) {
+                    std::cout << "Mechanical trace '" << request.id << "' wrote " << totalSamples
+                              << " sample(s) to " << outPath << '\n';
+                }
+            }
+        }
+    }
+
+    if (!filter.skip && circuitsActive && !frames.front().spec.outputs.circuitTraces.empty()) {
+        const auto& histories = circuitSim.history();
+        const auto& metadata = circuitSim.trace_metadata();
+        for (const auto& request : frames.front().spec.outputs.circuitTraces) {
+            if (!shouldEmitId(request.id)) {
+                continue;
+            }
+            const std::filesystem::path outPath(request.path);
+            ensureParentDirectory(outPath);
+            std::ofstream ofs(outPath);
+            if (!ofs.is_open()) {
+                std::cerr << "Failed to open circuit trace output path " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+
+            ofs << "time_s,circuit,coil,region,turns,orientation,current_A,effective_current_A,ampere_turns,back_emf_V\n";
+            ofs << std::scientific << std::setprecision(12);
+
+            std::unordered_set<std::string> allowedCircuits(request.circuits.begin(), request.circuits.end());
+            const bool restrictCircuits = !allowedCircuits.empty();
+
+            std::size_t totalSamples = 0;
+            for (const auto& pair : histories) {
+                const auto metaIt = metadata.find(pair.first);
+                if (metaIt == metadata.end()) {
+                    continue;
+                }
+                const auto& meta = metaIt->second;
+                if (restrictCircuits && allowedCircuits.find(meta.circuitId) == allowedCircuits.end()) {
+                    continue;
+                }
+                for (const auto& sample : pair.second) {
+                    ofs << sample.time << ',' << meta.circuitId << ',' << meta.coilId << ',' << meta.regionId << ','
+                        << meta.turns << ',' << sample.orientation << ',' << sample.current << ','
+                        << sample.effectiveCurrent << ',' << sample.ampereTurns << ',' << sample.backEmf << '\n';
+                    ++totalSamples;
+                }
+            }
+
+            ofs.close();
+            if (!ofs) {
+                std::cerr << "Failed while writing circuit trace to " << outPath << '\n';
+                outputFailure = true;
+                continue;
+            }
+            if (!quiet) {
+                std::cout << "Circuit trace '" << request.id << "' wrote " << totalSamples
+                          << " sample(s) to " << outPath << '\n';
+            }
         }
     }
 
