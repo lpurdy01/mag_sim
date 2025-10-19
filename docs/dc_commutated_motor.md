@@ -22,6 +22,9 @@ floating-point coordinates to three decimals so JSON fixtures stay readable. The
 
 * `spinup` – enables the RK4 mechanical simulator, runs a few dozen frames of
   torque-driven acceleration, and emits VTK, torque, and mechanical traces.
+  The CI profile now stops after two electrical cycles (24 frames) so the
+  regression rotor history remains strictly increasing; the hires preset keeps
+  the longer six-cycle spin-up for offline inspection.
 * `locked` – leaves the rotor at its initial angle. Handy for debugging static
   field maps or exporting outlines for documentation.
 * `commutator_test` – generates a four-frame timeline with scripted rotor angles

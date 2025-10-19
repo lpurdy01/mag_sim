@@ -77,7 +77,10 @@ This document tracks progress against the "Next-Stage Development Plan — Time 
   reduced the CI tessellation counts (18 stator vertices, 12 for the bore, 10 for
   the rotor loop) so the committed spin-up fixture stays close to 1.3k lines, and the
   `python/check_pm_spinup.py` helper now evaluates absolute angle/speed gains to
-  accommodate rotors that accelerate in either direction.
+  accommodate rotors that accelerate in either direction. The brushed DC spin-up
+  fixture now caps the CI profile at two electrical cycles (24 frames) so the
+  archived mechanical trace remains monotonic for the commutator regression,
+  while the hires preset retains the longer six-cycle sweep for offline studies.
 - **Stage 3 (Frequency-domain induction path)**: Extended the material schema
   with per-material conductivities (`sigma`) and taught the rasteriser and grid
   container to track `sigma`, complex impressed currents, and an imaginary

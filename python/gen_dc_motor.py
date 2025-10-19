@@ -15,7 +15,7 @@ DEFAULT_PROFILES: Dict[str, Dict[str, Number]] = {
         "nx": 65,
         "ny": 65,
         "frames_per_cycle": 12,
-        "cycles": 4,
+        "cycles": 2,
         "frame_dt": 1.0 / 720.0,
         "outer_segments": 48,
         "bore_segments": 36,
