@@ -285,6 +285,41 @@ def polygon_centroid(vertices: np.ndarray) -> Tuple[float, float]:
     return cx, cy
 
 
+def maybe_round_polygon(
+    vertices: np.ndarray,
+    pivot: np.ndarray,
+    *,
+    min_vertices: int = 96,
+    radial_tolerance: float = 0.05,
+) -> np.ndarray:
+    """Resample nearly circular polygons so overlays look smooth."""
+
+    if vertices.shape[0] < 3:
+        return vertices
+    pivot = np.asarray(pivot, dtype=float)
+    centered = vertices - pivot
+    radii = np.linalg.norm(centered, axis=1)
+    mean_radius = float(np.mean(radii))
+    if mean_radius <= 0.0:
+        return vertices
+    spread = float(np.max(radii) - np.min(radii))
+    tolerance = max(radial_tolerance * mean_radius, 1e-6)
+    if spread > tolerance:
+        return vertices
+
+    samples = max(int(min_vertices), vertices.shape[0])
+    if samples < 3:
+        return vertices
+
+    base_angle = math.atan2(centered[0, 1], centered[0, 0])
+    orientation = 1.0 if polygon_area(vertices) >= 0.0 else -1.0
+    angles = base_angle + orientation * np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
+    rounded = np.empty((samples, 2), dtype=float)
+    rounded[:, 0] = pivot[0] + mean_radius * np.cos(angles)
+    rounded[:, 1] = pivot[1] + mean_radius * np.sin(angles)
+    return rounded
+
+
 def extract_outline_polygons(scenario: Dict[str, object]) -> List[Dict[str, np.ndarray]]:
     regions = scenario.get("regions", [])
     polygons: List[Dict[str, object]] = []
@@ -585,6 +620,7 @@ def build_animation(
     if rotor_overlay is not None:
         for poly in rotor_overlay.rotor_polygons:
             base = np.asarray(poly.vertices, dtype=float)
+            base = maybe_round_polygon(base, rotor_overlay.pivot)
             rotor_base_polys.append(base)
             face, edge, lw = rotor_patch_style(poly.material)
             patch = MplPolygon(
@@ -621,6 +657,9 @@ def build_animation(
         vertices = outline.get("vertices")
         if not isinstance(vertices, np.ndarray) or vertices.size == 0:
             continue
+        if outline.get("category") in {"stator", "bore"}:
+            centroid = np.asarray(polygon_centroid(vertices), dtype=float)
+            vertices = maybe_round_polygon(vertices, centroid, min_vertices=192)
         closed = np.vstack([vertices, vertices[0]]) if vertices.shape[0] >= 2 else vertices
         style = outline_styles.get(outline.get("category", "slot"), {"color": "white", "linewidth": 1.0})
         line, = ax_field.plot(
