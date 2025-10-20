@@ -35,11 +35,17 @@ class CurrentSeriesData:
 
 
 @dataclass
+class RotorPolygon:
+    vertices: np.ndarray
+    material: str
+
+
+@dataclass
 class RotorOverlay:
     name: str
     pivot: np.ndarray
-    rotor_polygons: List[np.ndarray]
-    magnet_polygons: List[np.ndarray]
+    rotor_polygons: List[RotorPolygon]
+    magnet_polygons: List[RotorPolygon]
 
 
 def resolve_optional_path(base: Path, candidate: str) -> Path:
@@ -64,6 +70,17 @@ def rotate_polygon(points: np.ndarray, pivot: np.ndarray, angle_rad: float) -> n
     return rotated + pivot
 
 
+def rotor_patch_style(material: str, *, is_magnet: bool = False) -> Tuple[Tuple[float, float, float, float], str, float]:
+    key = material.lower()
+    if is_magnet:
+        return (1.0, 0.74, 0.3, 0.72), "#7a4200", 1.1
+    if "bar" in key or "conductor" in key:
+        return (0.96, 0.73, 0.32, 0.75), "#915b0f", 1.05
+    if "air" in key:
+        return (0.75, 0.75, 0.75, 0.35), "#404040", 0.8
+    return (0.86, 0.86, 0.86, 0.68), "#202020", 1.0
+
+
 def extract_rotor_overlay(scenario: Dict[str, object], rotor_name: Optional[str]) -> Optional[RotorOverlay]:
     rotors = scenario.get("rotors", [])
     if not isinstance(rotors, list) or not rotors:
@@ -86,7 +103,7 @@ def extract_rotor_overlay(scenario: Dict[str, object], rotor_name: Optional[str]
     pivot = np.asarray(selected.get("pivot", [0.0, 0.0]), dtype=float)
 
     regions = scenario.get("regions", [])
-    rotor_polys: List[np.ndarray] = []
+    rotor_polys: List[RotorPolygon] = []
     for index in selected.get("polygons", []) or []:
         if not isinstance(index, int):
             continue
@@ -97,10 +114,12 @@ def extract_rotor_overlay(scenario: Dict[str, object], rotor_name: Optional[str]
             continue
         vertices = region.get("vertices")
         if isinstance(vertices, list) and vertices:
-            rotor_polys.append(np.asarray(vertices, dtype=float))
+            rotor_polys.append(
+                RotorPolygon(vertices=np.asarray(vertices, dtype=float), material=str(region.get("material", "")))
+            )
 
     magnet_defs = scenario.get("magnet_regions", [])
-    magnet_polys: List[np.ndarray] = []
+    magnet_polys: List[RotorPolygon] = []
     for index in selected.get("magnets", []) or []:
         if not isinstance(index, int):
             continue
@@ -111,7 +130,9 @@ def extract_rotor_overlay(scenario: Dict[str, object], rotor_name: Optional[str]
             continue
         vertices = magnet.get("vertices")
         if isinstance(vertices, list) and vertices:
-            magnet_polys.append(np.asarray(vertices, dtype=float))
+            magnet_polys.append(
+                RotorPolygon(vertices=np.asarray(vertices, dtype=float), material=str(magnet.get("material", "")))
+            )
 
     return RotorOverlay(name=name, pivot=pivot, rotor_polygons=rotor_polys, magnet_polygons=magnet_polys)
 
@@ -482,6 +503,16 @@ def build_animation(
     bore_angles = np.arctan2(bore_by, bore_bx)
     outlines = extract_outline_polygons(scenario)
     slot_annotations = extract_slot_annotations(scenario)
+    pivot_point = rotor_overlay.pivot if rotor_overlay is not None else np.array([0.0, 0.0])
+    stator_radius = None
+    for outline in outlines:
+        if outline.get("category") != "stator":
+            continue
+        vertices = outline.get("vertices")
+        if isinstance(vertices, np.ndarray) and vertices.size:
+            offsets = vertices - pivot_point
+            stator_radius = float(np.max(np.linalg.norm(offsets, axis=1)))
+            break
 
     fig_width_in = width / 100.0
     fig_height_in = fig_width_in * 0.9
@@ -524,15 +555,27 @@ def build_animation(
     ax_field.set_xlabel("x [m]")
     ax_field.set_ylabel("y [m]")
 
-    quiver_step = max(1, int(max(first_mag.shape) / 30))
+    quiver_step = max(1, int(max(first_mag.shape) / 32))
+    sampled_x = x_coords[::quiver_step, ::quiver_step]
+    sampled_y = y_coords[::quiver_step, ::quiver_step]
+    all_vectors = [np.hypot(frame["bx"], frame["by"]) for frame in field_frames]
+    vector_max = max(float(np.max(mag)) for mag in all_vectors)
+    dx = float(np.mean(np.diff(sampled_x[0, :]))) if sampled_x.shape[1] > 1 else (extent[1] - extent[0])
+    dy = float(np.mean(np.diff(sampled_y[:, 0]))) if sampled_y.shape[0] > 1 else (extent[3] - extent[2])
+    base_spacing = max(dx, dy, 1e-6)
+    target_arrow = base_spacing * 0.75
+    quiver_scale = vector_max / target_arrow if vector_max > 0.0 else 1.0
     quiver = ax_field.quiver(
-        x_coords[::quiver_step, ::quiver_step],
-        y_coords[::quiver_step, ::quiver_step],
+        sampled_x,
+        sampled_y,
         field_frames[0]["bx"][::quiver_step, ::quiver_step],
         field_frames[0]["by"][::quiver_step, ::quiver_step],
         color="white",
-        scale=None,
-        width=0.005,
+        scale=quiver_scale,
+        scale_units="xy",
+        angles="xy",
+        width=0.004,
+        pivot="mid",
     )
 
     rotor_patches: List[MplPolygon] = []
@@ -541,27 +584,29 @@ def build_animation(
     magnet_base_polys: List[np.ndarray] = []
     if rotor_overlay is not None:
         for poly in rotor_overlay.rotor_polygons:
-            base = np.asarray(poly, dtype=float)
+            base = np.asarray(poly.vertices, dtype=float)
             rotor_base_polys.append(base)
+            face, edge, lw = rotor_patch_style(poly.material)
             patch = MplPolygon(
                 base,
                 closed=True,
-                facecolor=(0.85, 0.85, 0.85, 0.6),
-                edgecolor="#1f1f1f",
-                linewidth=0.9,
+                facecolor=face,
+                edgecolor=edge,
+                linewidth=lw,
                 zorder=6,
             )
             ax_field.add_patch(patch)
             rotor_patches.append(patch)
         for poly in rotor_overlay.magnet_polygons:
-            base = np.asarray(poly, dtype=float)
+            base = np.asarray(poly.vertices, dtype=float)
             magnet_base_polys.append(base)
+            face, edge, lw = rotor_patch_style(poly.material, is_magnet=True)
             patch = MplPolygon(
                 base,
                 closed=True,
-                facecolor=(1.0, 0.85, 0.4, 0.6),
-                edgecolor="#404040",
-                linewidth=0.8,
+                facecolor=face,
+                edgecolor=edge,
+                linewidth=lw,
                 zorder=7,
             )
             ax_field.add_patch(patch)
@@ -592,24 +637,51 @@ def build_animation(
             ]
         )
 
-    phase_colors = {"A": "tab:red", "B": "tab:green", "C": "tab:blue"}
+    phase_colors = {
+        "A": "tab:red",
+        "B": "tab:green",
+        "C": "tab:blue",
+        "field": "tab:purple",
+        "armature": "tab:orange",
+    }
+    label_ring = stator_radius if stator_radius is not None else (np.max(np.linalg.norm(bore_polygon, axis=1)) if bore_polygon.size else 0.1)
+    label_ring = float(label_ring)
+    label_offset = max(label_ring * 0.12, 0.01)
     for slot in slot_annotations:
         vertices = slot.get("vertices")
         if not isinstance(vertices, np.ndarray) or vertices.size == 0:
             continue
         cx, cy = polygon_centroid(vertices)
-        text = ax_field.text(
-            cx,
-            cy,
-            str(slot.get("label", "")),
-            color=phase_colors.get(slot.get("phase", ""), "white"),
-            fontsize=9,
-            fontweight="bold",
+        label = str(slot.get("label", ""))
+        color = phase_colors.get(str(slot.get("phase", "")), "white")
+        direction = np.array([cx, cy]) - pivot_point
+        dist = float(np.linalg.norm(direction))
+        if dist < 1e-9:
+            direction = np.array([1.0, 0.0])
+            dist = 1e-9
+        else:
+            direction = direction / dist
+        text_radius = max(dist + label_offset, label_ring + label_offset)
+        target = pivot_point + direction * text_radius
+        ax_field.annotate(
+            label,
+            xy=(cx, cy),
+            xytext=(target[0], target[1]),
+            textcoords="data",
             ha="center",
             va="center",
-            zorder=6,
+            fontsize=9,
+            fontweight="bold",
+            color=color,
+            arrowprops={"arrowstyle": "-", "color": color, "lw": 1.1},
+            bbox={
+                "boxstyle": "round,pad=0.28",
+                "facecolor": (0.05, 0.05, 0.05, 0.78),
+                "edgecolor": color,
+                "linewidth": 0.8,
+            },
+            zorder=8,
         )
-        text.set_path_effects([patheffects.withStroke(linewidth=3.0, foreground="black")])
 
     ax_field.set_title("Magnetic flux density magnitude")
     cbar = fig.colorbar(im, cax=fig.add_subplot(gs[0, 1]))
@@ -655,6 +727,11 @@ def build_animation(
     else:
         min_time = 0.0
         max_time = 1.0
+    if bore_times.size:
+        frame_start = float(bore_times[0])
+        frame_end = float(bore_times[-1])
+        min_time = min(min_time, frame_start)
+        max_time = min(max_time, frame_end)
     if math.isclose(min_time, max_time):
         max_time = min_time + 1e-6
     ax_currents.set_xlim(min_time, max_time)
