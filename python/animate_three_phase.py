@@ -285,41 +285,6 @@ def polygon_centroid(vertices: np.ndarray) -> Tuple[float, float]:
     return cx, cy
 
 
-def maybe_round_polygon(
-    vertices: np.ndarray,
-    pivot: np.ndarray,
-    *,
-    min_vertices: int = 96,
-    radial_tolerance: float = 0.05,
-) -> np.ndarray:
-    """Resample nearly circular polygons so overlays look smooth."""
-
-    if vertices.shape[0] < 3:
-        return vertices
-    pivot = np.asarray(pivot, dtype=float)
-    centered = vertices - pivot
-    radii = np.linalg.norm(centered, axis=1)
-    mean_radius = float(np.mean(radii))
-    if mean_radius <= 0.0:
-        return vertices
-    spread = float(np.max(radii) - np.min(radii))
-    tolerance = max(radial_tolerance * mean_radius, 1e-6)
-    if spread > tolerance:
-        return vertices
-
-    samples = max(int(min_vertices), vertices.shape[0])
-    if samples < 3:
-        return vertices
-
-    base_angle = math.atan2(centered[0, 1], centered[0, 0])
-    orientation = 1.0 if polygon_area(vertices) >= 0.0 else -1.0
-    angles = base_angle + orientation * np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
-    rounded = np.empty((samples, 2), dtype=float)
-    rounded[:, 0] = pivot[0] + mean_radius * np.cos(angles)
-    rounded[:, 1] = pivot[1] + mean_radius * np.sin(angles)
-    return rounded
-
-
 def extract_outline_polygons(scenario: Dict[str, object]) -> List[Dict[str, np.ndarray]]:
     regions = scenario.get("regions", [])
     polygons: List[Dict[str, object]] = []
@@ -593,23 +558,14 @@ def build_animation(
     quiver_step = max(1, int(max(first_mag.shape) / 32))
     sampled_x = x_coords[::quiver_step, ::quiver_step]
     sampled_y = y_coords[::quiver_step, ::quiver_step]
-    all_vectors = [np.hypot(frame["bx"], frame["by"]) for frame in field_frames]
-    vector_max = max(float(np.max(mag)) for mag in all_vectors)
-    dx = float(np.mean(np.diff(sampled_x[0, :]))) if sampled_x.shape[1] > 1 else (extent[1] - extent[0])
-    dy = float(np.mean(np.diff(sampled_y[:, 0]))) if sampled_y.shape[0] > 1 else (extent[3] - extent[2])
-    base_spacing = max(dx, dy, 1e-6)
-    target_arrow = base_spacing * 0.75
-    quiver_scale = vector_max / target_arrow if vector_max > 0.0 else 1.0
     quiver = ax_field.quiver(
         sampled_x,
         sampled_y,
         field_frames[0]["bx"][::quiver_step, ::quiver_step],
         field_frames[0]["by"][::quiver_step, ::quiver_step],
         color="white",
-        scale=quiver_scale,
-        scale_units="xy",
-        angles="xy",
-        width=0.004,
+        scale=None,
+        width=0.005,
         pivot="mid",
     )
 
@@ -620,7 +576,6 @@ def build_animation(
     if rotor_overlay is not None:
         for poly in rotor_overlay.rotor_polygons:
             base = np.asarray(poly.vertices, dtype=float)
-            base = maybe_round_polygon(base, rotor_overlay.pivot)
             rotor_base_polys.append(base)
             face, edge, lw = rotor_patch_style(poly.material)
             patch = MplPolygon(
@@ -659,7 +614,6 @@ def build_animation(
             continue
         if outline.get("category") in {"stator", "bore"}:
             centroid = np.asarray(polygon_centroid(vertices), dtype=float)
-            vertices = maybe_round_polygon(vertices, centroid, min_vertices=192)
         closed = np.vstack([vertices, vertices[0]]) if vertices.shape[0] >= 2 else vertices
         style = outline_styles.get(outline.get("category", "slot"), {"color": "white", "linewidth": 1.0})
         line, = ax_field.plot(
