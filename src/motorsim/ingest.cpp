@@ -19,6 +19,7 @@ namespace motorsim {
 namespace {
 constexpr double kTiny = 1e-12;
 constexpr double kPi = 3.14159265358979323846;
+constexpr double kMinFillFraction = 1e-4;
 
 bool pointInPolygonCoords(double x, double y, const std::vector<double>& xs,
                           const std::vector<double>& ys) {
@@ -152,24 +153,38 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     spec.polygons.clear();
     spec.regionMasks.clear();
 
-    std::unordered_map<std::string, double> muMap;
+    struct MaterialProps {
+        double mu_r{1.0};
+        double sigma{0.0};
+        double inv_mu{1.0 / MU0};
+    };
+
+    std::unordered_map<std::string, MaterialProps> materialMap;
     for (const auto& material : materials) {
         const std::string name = material.at("name").get<std::string>();
-        if (muMap.count(name) != 0U) {
+        if (materialMap.count(name) != 0U) {
             throw std::runtime_error("Duplicate material name: " + name);
         }
         const double mu_r = requirePositive("material.mu_r", material.at("mu_r").get<double>());
-        muMap.emplace(name, mu_r);
+        const double sigma = material.value("sigma", 0.0);
+        MaterialProps props{};
+        props.mu_r = mu_r;
+        props.sigma = std::max(0.0, sigma);
+        props.inv_mu = 1.0 / (MU0 * mu_r);
+        materialMap.emplace(name, props);
         ScenarioSpec::Material entry{};
         entry.name = name;
         entry.mu_r = mu_r;
+        entry.sigma = props.sigma;
         spec.materials.push_back(entry);
     }
 
     if (!spec.materials.empty()) {
         spec.mu_r_background = spec.materials.front().mu_r;
+        spec.sigma_background = spec.materials.front().sigma;
     } else {
         spec.mu_r_background = 1.0;
+        spec.sigma_background = 0.0;
     }
 
     const auto& regions = json.at("regions");
@@ -182,23 +197,24 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         const std::string type = region.at("type").get<std::string>();
         if (type == "uniform") {
             const std::string materialName = region.at("material").get<std::string>();
-            const auto it = muMap.find(materialName);
-            if (it == muMap.end()) {
+            const auto it = materialMap.find(materialName);
+            if (it == materialMap.end()) {
                 throw std::runtime_error("Region references unknown material: " + materialName);
             }
             if (spec.version == "0.1" && foundUniform) {
                 throw std::runtime_error(
                     "Multiple uniform regions defined; only one is supported in v0.1");
             }
-            spec.mu_r_background = it->second;
+            spec.mu_r_background = it->second.mu_r;
+            spec.sigma_background = it->second.sigma;
             foundUniform = true;
         } else if (type == "halfspace") {
             if (!allowAdvancedRegions) {
                 throw std::runtime_error("Region type 'halfspace' requires scenario version 0.2");
             }
             const std::string materialName = region.at("material").get<std::string>();
-            const auto it = muMap.find(materialName);
-            if (it == muMap.end()) {
+            const auto it = materialMap.find(materialName);
+            if (it == materialMap.end()) {
                 throw std::runtime_error("Region references unknown material: " + materialName);
             }
             const auto& normal = region.at("normal");
@@ -216,8 +232,9 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             hs.normal_x = nx * invLength;
             hs.normal_y = ny * invLength;
             hs.offset = region.at("offset").get<double>() * invLength;
-            hs.mu_r = it->second;
-            hs.inv_mu = 1.0 / (MU0 * hs.mu_r);
+            hs.mu_r = it->second.mu_r;
+            hs.inv_mu = it->second.inv_mu;
+            hs.sigma = it->second.sigma;
             spec.halfspaces.push_back(hs);
             ScenarioSpec::RegionMask mask{};
             mask.kind = ScenarioSpec::RegionMask::Kind::Halfspace;
@@ -228,8 +245,8 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 throw std::runtime_error("Region type 'polygon' requires scenario version 0.2");
             }
             const std::string materialName = region.at("material").get<std::string>();
-            const auto it = muMap.find(materialName);
-            if (it == muMap.end()) {
+            const auto it = materialMap.find(materialName);
+            if (it == materialMap.end()) {
                 throw std::runtime_error("Region references unknown material: " + materialName);
             }
             const auto& vertices = region.at("vertices");
@@ -237,8 +254,9 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 throw std::runtime_error("polygon region requires an array of at least three vertices");
             }
             ScenarioSpec::PolygonRegion poly{};
-            poly.mu_r = it->second;
-            poly.inv_mu = 1.0 / (MU0 * poly.mu_r);
+            poly.mu_r = it->second.mu_r;
+            poly.inv_mu = it->second.inv_mu;
+            poly.sigma = it->second.sigma;
             poly.xs.reserve(vertices.size());
             poly.ys.reserve(vertices.size());
             double minX = std::numeric_limits<double>::infinity();
@@ -289,6 +307,8 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
     spec.currentRegions.reserve(sources.size());
     std::unordered_map<std::string, std::size_t> currentRegionIdToIndex;
     std::unordered_map<std::string, std::vector<std::size_t>> phaseToCurrentRegions;
+    std::unordered_map<std::string, std::size_t> circuitIdToIndex;
+    std::vector<std::unordered_map<std::string, std::size_t>> circuitVoltageSourceIdToIndex;
     for (const auto& source : sources) {
         const std::string type = source.at("type").get<std::string>();
         if (type == "wire") {
@@ -311,6 +331,25 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             if (!(std::abs(region.orientation) > 0.0)) {
                 throw std::runtime_error("current_region orientation must be non-zero");
             }
+            region.turns = source.value("turns", source.value("N", 1.0));
+            if (!(region.turns > 0.0)) {
+                throw std::runtime_error("current_region turns must be positive");
+            }
+            double fillFraction = 1.0;
+            if (source.contains("fill_fraction")) {
+                fillFraction = source.at("fill_fraction").get<double>();
+            } else if (source.contains("fillFraction")) {
+                fillFraction = source.at("fillFraction").get<double>();
+            } else if (source.contains("fillFactor")) {
+                fillFraction = source.at("fillFactor").get<double>();
+            }
+            if (!(fillFraction > 0.0)) {
+                throw std::runtime_error("current_region fill_fraction must be positive");
+            }
+            if (fillFraction > 1.0 + 1e-6) {
+                throw std::runtime_error("current_region fill_fraction cannot exceed 1");
+            }
+            region.fillFraction = std::clamp(fillFraction, kMinFillFraction, 1.0);
             const auto& vertices = source.at("vertices");
             if (!vertices.is_array() || vertices.size() < 3) {
                 throw std::runtime_error("current_region requires an array of at least three vertices");
@@ -342,6 +381,7 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
             if (!(region.area > kTiny)) {
                 throw std::runtime_error("current_region polygon area must be positive");
             }
+            region.copperArea = region.area * region.fillFraction;
             region.current = source.value("I", source.value("current", 0.0));
             const std::size_t index = spec.currentRegions.size();
             spec.currentRegions.push_back(region);
@@ -542,7 +582,384 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 parseIndexList(rotorNode.at("wires"), spec.wires.size(), "wires", rotor.wireIndices);
             }
 
+            if (rotorNode.contains("initial_angle_deg")) {
+                rotor.initialAngleDeg = rotorNode.at("initial_angle_deg").get<double>();
+                rotor.hasInitialAngle = true;
+            } else if (rotorNode.contains("initial_angle")) {
+                rotor.initialAngleDeg = rotorNode.at("initial_angle").get<double>();
+                rotor.hasInitialAngle = true;
+            } else if (rotorNode.contains("initial_angle_rad")) {
+                rotor.initialAngleDeg = rotorNode.at("initial_angle_rad").get<double>() * 180.0 / kPi;
+                rotor.hasInitialAngle = true;
+            }
+            if (rotor.hasInitialAngle) {
+                rotor.currentAngleDeg = rotor.initialAngleDeg;
+                rotor.hasCurrentAngle = true;
+            } else {
+                rotor.currentAngleDeg = 0.0;
+                rotor.hasCurrentAngle = false;
+            }
+
             spec.rotors.push_back(std::move(rotor));
+        }
+    }
+
+    spec.circuits.clear();
+    circuitIdToIndex.clear();
+    circuitVoltageSourceIdToIndex.clear();
+    if (json.contains("circuits")) {
+        const auto& circuitsNode = json.at("circuits");
+        if (!circuitsNode.is_array()) {
+            throw std::runtime_error("circuits must be an array when provided");
+        }
+        spec.circuits.reserve(circuitsNode.size());
+        circuitVoltageSourceIdToIndex.reserve(circuitsNode.size());
+
+        for (const auto& circuitNode : circuitsNode) {
+            if (!circuitNode.is_object()) {
+                throw std::runtime_error("circuit entries must be JSON objects");
+            }
+            ScenarioSpec::Circuit circuit{};
+            circuit.id = circuitNode.value("id", std::string{});
+            if (circuit.id.empty()) {
+                circuit.id = "circuit_" + std::to_string(spec.circuits.size());
+            }
+            if (!circuitIdToIndex.emplace(circuit.id, spec.circuits.size()).second) {
+                throw std::runtime_error("Duplicate circuit id: " + circuit.id);
+            }
+
+            const auto& nodesNode = circuitNode.at("nodes");
+            if (!nodesNode.is_array() || nodesNode.empty()) {
+                throw std::runtime_error("Circuit '" + circuit.id + "' must provide a non-empty nodes array");
+            }
+            circuit.nodes.reserve(nodesNode.size());
+            for (const auto& nodeValue : nodesNode) {
+                circuit.nodes.push_back(nodeValue.get<std::string>());
+            }
+
+            const auto resolveNode = [&](const nlohmann::json& nodeEntry) {
+                const std::string name = nodeEntry.get<std::string>();
+                for (std::size_t idx = 0; idx < circuit.nodes.size(); ++idx) {
+                    if (circuit.nodes[idx] == name) {
+                        return idx;
+                    }
+                }
+                throw std::runtime_error("Circuit '" + circuit.id + "' references unknown node: " + name);
+            };
+
+            std::unordered_map<std::string, std::size_t> inductorIdToIndex;
+            std::unordered_map<std::string, std::size_t> voltageSourceIdToIndex;
+
+            const auto& elementsNode = circuitNode.at("elements");
+            if (!elementsNode.is_array()) {
+                throw std::runtime_error("Circuit '" + circuit.id + "' elements must be an array");
+            }
+
+            for (const auto& element : elementsNode) {
+                if (!element.is_object()) {
+                    throw std::runtime_error("Circuit '" + circuit.id + "' elements must be objects");
+                }
+                std::string type = element.at("type").get<std::string>();
+                std::transform(type.begin(), type.end(), type.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+                const auto getNodePair = [&](const nlohmann::json& nodesValue) {
+                    if (!nodesValue.is_array() || nodesValue.size() != 2) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' element requires nodes [pos, neg]");
+                    }
+                    return std::pair<std::size_t, std::size_t>{resolveNode(nodesValue.at(0)),
+                                                               resolveNode(nodesValue.at(1))};
+                };
+
+                if (type == "resistor" || type == "r") {
+                    const auto& nodesValue = element.at("nodes");
+                    const auto [nodePos, nodeNeg] = getNodePair(nodesValue);
+                    double resistance = 0.0;
+                    if (element.contains("resistance")) {
+                        resistance = element.at("resistance").get<double>();
+                    } else if (element.contains("R")) {
+                        resistance = element.at("R").get<double>();
+                    } else if (element.contains("value")) {
+                        resistance = element.at("value").get<double>();
+                    }
+                    if (!(resistance > 0.0)) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' resistor requires positive resistance");
+                    }
+                    ScenarioSpec::Circuit::Resistor resistor{};
+                    resistor.id = element.value("id", element.value("name", std::string{}));
+                    resistor.nodePos = nodePos;
+                    resistor.nodeNeg = nodeNeg;
+                    resistor.resistance = resistance;
+                    circuit.resistors.push_back(resistor);
+                } else if (type == "inductor" || type == "l") {
+                    const auto& nodesValue = element.at("nodes");
+                    const auto [nodePos, nodeNeg] = getNodePair(nodesValue);
+                    double inductance = 0.0;
+                    if (element.contains("inductance")) {
+                        inductance = element.at("inductance").get<double>();
+                    } else if (element.contains("L")) {
+                        inductance = element.at("L").get<double>();
+                    }
+                    if (!(inductance > 0.0)) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' inductor requires positive inductance");
+                    }
+                    ScenarioSpec::Circuit::Inductor inductor{};
+                    inductor.id = element.value("id", element.value("name", std::string{}));
+                    inductor.nodePos = nodePos;
+                    inductor.nodeNeg = nodeNeg;
+                    inductor.inductance = inductance;
+                    inductor.initialCurrent = element.value("initial_current", element.value("I0", 0.0));
+                    inductorIdToIndex.emplace(inductor.id, circuit.inductors.size());
+                    circuit.inductors.push_back(inductor);
+                } else if (type == "voltage_source" || type == "voltage" || type == "vs") {
+                    const auto& nodesValue = element.at("nodes");
+                    const auto [nodePos, nodeNeg] = getNodePair(nodesValue);
+                    ScenarioSpec::Circuit::VoltageSource source{};
+                    source.id = element.value("id", element.value("name", std::string{}));
+                    source.nodePos = nodePos;
+                    source.nodeNeg = nodeNeg;
+                    source.value = element.value("value", element.value("voltage", 0.0));
+                    if (!source.id.empty()) {
+                        if (!voltageSourceIdToIndex.emplace(source.id, circuit.voltageSources.size()).second) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' duplicate voltage source id: " +
+                                                     source.id);
+                        }
+                    }
+                    circuit.voltageSources.push_back(source);
+                } else if (type == "coil_link" || type == "coillink" || type == "coil") {
+                    if (circuit.inductors.empty()) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link requires an inductor");
+                    }
+                    std::string inductorId = element.value("inductor", element.value("inductor_id", std::string{}));
+                    std::size_t inductorIndex = 0;
+                    if (!inductorId.empty()) {
+                        const auto it = inductorIdToIndex.find(inductorId);
+                        if (it == inductorIdToIndex.end()) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' coil_link references unknown inductor: " +
+                                                     inductorId);
+                        }
+                        inductorIndex = it->second;
+                    } else if (element.contains("inductor_index")) {
+                        inductorIndex = element.at("inductor_index").get<std::size_t>();
+                        if (inductorIndex >= circuit.inductors.size()) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' coil_link inductor index out of range");
+                        }
+                    } else {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link must specify inductor id or index");
+                    }
+
+                    double turns = 0.0;
+                    if (element.contains("turns")) {
+                        turns = element.at("turns").get<double>();
+                    } else if (element.contains("N")) {
+                        turns = element.at("N").get<double>();
+                    }
+                    if (!(turns > 0.0)) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link requires positive turns");
+                    }
+
+                    std::size_t regionIndex = std::numeric_limits<std::size_t>::max();
+                    if (element.contains("region")) {
+                        const auto& regionNode = element.at("region");
+                        if (regionNode.is_number_unsigned()) {
+                            regionIndex = regionNode.get<std::size_t>();
+                        } else if (regionNode.is_string()) {
+                            const std::string regionId = regionNode.get<std::string>();
+                            const auto it = currentRegionIdToIndex.find(regionId);
+                            if (it == currentRegionIdToIndex.end()) {
+                                throw std::runtime_error("Circuit '" + circuit.id + "' coil_link references unknown region: " +
+                                                         regionId);
+                            }
+                            regionIndex = it->second;
+                        }
+                    } else if (element.contains("region_index")) {
+                        regionIndex = element.at("region_index").get<std::size_t>();
+                    } else if (element.contains("current_region")) {
+                        const std::string regionId = element.at("current_region").get<std::string>();
+                        const auto it = currentRegionIdToIndex.find(regionId);
+                        if (it == currentRegionIdToIndex.end()) {
+                            throw std::runtime_error("Circuit '" + circuit.id + "' coil_link references unknown region: " +
+                                                     regionId);
+                        }
+                        regionIndex = it->second;
+                    }
+                    if (regionIndex == std::numeric_limits<std::size_t>::max() ||
+                        regionIndex >= spec.currentRegions.size()) {
+                        throw std::runtime_error("Circuit '" + circuit.id + "' coil_link region index out of range");
+                    }
+
+                    ScenarioSpec::Circuit::CoilLink link{};
+                    link.id = element.value("id", element.value("name", std::string{}));
+                    link.inductorIndex = inductorIndex;
+                    link.regionIndex = regionIndex;
+                    link.turns = turns;
+                    if (element.contains("commutator")) {
+                        const auto& commNode = element.at("commutator");
+                        if (!commNode.is_object()) {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' coil_link commutator must be an object");
+                        }
+                        ScenarioSpec::Circuit::CoilLink::Commutator comm{};
+                        comm.active = true;
+                        comm.defaultOrientation = commNode.value("default_orientation",
+                                                                  commNode.value("default", 1.0));
+                        if (commNode.contains("rotor_index")) {
+                            comm.rotorIndex = commNode.at("rotor_index").get<std::size_t>();
+                            if (comm.rotorIndex >= spec.rotors.size()) {
+                                throw std::runtime_error("Circuit '" + circuit.id +
+                                                         "' commutator rotor_index out of range");
+                            }
+                            comm.rotorName = spec.rotors[comm.rotorIndex].name;
+                        } else if (commNode.contains("rotor")) {
+                            comm.rotorName = commNode.at("rotor").get<std::string>();
+                            const auto it = rotorNameToIndex.find(comm.rotorName);
+                            if (it == rotorNameToIndex.end()) {
+                                throw std::runtime_error("Circuit '" + circuit.id +
+                                                         "' commutator references unknown rotor '" + comm.rotorName + "'");
+                            }
+                            comm.rotorIndex = it->second;
+                        } else {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' commutator must specify rotor or rotor_index");
+                        }
+
+                        if (!commNode.contains("segments")) {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' commutator requires a segments array");
+                        }
+                        const auto& segmentsNode = commNode.at("segments");
+                        if (!segmentsNode.is_array() || segmentsNode.empty()) {
+                            throw std::runtime_error("Circuit '" + circuit.id +
+                                                     "' commutator segments must be a non-empty array");
+                        }
+                        comm.segments.reserve(segmentsNode.size());
+                        for (const auto& seg : segmentsNode) {
+                            if (!seg.is_object()) {
+                                throw std::runtime_error("Circuit '" + circuit.id +
+                                                         "' commutator segment entries must be objects");
+                            }
+                            ScenarioSpec::Circuit::CoilLink::CommutatorSegment segment{};
+                            segment.startAngleDeg = seg.value("start_deg", seg.value("start", 0.0));
+                            segment.endAngleDeg = seg.value("end_deg", seg.value("end", 0.0));
+                            segment.orientation = seg.value("orientation", seg.value("value", 1.0));
+                            comm.segments.push_back(segment);
+                        }
+                        link.commutator = std::move(comm);
+                    }
+                    auto& currentRegion = spec.currentRegions[regionIndex];
+                    if (currentRegion.turns <= 0.0 || std::abs(currentRegion.turns - 1.0) < 1e-12) {
+                        currentRegion.turns = turns;
+                    } else if (std::abs(currentRegion.turns - turns) > 1e-9) {
+                        throw std::runtime_error("Circuit '" + circuit.id +
+                                                 "' coil_link turns mismatch for region index " +
+                                                 std::to_string(regionIndex));
+                    }
+                    currentRegion.copperArea = currentRegion.area * currentRegion.fillFraction;
+                    circuit.coilLinks.push_back(link);
+                } else {
+                    throw std::runtime_error("Circuit '" + circuit.id + "' unsupported element type: " + type);
+                }
+            }
+
+            circuitVoltageSourceIdToIndex.push_back(std::move(voltageSourceIdToIndex));
+            spec.circuits.push_back(std::move(circuit));
+        }
+    }
+
+    spec.mechanical.reset();
+    if (json.contains("mechanical")) {
+        const auto& mechanicalNode = json.at("mechanical");
+        if (!mechanicalNode.is_object()) {
+            throw std::runtime_error("mechanical section must be an object when provided");
+        }
+
+        ScenarioSpec::MechanicalSystem mechanical{};
+        if (mechanicalNode.contains("rotors")) {
+            const auto& mechRotors = mechanicalNode.at("rotors");
+            if (!mechRotors.is_array()) {
+                throw std::runtime_error("mechanical.rotors must be an array when provided");
+            }
+            mechanical.rotors.reserve(mechRotors.size());
+            for (const auto& rotorNode : mechRotors) {
+                if (!rotorNode.is_object()) {
+                    throw std::runtime_error("mechanical rotor entries must be objects");
+                }
+                ScenarioSpec::MechanicalSystem::Rotor rotor{};
+                if (rotorNode.contains("index")) {
+                    rotor.rotorIndex = rotorNode.at("index").get<std::size_t>();
+                    if (rotor.rotorIndex >= spec.rotors.size()) {
+                        throw std::runtime_error("mechanical rotor index out of range");
+                    }
+                    rotor.name = spec.rotors[rotor.rotorIndex].name;
+                } else if (rotorNode.contains("idx")) {
+                    rotor.rotorIndex = rotorNode.at("idx").get<std::size_t>();
+                    if (rotor.rotorIndex >= spec.rotors.size()) {
+                        throw std::runtime_error("mechanical rotor idx out of range");
+                    }
+                    rotor.name = spec.rotors[rotor.rotorIndex].name;
+                } else {
+                    rotor.name = rotorNode.value("name", std::string{});
+                    if (rotor.name.empty()) {
+                        throw std::runtime_error(
+                            "mechanical rotor entries must specify 'name' or 'index'");
+                    }
+                    const auto it = rotorNameToIndex.find(rotor.name);
+                    if (it == rotorNameToIndex.end()) {
+                        throw std::runtime_error(
+                            "mechanical rotor references unknown rotor name: " + rotor.name);
+                    }
+                    rotor.rotorIndex = it->second;
+                }
+
+                rotor.inertia = rotorNode.value("inertia", rotorNode.value("J", 0.0));
+                if (!(rotor.inertia > 0.0)) {
+                    throw std::runtime_error("mechanical rotor '" + rotor.name + "' requires positive inertia");
+                }
+
+                rotor.damping = rotorNode.value("damping", rotorNode.value("viscous", 0.0));
+                if (!(rotor.damping >= 0.0)) {
+                    throw std::runtime_error("mechanical rotor '" + rotor.name + "' requires non-negative damping");
+                }
+
+                rotor.loadTorque = rotorNode.value("load_torque", rotorNode.value("tau_load", 0.0));
+
+                if (rotorNode.contains("initial_angle_deg")) {
+                    rotor.initialAngleDeg = rotorNode.at("initial_angle_deg").get<double>();
+                    rotor.hasInitialAngle = true;
+                } else if (rotorNode.contains("initial_angle")) {
+                    rotor.initialAngleDeg = rotorNode.at("initial_angle").get<double>();
+                    rotor.hasInitialAngle = true;
+                } else if (rotorNode.contains("initial_angle_rad")) {
+                    rotor.initialAngleDeg = rotorNode.at("initial_angle_rad").get<double>() * 180.0 / kPi;
+                    rotor.hasInitialAngle = true;
+                }
+
+                if (rotorNode.contains("initial_speed_rad_s")) {
+                    rotor.initialSpeedRadPerSec = rotorNode.at("initial_speed_rad_s").get<double>();
+                    rotor.hasInitialSpeed = true;
+                } else if (rotorNode.contains("initial_speed")) {
+                    rotor.initialSpeedRadPerSec = rotorNode.at("initial_speed").get<double>();
+                    rotor.hasInitialSpeed = true;
+                } else if (rotorNode.contains("initial_speed_rpm")) {
+                    const double rpm = rotorNode.at("initial_speed_rpm").get<double>();
+                    rotor.initialSpeedRadPerSec = rpm * 2.0 * kPi / 60.0;
+                    rotor.hasInitialSpeed = true;
+                }
+
+                if (rotorNode.contains("torque_probe")) {
+                    rotor.torqueProbeId = rotorNode.at("torque_probe").get<std::string>();
+                    rotor.hasTorqueProbe = !rotor.torqueProbeId.empty();
+                } else if (rotorNode.contains("probe")) {
+                    rotor.torqueProbeId = rotorNode.at("probe").get<std::string>();
+                    rotor.hasTorqueProbe = !rotor.torqueProbeId.empty();
+                }
+
+                mechanical.rotors.push_back(std::move(rotor));
+            }
+        }
+
+        if (!mechanical.rotors.empty()) {
+            spec.mechanical = std::move(mechanical);
         }
     }
 
@@ -956,6 +1373,59 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                     request.path = "outputs/" + id + "_bore.csv";
                 }
                 spec.outputs.boreProbes.push_back(std::move(request));
+            } else if (type == "mechanical_trace") {
+                ScenarioSpec::Outputs::MechanicalTrace request{};
+                request.id = id;
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + "_mechanical.csv";
+                }
+
+                if (output.contains("rotors")) {
+                    const auto& rotorsNode = output.at("rotors");
+                    if (rotorsNode.is_array()) {
+                        for (const auto& entry : rotorsNode) {
+                            if (!entry.is_string()) {
+                                throw std::runtime_error(
+                                    "mechanical_trace rotors array must contain strings for output '" + id + "'");
+                            }
+                            request.rotors.push_back(requireNonEmpty("outputs.rotors", entry.get<std::string>()));
+                        }
+                    } else if (rotorsNode.is_string()) {
+                        request.rotors.push_back(requireNonEmpty("outputs.rotors", rotorsNode.get<std::string>()));
+                    } else {
+                        throw std::runtime_error(
+                            "mechanical_trace rotors must be a string or array of strings for output '" + id + "'");
+                    }
+                }
+
+                spec.outputs.mechanicalTraces.push_back(std::move(request));
+            } else if (type == "circuit_trace") {
+                ScenarioSpec::Outputs::CircuitTrace request{};
+                request.id = id;
+                if (output.contains("path")) {
+                    request.path = requireNonEmpty("outputs.path", output.at("path").get<std::string>());
+                } else {
+                    request.path = "outputs/" + id + "_currents.csv";
+                }
+
+                if (output.contains("circuits")) {
+                    const auto& circuitsNode = output.at("circuits");
+                    if (!circuitsNode.is_array()) {
+                        throw std::runtime_error(
+                            "circuit_trace circuits must be an array of strings for output '" + id + "'");
+                    }
+                    for (const auto& entry : circuitsNode) {
+                        if (!entry.is_string()) {
+                            throw std::runtime_error(
+                                "circuit_trace circuits entries must be strings for output '" + id + "'");
+                        }
+                        request.circuits.push_back(requireNonEmpty("outputs.circuits", entry.get<std::string>()));
+                    }
+                }
+
+                spec.outputs.circuitTraces.push_back(std::move(request));
             } else {
                 throw std::runtime_error("Unsupported output type: " + type);
             }
@@ -1281,14 +1751,107 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
                 parseMagnetOverrides(frame.at("magnet_overrides"));
             }
 
+            if (frame.contains("voltage_sources")) {
+                if (spec.circuits.empty()) {
+                    throw std::runtime_error(
+                        "timeline voltage_sources provided but scenario defines no circuits");
+                }
+                const auto& vsArray = frame.at("voltage_sources");
+                if (!vsArray.is_array()) {
+                    throw std::runtime_error("timeline voltage_sources must be an array");
+                }
+                for (const auto& item : vsArray) {
+                    if (!item.is_object()) {
+                        throw std::runtime_error("timeline voltage_sources entries must be objects");
+                    }
+                    std::size_t circuitIndex = 0;
+                    if (item.contains("circuit_index")) {
+                        circuitIndex = item.at("circuit_index").get<std::size_t>();
+                        if (circuitIndex >= spec.circuits.size()) {
+                            throw std::runtime_error("timeline voltage_sources circuit_index out of range");
+                        }
+                    } else if (item.contains("circuit")) {
+                        const std::string circuitId = item.at("circuit").get<std::string>();
+                        const auto it = circuitIdToIndex.find(circuitId);
+                        if (it == circuitIdToIndex.end()) {
+                            throw std::runtime_error("timeline voltage_sources references unknown circuit: " + circuitId);
+                        }
+                        circuitIndex = it->second;
+                    } else if (spec.circuits.size() == 1) {
+                        circuitIndex = 0;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline voltage_sources entry must specify 'circuit' or 'circuit_index'");
+                    }
+
+                    if (circuitIndex >= circuitVoltageSourceIdToIndex.size()) {
+                        throw std::runtime_error("timeline voltage_sources internal index out of range");
+                    }
+
+                    std::size_t sourceIndex = 0;
+                    const auto& sourceMap = circuitVoltageSourceIdToIndex[circuitIndex];
+                    if (item.contains("source_index")) {
+                        sourceIndex = item.at("source_index").get<std::size_t>();
+                    } else if (item.contains("source")) {
+                        const std::string sourceId = item.at("source").get<std::string>();
+                        const auto mapIt = sourceMap.find(sourceId);
+                        if (mapIt == sourceMap.end()) {
+                            if (spec.circuits[circuitIndex].voltageSources.size() == 1) {
+                                sourceIndex = 0;
+                            } else {
+                                throw std::runtime_error(
+                                    "timeline voltage_sources references unknown source id: " + sourceId);
+                            }
+                        } else {
+                            sourceIndex = mapIt->second;
+                        }
+                    } else if (spec.circuits[circuitIndex].voltageSources.size() == 1) {
+                        sourceIndex = 0;
+                    } else {
+                        throw std::runtime_error(
+                            "timeline voltage_sources entry must specify 'source' or 'source_index'");
+                    }
+                    if (sourceIndex >= spec.circuits[circuitIndex].voltageSources.size()) {
+                        throw std::runtime_error("timeline voltage_sources source index out of range");
+                    }
+
+                    ScenarioSpec::TimelineFrame::VoltageSourceOverride override{};
+                    override.circuitIndex = circuitIndex;
+                    override.sourceIndex = sourceIndex;
+                    override.value = item.value("value", item.value("voltage", 0.0));
+                    entry.voltageSourceOverrides.push_back(override);
+                }
+            }
+
             spec.timeline.push_back(std::move(entry));
             ++frameIndex;
         }
     }
 
     if (json.contains("solver")) {
+        const auto& solverNode = json.at("solver");
         spec.solverSettings.solverSpecified = true;
-        spec.solverSettings.solverId = json.at("solver").get<std::string>();
+        if (solverNode.is_string()) {
+            spec.solverSettings.solverId = solverNode.get<std::string>();
+        } else if (solverNode.is_object()) {
+            spec.solverSettings.solverId = solverNode.value("kind", std::string{"cg"});
+            if (solverNode.contains("frequency_hz")) {
+                spec.solverSettings.harmonicFrequencySpecified = true;
+                spec.solverSettings.harmonicFrequencyHz =
+                    requirePositive("solver.frequency_hz", solverNode.at("frequency_hz").get<double>());
+            }
+            if (solverNode.contains("omega_rad_per_s")) {
+                spec.solverSettings.harmonicOmegaSpecified = true;
+                spec.solverSettings.harmonicOmega =
+                    requirePositive("solver.omega_rad_per_s", solverNode.at("omega_rad_per_s").get<double>());
+            }
+            if (solverNode.contains("preconditioner")) {
+                spec.solverSettings.preconditionerSpecified = true;
+                spec.solverSettings.preconditionerId = solverNode.at("preconditioner").get<std::string>();
+            }
+        } else {
+            throw std::runtime_error("solver must be either a string or an object");
+        }
     }
     if (json.contains("warm_start")) {
         spec.solverSettings.warmStartSpecified = true;
@@ -1327,6 +1890,20 @@ ScenarioSpec loadScenarioFromJson(const std::string& path) {
         spec.solverSettings.quiet = json.at("quiet").get<bool>();
     }
 
+    if (json.contains("transient")) {
+        const auto& transientNode = json.at("transient");
+        if (!transientNode.is_object()) {
+            throw std::runtime_error("transient must be an object");
+        }
+        spec.transient.enabled = transientNode.value("enabled", true);
+        if (transientNode.contains("dt")) {
+            spec.transient.dt = requirePositive("transient.dt", transientNode.at("dt").get<double>());
+        }
+        if (transientNode.contains("n_steps")) {
+            spec.transient.nSteps = transientNode.at("n_steps").get<std::size_t>();
+        }
+    }
+
     return spec;
 }
 
@@ -1342,6 +1919,7 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                                  : Grid2D::BoundaryKind::Neumann;
 
     const double invMuBackground = 1.0 / (MU0 * spec.mu_r_background);
+    const double sigmaBackground = spec.sigma_background;
     std::fill(grid.Jz.begin(), grid.Jz.end(), 0.0);
     const std::size_t cellCount = grid.nx * grid.ny;
     if (grid.Mx.size() != cellCount) {
@@ -1353,6 +1931,21 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
         grid.My.assign(cellCount, 0.0);
     } else {
         std::fill(grid.My.begin(), grid.My.end(), 0.0);
+    }
+    if (grid.JzImag.size() != cellCount) {
+        grid.JzImag.assign(cellCount, 0.0);
+    } else {
+        std::fill(grid.JzImag.begin(), grid.JzImag.end(), 0.0);
+    }
+    if (grid.sigma.size() != cellCount) {
+        grid.sigma.assign(cellCount, sigmaBackground);
+    } else {
+        std::fill(grid.sigma.begin(), grid.sigma.end(), sigmaBackground);
+    }
+    if (grid.AzImag.size() != cellCount) {
+        grid.AzImag.assign(cellCount, 0.0);
+    } else {
+        std::fill(grid.AzImag.begin(), grid.AzImag.end(), 0.0);
     }
     grid.Hx.clear();
     grid.Hy.clear();
@@ -1368,11 +1961,13 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
             for (std::size_t i = 0; i < grid.nx; ++i) {
                 const double x = x0 + static_cast<double>(i) * spec.dx;
                 double invMu = invMuBackground;
+                double sigma = sigmaBackground;
                 for (const auto& mask : spec.regionMasks) {
                     if (mask.kind == ScenarioSpec::RegionMask::Kind::Halfspace) {
                         const auto& hs = spec.halfspaces[mask.index];
                         if (hs.normal_x * x + hs.normal_y * y + hs.offset < 0.0) {
                             invMu = hs.inv_mu;
+                            sigma = hs.sigma;
                         }
                     } else {
                         const auto& poly = spec.polygons[mask.index];
@@ -1381,10 +1976,12 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
                         }
                         if (pointInPolygon(x, y, poly)) {
                             invMu = poly.inv_mu;
+                            sigma = poly.sigma;
                         }
                     }
                 }
                 grid.invMu[grid.idx(i, j)] = invMu;
+                grid.sigma[grid.idx(i, j)] = sigma;
             }
         }
     }
@@ -1421,7 +2018,10 @@ void rasterizeScenarioToGrid(const ScenarioSpec& spec, Grid2D& grid) {
             if (!(region.area > kTiny)) {
                 continue;
             }
-            const double density = region.current / region.area;
+            const double turns = region.turns > 0.0 ? region.turns : 1.0;
+            const double fill = std::clamp(region.fillFraction, kMinFillFraction, 1.0);
+            const double ampereTurns = region.current * turns * fill;
+            const double density = ampereTurns / region.area;
             if (std::abs(density) < kTiny) {
                 continue;
             }
@@ -1510,6 +2110,12 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
         std::vector<double> rotorAngles(baseSpec.rotors.size(), 0.0);
         std::vector<bool> rotorActive(baseSpec.rotors.size(), false);
 
+        for (std::size_t r = 0; r < baseSpec.rotors.size(); ++r) {
+            const auto& baseRotor = baseSpec.rotors[r];
+            workingSpec.rotors[r].currentAngleDeg = baseRotor.hasInitialAngle ? baseRotor.initialAngleDeg : 0.0;
+            workingSpec.rotors[r].hasCurrentAngle = baseRotor.hasInitialAngle;
+        }
+
         if (frame.hasRotorAngle && !baseSpec.rotors.empty()) {
             rotorAngles[0] = frame.rotorAngleDeg;
             rotorActive[0] = true;
@@ -1531,6 +2137,9 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
             const double angleRad = rotorAngles[r] * kPi / 180.0;
             const double cosA = std::cos(angleRad);
             const double sinA = std::sin(angleRad);
+
+            workingSpec.rotors[r].currentAngleDeg = rotorAngles[r];
+            workingSpec.rotors[r].hasCurrentAngle = true;
 
             for (std::size_t idx : rotor.polygonIndices) {
                 if (idx >= baseSpec.polygons.size() || idx >= workingSpec.polygons.size()) {
@@ -1671,6 +2280,17 @@ void applyTimelineOverrides(const ScenarioSpec& baseSpec, const ScenarioSpec::Ti
             throw std::runtime_error("timeline current region override index out of range");
         }
         workingSpec.currentRegions[override.index].current = override.current;
+    }
+
+    for (const auto& override : frame.voltageSourceOverrides) {
+        if (override.circuitIndex >= workingSpec.circuits.size()) {
+            throw std::runtime_error("timeline voltage source override circuit index out of range");
+        }
+        auto& circuit = workingSpec.circuits[override.circuitIndex];
+        if (override.sourceIndex >= circuit.voltageSources.size()) {
+            throw std::runtime_error("timeline voltage source override source index out of range");
+        }
+        circuit.voltageSources[override.sourceIndex].value = override.value;
     }
 }
 

@@ -34,6 +34,13 @@ jobs:
           ./build/torque_validation_test 2>&1 | tee ci_artifacts/torque_validation_test.txt
           ./build/back_emf_probe_test 2>&1 | tee ci_artifacts/back_emf_probe_test.txt
           ./build/rotor_ripple_test 2>&1 | tee ci_artifacts/rotor_ripple_test.txt
+          ./build/skin_depth_test 2>&1 | tee ci_artifacts/skin_depth_test.txt
+          ./build/diffusion_test 2>&1 | tee ci_artifacts/diffusion_test.txt
+          ./build/mechanical_spinup_test 2>&1 | tee ci_artifacts/mechanical_spinup_test.txt
+          ./build/pm_motor_spinup_test 2>&1 | tee ci_artifacts/pm_motor_spinup_test.txt
+          ./build/dc_commutator_test 2>&1 | tee ci_artifacts/dc_commutator_test.txt
+          ./build/dc_motor_spinup_test 2>&1 | tee ci_artifacts/dc_motor_spinup_test.txt
+          ./build/induction_spinup_test 2>&1 | tee ci_artifacts/induction_spinup_test.txt
           {
             echo "# Regression accuracy summary"
             echo
@@ -45,7 +52,14 @@ jobs:
               ci_artifacts/probe_output_test.txt \
               ci_artifacts/torque_validation_test.txt \
               ci_artifacts/back_emf_probe_test.txt \
-              ci_artifacts/rotor_ripple_test.txt; do
+              ci_artifacts/rotor_ripple_test.txt \
+              ci_artifacts/skin_depth_test.txt \
+              ci_artifacts/diffusion_test.txt \
+              ci_artifacts/mechanical_spinup_test.txt \
+              ci_artifacts/pm_motor_spinup_test.txt \
+              ci_artifacts/dc_commutator_test.txt \
+              ci_artifacts/dc_motor_spinup_test.txt \
+              ci_artifacts/induction_spinup_test.txt; do
               name=$(basename "${report%.txt}")
               echo "## ${name}"
               cat "$report"
@@ -60,6 +74,7 @@ jobs:
           ./build/motor_sim --scenario inputs/iron_ring_demo.json --solve --outputs all --tol 5e-6 --max-iters 40000
           ./build/motor_sim --scenario inputs/tests/magnet_strip_test.json --solve --outputs all
           ./build/motor_sim --scenario inputs/tests/rotor_ripple_test.json --solve --outputs all --parallel-frames --max-iters 40000 --tol 2.5e-6
+          ./build/motor_sim --scenario inputs/tests/rotor_ripple_test.json --solve --outputs none --parallel-frames --max-iters 40000 --tol 2.5e-6 --solver cg --quiet --warm-start --progress-history outputs/rotor_ripple_cg_history.csv --progress-every 0
       - name: Verify VTK export
         run: python3 python/verify_vtk.py outputs/rotor_ripple_field_frame_000.vti
       - name: Three-phase stator rotating-field demo
@@ -71,10 +86,52 @@ jobs:
           ./build/motor_sim --scenario inputs/three_phase_stator_ci.json --solve --parallel-frames --vtk-series outputs/three_phase_ci.pvd --tol 5e-6 --max-iters 40000
           python3 python/check_three_phase_field.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json
           python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenario inputs/three_phase_stator_ci.json --save ci_artifacts/three_phase_demo.gif --frame-png ci_artifacts/three_phase_demo.png
-          cp outputs/three_phase_frame_frame_000.vti ci_artifacts/
+          cp outputs/three_phase_frame_000.vti ci_artifacts/
           cp outputs/three_phase_ci.pvd ci_artifacts/
           cp outputs/bore_angle.csv ci_artifacts/
           cp outputs/three_phase_outlines.vtp ci_artifacts/
+      - name: PM motor spin-up demo
+        env:
+          MPLBACKEND: Agg
+        run: |
+          set -euo pipefail
+          python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inputs/three_phase_pm_motor_spinup_ci.json
+          ./build/motor_sim --scenario inputs/three_phase_pm_motor_spinup_ci.json --solve --vtk-series outputs/pm_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000
+          python3 python/check_pm_spinup.py --mechanical outputs/pm_motor_spinup_mechanical.csv --scenario inputs/three_phase_pm_motor_spinup_ci.json
+          python3 python/generate_rotor_animation.py --scenario inputs/three_phase_pm_motor_spinup_ci.json --rotor pm_rotor --mechanical outputs/pm_motor_spinup_mechanical.csv --circuit-trace outputs/pm_motor_spinup_currents.csv --gif ci_artifacts/pm_motor_rotor.gif --frame-png ci_artifacts/pm_motor_rotor.png --max-frames 24 --fps 12
+          python3 python/animate_three_phase.py --pvd outputs/pm_motor_spinup_ci.pvd --scenario inputs/three_phase_pm_motor_spinup_ci.json --save ci_artifacts/pm_motor_spinup.gif --frame-png ci_artifacts/pm_motor_spinup.png
+          cp outputs/pm_motor_spinup_frame_000.vti ci_artifacts/
+          cp outputs/pm_motor_spinup_ci.pvd ci_artifacts/
+          cp outputs/pm_motor_spinup_mechanical.csv ci_artifacts/
+          cp outputs/pm_motor_spinup_outlines.vtp ci_artifacts/
+      - name: DC motor spin-up demo
+        env:
+          MPLBACKEND: Agg
+        run: |
+          set -euo pipefail
+          python3 python/gen_dc_motor.py --profile ci --mode spinup --out inputs/dc_motor_spinup_ci.json
+          ./build/motor_sim --scenario inputs/dc_motor_spinup_ci.json --solve --vtk-series outputs/dc_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000 --solver cg
+          python3 python/check_pm_spinup.py --mechanical outputs/dc_motor_mechanical.csv --scenario inputs/dc_motor_spinup_ci.json --rotor dc_rotor --min-angle-rise 8 --min-speed-rise 5 --max-backstep 3
+          python3 python/generate_rotor_animation.py --scenario inputs/dc_motor_spinup_ci.json --rotor dc_rotor --mechanical outputs/dc_motor_mechanical.csv --circuit-trace outputs/dc_motor_currents.csv --gif ci_artifacts/dc_motor_rotor.gif --frame-png ci_artifacts/dc_motor_rotor.png --max-frames 24 --fps 12
+          cp outputs/dc_motor_frame_000.vti ci_artifacts/
+          cp outputs/dc_motor_spinup_ci.pvd ci_artifacts/
+          cp outputs/dc_motor_mechanical.csv ci_artifacts/
+          cp outputs/dc_motor_outlines.vtp ci_artifacts/
+          cp outputs/dc_motor_torque.csv ci_artifacts/
+      - name: Induction motor spin-up demo
+        env:
+          MPLBACKEND: Agg
+        run: |
+          set -euo pipefail
+          python3 python/gen_three_phase_induction_motor.py --profile ci --mode spinup --out inputs/three_phase_induction_motor_spinup_ci.json
+          ./build/motor_sim --scenario inputs/three_phase_induction_motor_spinup_ci.json --solve --vtk-series outputs/induction_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000 --solver cg
+          python3 python/check_pm_spinup.py --mechanical outputs/induction_motor_mechanical.csv --scenario inputs/three_phase_induction_motor_spinup_ci.json --rotor induction_rotor --min-angle-rise 6 --min-speed-rise 6 --max-backstep 2
+          python3 python/generate_rotor_animation.py --scenario inputs/three_phase_induction_motor_spinup_ci.json --rotor induction_rotor --mechanical outputs/induction_motor_mechanical.csv --gif ci_artifacts/induction_motor_rotor.gif --frame-png ci_artifacts/induction_motor_rotor.png --max-frames 36 --fps 12
+          python3 python/animate_three_phase.py --pvd outputs/induction_motor_spinup_ci.pvd --scenario inputs/three_phase_induction_motor_spinup_ci.json --save ci_artifacts/induction_motor_spinup.gif --frame-png ci_artifacts/induction_motor_spinup.png
+          cp outputs/induction_motor_frame_000.vti ci_artifacts/
+          cp outputs/induction_motor_spinup_ci.pvd ci_artifacts/
+          cp outputs/induction_motor_mechanical.csv ci_artifacts/
+          cp outputs/induction_motor_outlines.vtp ci_artifacts/
       - name: Render visualisations
         env:
           MPLBACKEND: Agg

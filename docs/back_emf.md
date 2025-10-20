@@ -80,6 +80,19 @@ Combine with `Scenario.outputs.append(output)` before calling `save_json`.
   approximation.
 * Timeline timestamps should be monotonic and distinct; the solver raises an
   error if two consecutive frames share the same time value.
-* Back-EMF probes currently operate on field-map data. They do not capture coil
-  turn counts or end-winding effects — multiply the reported voltage per unit
-  length by the active length and number of turns to obtain line voltages.
+* Back-EMF probes operate on field-map data. They do not expand the flux by the
+  slot’s turn count; multiply the reported voltage per unit length by the
+  active stack length and the `turns` assigned to the corresponding
+  `current_region` to obtain phase voltages. Circuit-driven coils perform this
+  multiplication automatically because coil-link entries and regions now share
+  the same turn count. The three-phase PM motor demo integrates the flux
+  magnitude over each phase’s positive slot to produce a sinusoidal reference
+  waveform that lines up with the rotating air-gap field.
+* `fill_fraction` on `current_region` sources only affects how ampere-turns are
+  deposited when solving the field; it does not change the flux integration
+  geometry. Use it to approximate copper packing while keeping the probe region
+  equal to the physical slot outline.
+* `tests/back_emf_probe_test.cpp` drives the integration helper with synthetic
+  three-phase flux waveforms, verifying that the induced EMFs follow the
+  expected sinusoidal shape, maintain 120° phase separation, and scale with both
+  flux amplitude and electrical speed.

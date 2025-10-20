@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+option(MOTORSIM_ENABLE_SIMD_HINTS "Enable vectorization hints in linear algebra kernels" ON)
+if(MOTORSIM_ENABLE_SIMD_HINTS)
+    add_compile_definitions(MOTORSIM_SIMD_HINTS)
+endif()
+
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 # Project include path
@@ -27,6 +32,7 @@ add_test(NAME smoke_run COMMAND smoke_test)
 add_executable(analytic_wire_test
     tests/analytic_wire_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/ingest.cpp
     src/motorsim/grid.cpp)
@@ -38,6 +44,7 @@ add_test(NAME analytic_wire COMMAND analytic_wire_test)
 add_executable(two_wire_cancel_test
     tests/two_wire_cancel_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -49,6 +56,7 @@ add_test(NAME two_wire_cancel COMMAND two_wire_cancel_test)
 add_executable(line_current_interface_test
     tests/line_current_interface_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -57,9 +65,22 @@ target_include_directories(line_current_interface_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME line_current_interface COMMAND line_current_interface_test)
 
+add_executable(skin_depth_test
+    tests/skin_depth_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp)
+target_include_directories(skin_depth_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME skin_depth COMMAND skin_depth_test)
+
 add_executable(magnet_strip_test
     tests/magnet_strip_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -75,6 +96,15 @@ target_include_directories(polygon_region_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME polygon_region COMMAND polygon_region_test)
+
+add_executable(current_region_turns_test
+    tests/current_region_turns_test.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp)
+target_include_directories(current_region_turns_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME current_region_turns COMMAND current_region_turns_test)
 
 add_executable(output_quantity_test
     tests/output_quantity_test.cpp
@@ -112,9 +142,30 @@ target_include_directories(back_emf_probe_test PRIVATE
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME back_emf_probe COMMAND back_emf_probe_test)
 
+add_executable(mechanical_spinup_test
+    tests/mechanical_spinup_test.cpp
+    src/motorsim/mechanical.cpp
+    src/motorsim/ingest.cpp)
+target_include_directories(mechanical_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME mechanical_spinup COMMAND mechanical_spinup_test)
+
+add_executable(circuit_rk_test
+    tests/circuit_rk_test.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(circuit_rk_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME circuit_rk COMMAND circuit_rk_test)
+
 add_executable(torque_validation_test
     tests/torque_validation_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/probes.cpp
     src/motorsim/io_csv.cpp
@@ -127,6 +178,7 @@ add_test(NAME torque_validation COMMAND torque_validation_test)
 add_executable(rotor_ripple_test
     tests/rotor_ripple_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/probes.cpp
     src/motorsim/io_csv.cpp
@@ -135,6 +187,73 @@ target_include_directories(rotor_ripple_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME rotor_ripple COMMAND rotor_ripple_test)
+
+add_executable(pm_motor_spinup_test
+    tests/pm_motor_spinup_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(pm_motor_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME pm_motor_spinup COMMAND pm_motor_spinup_test)
+
+add_executable(dc_commutator_test
+    tests/dc_commutator_test.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(dc_commutator_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME dc_commutator COMMAND dc_commutator_test)
+
+add_executable(dc_motor_spinup_test
+    tests/dc_motor_spinup_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/circuit.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(dc_motor_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME dc_motor_spinup COMMAND dc_motor_spinup_test)
+
+add_executable(induction_spinup_test
+    tests/induction_spinup_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/probes.cpp
+    src/motorsim/io_csv.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/mechanical.cpp)
+target_include_directories(induction_spinup_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME induction_spinup COMMAND induction_spinup_test)
+
+add_executable(diffusion_test
+    tests/diffusion_test.cpp
+    src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
+    src/motorsim/ingest.cpp
+    src/motorsim/grid.cpp
+    src/motorsim/io_csv.cpp)
+target_include_directories(diffusion_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/external)
+add_test(NAME diffusion_transient COMMAND diffusion_test)
 
 add_test(
     NAME scenario_python_emit
@@ -165,6 +284,7 @@ set_tests_properties(scenario_cli_solve PROPERTIES DEPENDS scenario_json_diff)
 add_executable(solver_benchmark
     tools/solver_benchmark.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/grid.cpp
     src/motorsim/io_csv.cpp)
 target_include_directories(solver_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -172,6 +292,7 @@ target_include_directories(solver_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
 add_executable(solver_visualization_capture
     tools/solver_visualization_capture.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/grid.cpp
     src/motorsim/io_csv.cpp)
@@ -182,6 +303,7 @@ target_include_directories(solver_visualization_capture PRIVATE
 add_executable(warm_start_prolongation_test
     tests/warm_start_prolongation_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/io_csv.cpp
     src/motorsim/grid.cpp)
@@ -193,6 +315,7 @@ add_test(NAME warm_start_prolongation COMMAND warm_start_prolongation_test)
 add_executable(progress_snapshot_test
     tests/progress_snapshot_test.cpp
     src/motorsim/solver.cpp
+    src/motorsim/linops.cpp
     src/motorsim/ingest.cpp
     src/motorsim/grid.cpp
     src/motorsim/io_csv.cpp)
@@ -200,3 +323,7 @@ target_include_directories(progress_snapshot_test PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/external)
 add_test(NAME progress_snapshot COMMAND progress_snapshot_test)
+
+add_test(NAME rotor_animation_smoke
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/rotor_animation_smoke.py)
+set_tests_properties(rotor_animation_smoke PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

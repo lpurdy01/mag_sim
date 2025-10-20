@@ -54,21 +54,6 @@ SolveOutcome solve_scenario(const motorsim::ScenarioSpec& spec, motorsim::Solver
     return outcome;
 }
 
-double compute_interaction_energy(const motorsim::Grid2D& grid, const motorsim::ScenarioSpec& spec) {
-    const std::size_t count = grid.nx * grid.ny;
-    const double cellArea = spec.dx * spec.dy;
-    double energy = 0.0;
-    for (std::size_t idx = 0; idx < count; ++idx) {
-        const double mx = (idx < grid.Mx.size()) ? grid.Mx[idx] : 0.0;
-        const double my = (idx < grid.My.size()) ? grid.My[idx] : 0.0;
-        if (mx == 0.0 && my == 0.0) {
-            continue;
-        }
-        energy -= (mx * grid.Bx[idx] + my * grid.By[idx]) * cellArea;
-    }
-    return energy;
-}
-
 }  // namespace
 
 int main() {
@@ -116,6 +101,8 @@ int main() {
         double relDiffDipole{0.0};
         double virtualTorque{0.0};
         double relDiffVirtual{0.0};
+        double coenergyMinus{0.0};
+        double coenergyPlus{0.0};
     };
 
     const std::array<std::pair<SolverKind, const char*>, 2> solverCases = {
@@ -124,7 +111,7 @@ int main() {
 
     std::array<SolverMetrics, 2> metrics{};
 
-    const double deltaAngleDeg = 5.0;
+    const double deltaAngleDeg = 2.0;
     const ScenarioSpec specMinus = rotate_magnet(baseSpec, -deltaAngleDeg);
     const ScenarioSpec specPlus = rotate_magnet(baseSpec, deltaAngleDeg);
     const double deltaAngleRad = deltaAngleDeg * kPi / 180.0;
@@ -199,13 +186,19 @@ int main() {
             return 1;
         }
 
-        const double energyMinus = compute_interaction_energy(m.minus.grid, specMinus);
-        const double energyPlus = compute_interaction_energy(m.plus.grid, specPlus);
-        m.virtualTorque = -(energyPlus - energyMinus) / (2.0 * deltaAngleRad);
+        try {
+            m.coenergyMinus = motorsim::compute_magnetic_coenergy(m.minus.grid, specMinus.dx, specMinus.dy);
+            m.coenergyPlus = motorsim::compute_magnetic_coenergy(m.plus.grid, specPlus.dx, specPlus.dy);
+        } catch (const std::exception& ex) {
+            std::cerr << label << ": failed to compute magnetic co-energy: " << ex.what() << '\n';
+            return 1;
+        }
+
+        m.virtualTorque = (m.coenergyPlus - m.coenergyMinus) / (2.0 * deltaAngleRad);
 
         m.relDiffVirtual = std::abs(m.mstTorque - m.virtualTorque) /
                            std::max(1e-9, std::abs(m.virtualTorque));
-        if (!(m.relDiffVirtual < 0.25)) {
+        if (!(m.relDiffVirtual < 0.10)) {
             std::cerr << label << ": virtual-work torque " << m.virtualTorque
                       << " differs from MST torque " << m.mstTorque
                       << " by relDiff=" << m.relDiffVirtual << '\n';

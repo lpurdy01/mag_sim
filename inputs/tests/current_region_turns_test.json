@@ -1,0 +1,31 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {"Lx": 0.02, "Ly": 0.02, "nx": 33, "ny": 33},
+  "boundary": {"type": "neumann"},
+  "materials": [
+    {"name": "air", "mu_r": 1.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"}
+  ],
+  "sources": [
+    {
+      "type": "current_region",
+      "id": "test_slot",
+      "orientation": 1.0,
+      "turns": 50.0,
+      "fill_fraction": 0.5,
+      "vertices": [
+        [-0.004, -0.004],
+        [0.004, -0.004],
+        [0.004, 0.004],
+        [-0.004, 0.004]
+      ],
+      "I": 10.0
+    }
+  ],
+  "timeline": [
+    {"t": 0.0}
+  ]
+}

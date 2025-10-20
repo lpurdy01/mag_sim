@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -32,6 +33,9 @@ struct ScenarioSpec {
         double max_y{0.0};
         double area{0.0};
         double current{0.0};
+        double turns{1.0};
+        double fillFraction{1.0};
+        double copperArea{0.0};
     };
 
     struct Rotor {
@@ -41,11 +45,16 @@ struct ScenarioSpec {
         std::vector<std::size_t> polygonIndices;
         std::vector<std::size_t> magnetIndices;
         std::vector<std::size_t> wireIndices;
+        double initialAngleDeg{0.0};
+        bool hasInitialAngle{false};
+        double currentAngleDeg{0.0};
+        bool hasCurrentAngle{false};
     };
 
     struct Material {
         std::string name;
         double mu_r{1.0};
+        double sigma{0.0};
     };
 
     struct HalfspaceRegion {
@@ -54,6 +63,7 @@ struct ScenarioSpec {
         double offset{0.0};
         double mu_r{1.0};
         double inv_mu{0.0};
+        double sigma{0.0};
     };
 
     struct PolygonRegion {
@@ -61,6 +71,7 @@ struct ScenarioSpec {
         std::vector<double> ys;
         double mu_r{1.0};
         double inv_mu{0.0};
+        double sigma{0.0};
         double min_x{0.0};
         double max_x{0.0};
         double min_y{0.0};
@@ -154,6 +165,18 @@ struct ScenarioSpec {
             std::string path;
         };
 
+        struct MechanicalTrace {
+            std::string id;
+            std::string path;
+            std::vector<std::string> rotors;
+        };
+
+        struct CircuitTrace {
+            std::string id;
+            std::string path;
+            std::vector<std::string> circuits;
+        };
+
         std::vector<FieldMap> fieldMaps;
         std::vector<VtkSeries> vtkSeries;
         std::vector<LineProbe> lineProbes;
@@ -161,6 +184,76 @@ struct ScenarioSpec {
         std::vector<BackEmfProbe> backEmfProbes;
         std::vector<PolylineOutlines> polylineOutlines;
         std::vector<BoreAverageProbe> boreProbes;
+        std::vector<MechanicalTrace> mechanicalTraces;
+        std::vector<CircuitTrace> circuitTraces;
+    };
+
+    struct MechanicalSystem {
+        struct Rotor {
+            std::string name;
+            std::size_t rotorIndex{std::numeric_limits<std::size_t>::max()};
+            double inertia{0.0};
+            double damping{0.0};
+            double loadTorque{0.0};
+            double initialAngleDeg{0.0};
+            bool hasInitialAngle{false};
+            double initialSpeedRadPerSec{0.0};
+            bool hasInitialSpeed{false};
+            std::string torqueProbeId;
+            bool hasTorqueProbe{false};
+        };
+
+        std::vector<Rotor> rotors;
+    };
+
+    struct Circuit {
+        struct Resistor {
+            std::string id;
+            std::size_t nodePos{0};
+            std::size_t nodeNeg{0};
+            double resistance{0.0};
+        };
+
+        struct Inductor {
+            std::string id;
+            std::size_t nodePos{0};
+            std::size_t nodeNeg{0};
+            double inductance{0.0};
+            double initialCurrent{0.0};
+        };
+
+        struct VoltageSource {
+            std::string id;
+            std::size_t nodePos{0};
+            std::size_t nodeNeg{0};
+            double value{0.0};
+        };
+
+        struct CoilLink {
+            std::string id;
+            std::size_t inductorIndex{0};
+            std::size_t regionIndex{0};
+            double turns{0.0};
+            struct CommutatorSegment {
+                double startAngleDeg{0.0};
+                double endAngleDeg{0.0};
+                double orientation{1.0};
+            };
+            struct Commutator {
+                bool active{false};
+                std::size_t rotorIndex{std::numeric_limits<std::size_t>::max()};
+                std::string rotorName;
+                double defaultOrientation{1.0};
+                std::vector<CommutatorSegment> segments;
+            } commutator;
+        };
+
+        std::string id;
+        std::vector<std::string> nodes;
+        std::vector<Resistor> resistors;
+        std::vector<Inductor> inductors;
+        std::vector<VoltageSource> voltageSources;
+        std::vector<CoilLink> coilLinks;
     };
 
     struct TimelineFrame {
@@ -188,6 +281,12 @@ struct ScenarioSpec {
             double angleDegrees{0.0};
         };
 
+        struct VoltageSourceOverride {
+            std::size_t circuitIndex{0};
+            std::size_t sourceIndex{0};
+            double value{0.0};
+        };
+
         double time{0.0};
         bool hasRotorAngle{false};
         double rotorAngleDeg{0.0};
@@ -195,6 +294,7 @@ struct ScenarioSpec {
         std::vector<WireOverride> wireOverrides;
         std::vector<CurrentRegionOverride> currentRegionOverrides;
         std::vector<MagnetOverride> magnetOverrides;
+        std::vector<VoltageSourceOverride> voltageSourceOverrides;
     };
 
     std::string version;
@@ -207,6 +307,7 @@ struct ScenarioSpec {
     double dx{0.0};
     double dy{0.0};
     double mu_r_background{1.0};
+    double sigma_background{0.0};
     std::vector<Material> materials;
     std::vector<HalfspaceRegion> halfspaces;
     std::vector<PolygonRegion> polygons;
@@ -215,9 +316,17 @@ struct ScenarioSpec {
     std::vector<CurrentRegion> currentRegions;
     std::vector<Rotor> rotors;
     std::vector<MagnetRegion> magnetRegions;
+    std::vector<Circuit> circuits;
+    std::optional<MechanicalSystem> mechanical;
     BoundaryType boundaryType{BoundaryType::Dirichlet};
     Outputs outputs;
     std::vector<TimelineFrame> timeline;
+
+    struct TransientSettings {
+        bool enabled{false};
+        double dt{0.0};
+        std::size_t nSteps{0};
+    } transient;
 
     struct SolverSettings {
         bool solverSpecified{false};
@@ -234,6 +343,12 @@ struct ScenarioSpec {
         std::size_t snapshotEveryIters{0};
         bool quietSpecified{false};
         bool quiet{false};
+        bool harmonicFrequencySpecified{false};
+        double harmonicFrequencyHz{0.0};
+        bool harmonicOmegaSpecified{false};
+        double harmonicOmega{0.0};
+        bool preconditionerSpecified{false};
+        std::string preconditionerId{"none"};
     } solverSettings;
 };
 

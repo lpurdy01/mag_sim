@@ -1,0 +1,56 @@
+{
+  "version": "0.2",
+  "units": "SI",
+  "domain": {"Lx": 0.02, "Ly": 0.02, "nx": 17, "ny": 17},
+  "boundary": {"type": "neumann"},
+  "materials": [
+    {"name": "air", "mu_r": 1.0},
+    {"name": "rotor_steel", "mu_r": 50.0}
+  ],
+  "regions": [
+    {"type": "uniform", "material": "air"},
+    {
+      "type": "polygon",
+      "material": "rotor_steel",
+      "vertices": [[0.0, -0.002], [0.002, 0.0], [0.0, 0.002], [-0.002, 0.0]]
+    }
+  ],
+  "sources": [],
+  "rotors": [
+    {
+      "name": "test_rotor",
+      "pivot": [0.0, 0.0],
+      "polygons": [0]
+    }
+  ],
+    "mechanical": {
+      "rotors": [
+        {
+          "name": "test_rotor",
+          "inertia": 0.01,
+          "damping": 0.0,
+          "load_torque": 0.0,
+          "initial_angle_deg": 0.0,
+          "torque_probe": "test_torque"
+        }
+      ]
+    },
+  "timeline": [
+    {"t": 0.0},
+    {"t": 0.001},
+    {"t": 0.002}
+  ],
+  "outputs": [
+    {
+      "type": "probe",
+      "id": "test_torque",
+      "probe_type": "torque",
+      "method": "stress_tensor",
+      "loop": {
+        "type": "polygon",
+        "vertices": [[0.0, -0.003], [0.003, 0.0], [0.0, 0.003], [-0.003, 0.0]]
+      },
+      "path": "outputs/ignore.csv"
+    }
+  ]
+}
