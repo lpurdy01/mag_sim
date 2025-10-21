@@ -101,7 +101,7 @@ python3 python/gen_three_phase_pm_motor.py --profile ci --mode spinup --out inpu
 "$BUILD_DIR/motor_sim" --scenario inputs/three_phase_pm_motor_spinup_ci.json --solve --vtk-series outputs/pm_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000
 python3 python/check_pm_spinup.py --mechanical outputs/pm_motor_spinup_mechanical.csv --scenario inputs/three_phase_pm_motor_spinup_ci.json
 python3 python/generate_rotor_animation.py --scenario inputs/three_phase_pm_motor_spinup_ci.json --rotor pm_rotor --mechanical outputs/pm_motor_spinup_mechanical.csv --circuit-trace outputs/pm_motor_spinup_currents.csv --gif ci_artifacts/pm_motor_rotor.gif --frame-png ci_artifacts/pm_motor_rotor.png --max-frames 24 --fps 12
-python3 python/animate_three_phase.py --pvd outputs/pm_motor_spinup_ci.pvd --scenario inputs/three_phase_pm_motor_spinup_ci.json --save ci_artifacts/pm_motor_spinup.gif --frame-png ci_artifacts/pm_motor_spinup.png
+python3 python/animate_three_phase.py --pvd outputs/pm_motor_spinup_ci.pvd --scenario inputs/three_phase_pm_motor_spinup_ci.json --save ci_artifacts/pm_motor_spinup.gif --frame-png ci_artifacts/pm_motor_spinup.png --rotor pm_rotor --mechanical outputs/pm_motor_spinup_mechanical.csv
 cp outputs/pm_motor_spinup_frame_000.vti ci_artifacts/
 cp outputs/pm_motor_spinup_ci.pvd ci_artifacts/
 cp outputs/pm_motor_spinup_mechanical.csv ci_artifacts/
@@ -114,6 +114,7 @@ python3 python/gen_dc_motor.py --profile ci --mode spinup --out inputs/dc_motor_
 python3 python/check_pm_spinup.py --mechanical outputs/dc_motor_mechanical.csv --scenario inputs/dc_motor_spinup_ci.json \
   --rotor dc_rotor --min-angle-rise 8 --min-speed-rise 5 --max-backstep 3
 python3 python/generate_rotor_animation.py --scenario inputs/dc_motor_spinup_ci.json --rotor dc_rotor --mechanical outputs/dc_motor_mechanical.csv --circuit-trace outputs/dc_motor_currents.csv --gif ci_artifacts/dc_motor_rotor.gif --frame-png ci_artifacts/dc_motor_rotor.png --max-frames 24 --fps 12
+python3 python/animate_three_phase.py --pvd outputs/dc_motor_spinup_ci.pvd --scenario inputs/dc_motor_spinup_ci.json --save ci_artifacts/dc_motor_spinup.gif --frame-png ci_artifacts/dc_motor_spinup.png --rotor dc_rotor --mechanical outputs/dc_motor_mechanical.csv --circuit-trace outputs/dc_motor_currents.csv
 cp outputs/dc_motor_frame_000.vti ci_artifacts/
 cp outputs/dc_motor_spinup_ci.pvd ci_artifacts/
 cp outputs/dc_motor_mechanical.csv ci_artifacts/
@@ -125,7 +126,7 @@ python3 python/gen_three_phase_induction_motor.py --profile ci --mode spinup --o
 "$BUILD_DIR/motor_sim" --scenario inputs/three_phase_induction_motor_spinup_ci.json --solve --vtk-series outputs/induction_motor_spinup_ci.pvd --tol 5e-6 --max-iters 40000 --solver cg
 python3 python/check_pm_spinup.py --mechanical outputs/induction_motor_mechanical.csv --scenario inputs/three_phase_induction_motor_spinup_ci.json --rotor induction_rotor --min-angle-rise 6 --min-speed-rise 6 --max-backstep 2
 python3 python/generate_rotor_animation.py --scenario inputs/three_phase_induction_motor_spinup_ci.json --rotor induction_rotor --mechanical outputs/induction_motor_mechanical.csv --gif ci_artifacts/induction_motor_rotor.gif --frame-png ci_artifacts/induction_motor_rotor.png --max-frames 36 --fps 12
-python3 python/animate_three_phase.py --pvd outputs/induction_motor_spinup_ci.pvd --scenario inputs/three_phase_induction_motor_spinup_ci.json --save ci_artifacts/induction_motor_spinup.gif --frame-png ci_artifacts/induction_motor_spinup.png
+python3 python/animate_three_phase.py --pvd outputs/induction_motor_spinup_ci.pvd --scenario inputs/three_phase_induction_motor_spinup_ci.json --save ci_artifacts/induction_motor_spinup.gif --frame-png ci_artifacts/induction_motor_spinup.png --rotor induction_rotor --mechanical outputs/induction_motor_mechanical.csv
 cp outputs/induction_motor_frame_000.vti ci_artifacts/
 cp outputs/induction_motor_spinup_ci.pvd ci_artifacts/
 cp outputs/induction_motor_mechanical.csv ci_artifacts/
