@@ -74,6 +74,7 @@ comparison. Practical rules of thumb and sample measurements are documented in
 * `docs/math_and_solver.md` — physics background, discretisation, and test plan.
 * `docs/dev_environment.md` — IDE setup, VS Code workflow, and debugging tips.
 * `docs/solver_performance.md` — complexity discussion and benchmark reference.
+* `docs/user-guide/gui_flask.md` — lightweight Flask web GUI usage guide.
 * `CONTRIBUTING.md` — development workflow expectations, including the
   `scripts/run_ci_checks.sh` harness that mirrors GitHub Actions locally.
 
