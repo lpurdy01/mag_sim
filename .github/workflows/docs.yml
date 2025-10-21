@@ -1,9 +1,9 @@
 name: docs
 
 on:
+  pull_request:
   push:
     branches: [ main ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -25,11 +27,15 @@ jobs:
       - name: Install MkDocs dependencies
         run: pip install -r requirements-docs.txt
 
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Build documentation
         run: mkdocs build --strict
 
       - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mkdocs gh-deploy --force
+        run: mkdocs gh-deploy --force --no-history
