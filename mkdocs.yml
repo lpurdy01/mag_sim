@@ -1,7 +1,7 @@
 site_name: mag_sim Documentation
 site_description: 2D Motor Simulator — user & developer docs
-site_url: https://<your-gh-username>.github.io/mag_sim/
-repo_url: https://github.com/<your-gh-username>/mag_sim
+site_url: https://lpurdy01.github.io/mag_sim/
+repo_url: https://github.com/lpurdy01/mag_sim
 repo_name: mag_sim
 
 theme:
