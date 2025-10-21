@@ -88,3 +88,5 @@ external tool to colour or filter geometry independently of the field. Select
 the `B` or `H` vector arrays for glyphs or
 streamlines—the data are already packaged as three-component vectors, so no
 calculator filters are required.
+
+[Open in GUI](../../developer-guide/dev-environment.md){ .md-button }

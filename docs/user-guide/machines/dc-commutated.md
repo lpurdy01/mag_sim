@@ -113,3 +113,5 @@ motors.
 * The mechanical defaults (0.65×10⁻³ kg·m² inertia, 0.08 N·m load) produce a
   gentle spin-up in CI. Increase the load torque or damping to explore steady
   states, or drop them to showcase faster acceleration in the hires profile.
+
+[Open in GUI](../../developer-guide/dev-environment.md){ .md-button }

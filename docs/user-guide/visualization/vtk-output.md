@@ -55,3 +55,5 @@ On success the script prints `VTK verification: PASSED`. The implementation uses
 raw-appended binary payloads with 64-bit length headers, so files remain small
 for large grids while keeping the XML metadata legible.
 
+
+[Open in GUI](../../developer-guide/dev-environment.md){ .md-button }

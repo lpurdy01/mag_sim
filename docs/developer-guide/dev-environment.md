@@ -69,6 +69,16 @@ Key runtime flags for `motor_sim`:
   combine with `--progress-every 0` for a full per-iteration log.
 * `--quiet` suppresses progress output when scripting multiple runs.
 
+### 1.3 Documentation builds and preview
+
+The MkDocs site mirrors the repository layout under `docs/`. Run
+`scripts/build_docs.sh` to install the documentation dependencies and execute
+`mkdocs build --strict`, matching the CI workflow. Reuse the same command with
+`--skip-install` once a virtual environment already contains the requirements.
+For a live preview during edits, launch `mkdocs serve` from the repository root
+and open the reported `http://127.0.0.1:8000/` URL in a browser; the server
+reloads automatically when files change.
+
 ## 2. VS Code configuration
 
 The repo ships with `.vscode/` settings tuned for the `CMake Tools` and `C/C++`

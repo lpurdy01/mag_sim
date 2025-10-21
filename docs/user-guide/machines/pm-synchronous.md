@@ -169,3 +169,5 @@ mechanical changes or iterating on torque probes.
   samples for review when the workflow executes the PM motor pipeline.
 - Looking for a transient induction counterpart? See
   `docs/three_phase_induction_motor.md` for the conductive-bar spin-up workflow.
+
+[Open in GUI](../../developer-guide/dev-environment.md){ .md-button }

@@ -1,0 +1,117 @@
+site_name: mag_sim Documentation
+site_description: 2D Motor Simulator — user & developer docs
+site_url: https://lpurdy01.github.io/mag_sim/
+repo_url: https://github.com/lpurdy01/mag_sim
+repo_name: mag_sim
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.instant
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+
+extra_css:
+  - assets/css/extra.css
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - footnotes
+  - tables
+  - def_list
+  - attr_list
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+      inline_syntax:
+        - dollar
+        - round
+      block_syntax:
+        - dollar
+        - square
+
+plugins:
+  - search
+  - section-index
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            docstring_style: sphinx
+  - git-revision-date-localized:
+      fallback_to_build_date: true
+  - redirects:
+      redirect_maps:
+        back_emf.md: developer-guide/math-and-solver/back-emf.md
+        dc_commutated_motor.md: user-guide/machines/dc-commutated.md
+        dev_environment.md: developer-guide/dev-environment.md
+        implementation_progress.md: developer-guide/implementation/progress.md
+        implementation_status.md: developer-guide/implementation/status.md
+        math_and_solver.md: developer-guide/math-and-solver/fundamentals.md
+        solver_performance.md: developer-guide/implementation/solver-benchmarks.md
+        three_phase_induction_motor.md: user-guide/machines/induction.md
+        three_phase_pm_motor.md: user-guide/machines/pm-synchronous.md
+        three_phase_stator.md: user-guide/machines/three-phase-stator.md
+        time_series.md: developer-guide/math-and-solver/time-series.md
+        torque_forces.md: user-guide/torque-and-forces.md
+        validation_stages.md: developer-guide/implementation/validation-stages.md
+        visualization.md: user-guide/visualization/overview.md
+        vtk_output.md: user-guide/visualization/vtk-output.md
+
+extra_javascript:
+  - assets/javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - assets/javascripts/mathjax-init.js
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - User Guide:
+      - user-guide/running-simulations.md
+      - Machines:
+          - user-guide/machines/three-phase-stator.md
+          - user-guide/machines/induction.md
+          - user-guide/machines/pm-synchronous.md
+          - user-guide/machines/dc-commutated.md
+      - Visualization:
+          - user-guide/visualization/overview.md
+          - user-guide/visualization/vtk-output.md
+          - user-guide/visualization/comparison-sor-vs-cg.md
+      - Torque & Forces: user-guide/torque-and-forces.md
+  - Developer Guide:
+      - developer-guide/dev-environment.md
+      - Implementation:
+          - developer-guide/implementation/status.md
+          - developer-guide/implementation/progress.md
+          - developer-guide/implementation/validation-stages.md
+          - developer-guide/implementation/solver-benchmarks.md
+      - Math & Solver:
+          - developer-guide/math-and-solver/overview.md
+          - developer-guide/math-and-solver/fundamentals.md
+          - developer-guide/math-and-solver/back-emf.md
+          - developer-guide/math-and-solver/time-series.md
+  - Reference:
+      - Equations:
+          - reference/equations/index.md
+          - reference/equations/electromagnetics.md
+          - reference/equations/motor-models.md
+      - CLI: reference/cli.md
+      - File Formats:
+          - reference/file-formats/vtk.md
+          - reference/file-formats/scenario-json.md

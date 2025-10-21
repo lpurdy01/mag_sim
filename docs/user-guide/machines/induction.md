@@ -115,3 +115,5 @@ field plots alongside the existing stator and PM motor artefacts.
 - Pair the torque CSV with the mechanical trace to estimate instantaneous slip
   and steady-state torque. The back-EMF probes provide an easy sanity check that
   induced voltages lag the stator currents as expected for an induction machine.
+
+[Open in GUI](../../developer-guide/dev-environment.md){ .md-button }
