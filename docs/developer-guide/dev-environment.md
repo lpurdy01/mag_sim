@@ -79,6 +79,20 @@ For a live preview during edits, launch `mkdocs serve` from the repository root
 and open the reported `http://127.0.0.1:8000/` URL in a browser; the server
 reloads automatically when files change.
 
+### 1.4 Streamlit GUI
+
+For interactive experiments, launch the Streamlit UI from the repository root:
+
+```bash
+streamlit run python/gui/app_streamlit.py
+```
+
+Codespaces users should forward port `8501`. The app requires the simulator to
+be built (`build/motor_sim`) and streams solver logs directly into the browser.
+The sidebar lets you upload scenarios, tweak solver settings, and download the
+latest configuration. Refer to `docs/user-guide/gui_streamlit.md` for the full
+walkthrough.
+
 ## 2. VS Code configuration
 
 The repo ships with `.vscode/` settings tuned for the `CMake Tools` and `C/C++`

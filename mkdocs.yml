@@ -84,6 +84,7 @@ nav:
   - Quickstart: quickstart.md
   - User Guide:
       - user-guide/running-simulations.md
+      - Web GUI (Streamlit): user-guide/gui_streamlit.md
       - Machines:
           - user-guide/machines/three-phase-stator.md
           - user-guide/machines/induction.md
@@ -99,6 +100,7 @@ nav:
       - Implementation:
           - developer-guide/implementation/status.md
           - developer-guide/implementation/progress.md
+          - developer-guide/implementation/streamlit-progress.md
           - developer-guide/implementation/validation-stages.md
           - developer-guide/implementation/solver-benchmarks.md
       - Math & Solver:

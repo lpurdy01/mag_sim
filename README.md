@@ -19,6 +19,22 @@ Python visualisers, and collecting the same artefacts that GitHub Actions
 uploads. When the script passes locally you can be confident the hosted CI will
 behave the same way.
 
+## Streamlit GUI
+
+The repository ships with a Streamlit-based front-end for quick experiments.
+Install the GUI dependencies (the devcontainer and `scripts/setup_env.sh`
+already do this) and launch the app from the repository root:
+
+```bash
+python3 -m pip install -r requirements-gui.txt  # skip if using the container
+streamlit run python/gui/app_streamlit.py
+```
+
+Forward port `8501` when using Codespaces/VS Code Remote and ensure
+`build/motor_sim` exists before running. The UI exposes file upload, solver
+controls, log streaming, a Stop button, and download links for generated CSVs.
+See `docs/user-guide/gui_streamlit.md` for a full walkthrough.
+
 `build/motor_sim` loads JSON scenarios that describe regions, currents, and
 optional permanent magnets. The automated regression suite lives in the
 `tests/` directory and spans the analytic \(\mu_0 I / (2\pi r)\) wire case, the
