@@ -5,28 +5,36 @@ This document summarizes the equations, discretizations, and validation strategy
 ## 1. Problem statement: 2D magnetostatics
 
 We consider a 2D Cartesian cross-section where impressed currents are directed along the out-of-plane \(z\)-axis. The vector potential has only one non-zero component,
-\[
+
+$$
 \mathbf{A} = (0, 0, A_z(x, y)).
-\]
+$$
+
 The magnetic flux density is recovered by taking the curl of \(\mathbf{A}\):
-\[
+
+$$
 \mathbf{B} = \nabla \times (0, 0, A_z) = \bigl(\partial_y A_z,\; -\partial_x A_z,\; 0\bigr).
-\]
+$$
+
 Consequently,
-\[
+
+$$
 B_x = \partial_y A_z, \qquad B_y = -\partial_x A_z.
-\]
+$$
 
 ## 2. Governing PDE
 
 Spatially varying materials are represented through the magnetic permeability \(\mu(x, y) = \mu_0 \mu_r(x, y)\). The scalar potential satisfies the Poisson-like equation
-\[
+
+$$
 \nabla \cdot \left( \frac{1}{\mu} \nabla A_z \right) = -J_z,
-\]
+$$
+
 where \(J_z\) is the impressed current density in the \(z\) direction. In the special case of uniform permeability, \(\mu = \text{const}\), the equation reduces to
-\[
+
+$$
 \nabla^2 A_z = -\mu J_z.
-\]
+$$
 
 ## 3. Discretization on a uniform grid
 
@@ -40,11 +48,14 @@ The solver operates on a structured, uniform grid of size \((n_x, n_y)\) with sp
 ### 3.1 Variable-coefficient five-point stencil
 
 Spatially varying materials require carefully averaging \(\nu\) across cell faces. Using harmonic averages preserves flux continuity across interfaces. For the east face shared by cells \((i, j)\) and \((i+1, j)\),
-\[
+
+$$
 \nu_E = \frac{2\,\nu_{i,j}\,\nu_{i+1,j}}{\nu_{i,j} + \nu_{i+1,j}},
-\]
+$$
+
 with analogous expressions for the west (W), north (N), and south (S) faces. These face coefficients yield the standard five-point stencil for diffusion with variable coefficients. The Gauss–Seidel point update used by the solver reads
-\[
+
+$$
 A_{i,j}^{(\text{new})} =
 \frac{
 \tfrac{\nu_E}{\Delta x^2} A_{i+1,j}
@@ -56,18 +67,21 @@ A_{i,j}^{(\text{new})} =
 \tfrac{\nu_E + \nu_W}{\Delta x^2}
 + \tfrac{\nu_N + \nu_S}{\Delta y^2}
 }.
-\]
+$$
+
 When \(\mu\) is uniform, \(\nu_E = \nu_W = \nu_N = \nu_S = 1/\mu\) and the update reduces to the familiar five-point Laplacian.
 
 ### 3.2 Discrete residual
 
 The residual used for convergence checks is assembled directly from the fluxes through each face:
-\[
+
+$$
 R_{i,j} =
 \frac{\nu_E (A_{i+1,j} - A_{i,j}) - \nu_W (A_{i,j} - A_{i-1,j})}{\Delta x^2}
 + \frac{\nu_N (A_{i,j+1} - A_{i,j}) - \nu_S (A_{i,j} - A_{i,j-1})}{\Delta y^2}
 - J_{i,j}.
-\]
+$$
+
 The continuous PDE is satisfied when \(R_{i,j} = 0\) everywhere.
 
 ## 4. Boundary conditions
@@ -81,13 +95,17 @@ The codebase exposes two matrix-free solvers that operate on the same discrete o
 ### 5.1 Gauss–Seidel with SOR
 
 The legacy workhorse remains a Gauss–Seidel method with Successive Over-Relaxation (SOR). For every interior cell,
-\[
+
+$$
 A_{i,j}^{(\text{new})} = \frac{\tfrac{\nu_E}{\Delta x^2} A_{i+1,j} + \tfrac{\nu_W}{\Delta x^2} A_{i-1,j} + \tfrac{\nu_N}{\Delta y^2} A_{i,j+1} + \tfrac{\nu_S}{\Delta y^2} A_{i,j-1} + J_{i,j}}{\tfrac{\nu_E + \nu_W}{\Delta x^2} + \tfrac{\nu_N + \nu_S}{\Delta y^2}}.
-\]
+$$
+
 Relaxation is applied as
-\[
+
+$$
 A_{i,j} \leftarrow (1 - \omega) A_{i,j} + \omega A_{i,j}^{(\text{new})}, \qquad 1 < \omega < 2.
-\]
+$$
+
 SOR remains useful as a smoother and a robust fallback when diagnostics are required.
 
 ### 5.2 Preconditioned Conjugate Gradient (PCG)
@@ -97,12 +115,14 @@ definite system. The PCG iteration is expressed in matrix-free form using the re
 select a preconditioner at runtime via `--pc {none|jacobi|ssor}` (or the matching scenario schema). The Jacobi option applies the
 diagonal inverse of the operator, while the SSOR mode runs a matrix-free symmetric Gauss–Seidel sweep that respects the
 structured 5-point stencil. The update equations follow the standard PCG recurrence:
-\[
+
+$$
 \begin{aligned}
 r_k &= b - A x_k, & z_k &= M^{-1} r_k, & p_k &= z_k + \beta_{k-1} p_{k-1}, \\
 \alpha_k &= \frac{r_k^T z_k}{p_k^T A p_k}, & x_{k+1} &= x_k + \alpha_k p_k, & r_{k+1} &= r_k - \alpha_k A p_k,
 \end{aligned}
-\]
+$$
+
 with \(\beta_{k-1} = (r_k^T z_k) / (r_{k-1}^T z_{k-1})\). The implementation enforces Neumann symmetry by mirroring boundary
 values between iterations and monitors stagnation. If the relative residual fails to improve over a configurable window the
 solver emits guidance suggesting warm starts, prolongation, or falling back to SOR for inspection.
@@ -110,13 +130,17 @@ solver emits guidance suggesting warm starts, prolongation, or falling back to S
 ### 5.3 Transient magnetodynamics
 
 Conductive regions introduce the magneto-quasistatic equation
-\[
+
+$$
 \sigma \frac{\partial A_z}{\partial t} + \nabla\cdot\left(\nu \nabla A_z\right) = -J_{\text{imp}},
-\]
+$$
+
 which, after linearising with a Crank–Nicolson step and assuming quasi-static magnetisation, yields the linear system
-\[
+
+$$
 \left(\frac{\sigma}{\Delta t}I + \mathcal{A}\right) A_z^{n+1} = \frac{\sigma}{\Delta t} A_z^n + J_{\text{imp}}^{n+1},
-\]
+$$
+
 where \(\mathcal{A}(\cdot) = -\nabla\cdot(\nu \nabla \cdot)\) is the same operator used in the magnetostatic solve. The
 implementation reuses the CG/PCG back-end by augmenting the matrix-free stencil with the \(\sigma/\Delta t\) diagonal term and
 supplying the adjusted right-hand side. Scenario JSON enables transient marching by adding a top-level `"transient"` block with
@@ -127,18 +151,22 @@ field against the analytic error-function solution for a step excitation into a 
 ## 6. Convergence criteria
 
 Iterations continue until either the maximum iteration count is reached or the relative residual falls below the user-specified tolerance:
-\[
+
+$$
 \frac{\lVert R \rVert_2}{\lVert J \rVert_2 + \varepsilon} < \text{tol},
-\]
+$$
+
 with \(\varepsilon\) guarding against zero-current scenarios and the sums taken over all interior cells.
 
 ## 7. Recovering the magnetic flux density
 
 Given \(A_z\), the magnetic flux density components are approximated via finite differences. In the interior we use central differences:
-\[
+
+$$
 B_x \approx \frac{A_{i,j+1} - A_{i,j-1}}{2\Delta y}, \qquad
 B_y \approx -\frac{A_{i+1,j} - A_{i-1,j}}{2\Delta x}.
-\]
+$$
+
 One-sided differences are applied on the domain boundary where neighbours are unavailable.
 
 ## 8. Permanent magnets and magnetisation
@@ -149,9 +177,11 @@ The rasteriser stores uniform magnetisation vectors per cell and applies finite-
 into \(J_z\). The magnetisation field is also retained so that the magnetic field intensity can be reconstructed after the solve.
 
 Given the flux density components, the solver supplies \(\mathbf{H}\) via
-\[
+
+$$
 \mathbf{H} = \nu \mathbf{B} - \frac{1}{\mu_r} \mathbf{M}, \qquad \nu = \frac{1}{\mu_0 \mu_r}.
-\]
+$$
+
 In non-magnetised regions this reduces to the familiar \(\mathbf{H} = \nu \mathbf{B}\). Inside permanent magnets the subtraction
 cancels the remanent contribution, yielding nearly zero \(\mathbf{H}\) for an isolated uniformly magnetised body when \(\mu_r \approx 1\).
 
@@ -161,9 +191,11 @@ to within 15%, and the recovered \(H_y\) inside the magnet is checked to remain 
 deposition and the post-processing of \(\mathbf{H}\).
 
 With \(\mathbf{B}\) and \(\mathbf{H}\) reconstructed, the solver additionally evaluates the magnetostatic energy density
-\[
+
+$$
 w = \tfrac{1}{2} \mathbf{B} \cdot \mathbf{H} = \tfrac{1}{2} (B_x H_x + B_y H_y).
-\]
+$$
+
 This scalar is emitted on request and supports energy-based force calculations or quick checks for material saturation.
 
 ## 9. Analytic reference: planar permeability interface
@@ -171,17 +203,23 @@ This scalar is emitted on request and supports energy-based force calculations o
 To validate heterogeneous permeability handling we leverage the method of images for a line current next to a planar interface. Two media with permeabilities \(\mu_1\) (left, \(x < 0\)) and \(\mu_2\) (right, \(x > 0\)) meet along the \(y\)-axis. A real infinite wire of current \(I\) sits at \(\mathbf{r}_0 = (-a, 0)\) inside region 1.
 
 The magnetic field in region 1 is the superposition of the real wire and an image wire located at \(\mathbf{r}_0' = (+a, 0)\) with current magnitude scaled by
-\[
+
+$$
 I' = \rho I, \qquad \rho = \frac{\mu_2 - \mu_1}{\mu_1 + \mu_2}.
-\]
+$$
+
 Region 2 sees the field of a "transmitted" wire that sits at the real location but carries current
-\[
+
+$$
 I_t = \tau I, \qquad \tau = \frac{2\mu_1}{\mu_1 + \mu_2}.
-\]
+$$
+
 For a single infinite wire placed at \((x_s, y_s)\) inside a homogeneous medium with permeability \(\mu\), the Biot–Savart expression simplifies in 2D to
-\[
+
+$$
 \mathbf{B}(x, y) = \frac{\mu I}{2\pi R^2} \bigl(-(y - y_s),\; x - x_s\bigr), \qquad R^2 = (x - x_s)^2 + (y - y_s)^2.
-\]
+$$
+
 Therefore the validation procedure assembles
 
 - Region 1 field: \(\mathbf{B}_1 = \mathbf{B}_{\mu_1}(I, \mathbf{r}_0) + \mathbf{B}_{\mu_1}(I', \mathbf{r}_0')\).
@@ -196,13 +234,17 @@ stays below 40% despite the coarse grid and Dirichlet boundary at the outer box.
 ## 10. Validation with an infinite straight wire
 
 To validate the solver, we model an infinite straight wire carrying current \(I\). The analytic magnetic field magnitude is
-\[
+
+$$
 B(r) = \frac{\mu_0 I}{2 \pi r}.
-\]
+$$
+
 Numerically, the wire is approximated by a small circular region (radius \(r_c\)) with uniform current density,
-\[
+
+$$
 J_z = \frac{I}{\pi r_c^2}.
-\]
+$$
+
 Cells with centre radius \(r \le r_c\) receive this current density, while the rest are zero. Choosing \(r_c\) a few cells wide (e.g., three cell widths) reduces discretisation error from approximating the singular source. After solving for \(A_z\), we compute \(\mathbf{B}\) and sample points along a ring of radius \(r_{\text{sample}}\) to compare the simulated \(\lVert \mathbf{B} \rVert\) against the analytic expression. A relative error below 25% is deemed acceptable for the coarse grid and finite domain used in the automated test.
 
 ---
@@ -220,12 +262,12 @@ magneto-quasistatic system for sinusoidal excitation. Assuming a phasor
 dependence \(e^{j\omega t}\) and a scalar potential \(A_z\) split into real and
 imaginary parts (\(A_z = A_r + j A_i\)), the governing equations become
 
-\[
+$$
 \begin{aligned}
 \nabla \cdot (\nu \nabla A_r) - \omega \sigma A_i &= J_r, \\
 \nabla \cdot (\nu \nabla A_i) + \omega \sigma A_r &= J_i,
 \end{aligned}
-\]
+$$
 
 where \(\sigma\) is the electrical conductivity and \(J = J_r + j J_i\) is the
 impressed current density. The discrete operator therefore couples the real and
@@ -234,13 +276,13 @@ imaginary systems through the frequency-dependent \(\omega \sigma\) term.
 The implementation keeps the matrix-free structure used by the magnetostatic
 solver. A helper applies the block operator
 
-\[
+$$
 \mathbf{H} =
 \begin{bmatrix}
 L & -\omega S \\
 \omega S & L
 \end{bmatrix},
-\]
+$$
 
 where \(L\) is the familiar diffusion stencil and \(S\) holds per-cell
 conductivities. Because \(\mathbf{H}\) is not symmetric, the code forms the

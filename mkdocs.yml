@@ -38,6 +38,12 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.arithmatex:
       generic: true
+      inline_syntax:
+        - dollar
+        - round
+      block_syntax:
+        - dollar
+        - square
 
 plugins:
   - search
@@ -69,6 +75,7 @@ plugins:
         vtk_output.md: user-guide/visualization/vtk-output.md
 
 extra_javascript:
+  - assets/javascripts/mathjax.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 nav:

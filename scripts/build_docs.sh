@@ -41,4 +41,6 @@ if [[ $INSTALL_DEPS -eq 1 ]]; then
   python3 -m pip install --requirement requirements-docs.txt
 fi
 
+python3 tools/check_docs_math_blocks.py
+
 mkdocs build --strict
