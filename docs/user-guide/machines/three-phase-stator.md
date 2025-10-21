@@ -84,3 +84,5 @@ for larger offline runs.
   co-simulation demo.
 - Keep binary artefacts (MP4/VTI samples) out of git history. The CI workflow
   uploads a small bundle with the demo VTK frame, bore CSV, and animation.
+
+[Open in GUI](../../developer-guide/dev-environment.md){ .md-button }

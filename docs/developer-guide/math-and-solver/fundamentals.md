@@ -1,6 +1,6 @@
 # Magnetostatic Solver Math Notes
 
-This document summarizes the equations, discretizations, and validation strategy used by the minimal 2D magnetostatic solver implemented in this repository. It follows the scalar potential formulation with a single non-zero component \(A_z(x, y)\) and highlights practical implementation details for the structured grid solver.
+This document summarizes the equations, discretizations, and validation strategy used by the minimal 2D magnetostatic solver implemented in this repository. It follows the scalar potential formulation with a single non-zero component \(A_z(x, y)\) and highlights practical implementation details for the structured grid solver. Reusable notation is collected under [Reference → Equations](../../reference/equations/index.md).
 
 ## 1. Problem statement: 2D magnetostatics
 

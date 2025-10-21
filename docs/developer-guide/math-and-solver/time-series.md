@@ -4,7 +4,8 @@ The solver can execute quasi-static studies by expanding a scenario's `timeline`
 array into independent frames. Each frame is a snapshot of the problem with its
 own wire currents and magnetisation overrides. The solver rasterises and solves
 these frames sequentially by default, or concurrently when `--parallel-frames`
-is supplied.
+is supplied. For an end-to-end walkthrough see the [Running Simulations guide](../../user-guide/running-simulations.md);
+this page focuses on schema details and developer diagnostics.
 
 ## Authoring a Timeline
 

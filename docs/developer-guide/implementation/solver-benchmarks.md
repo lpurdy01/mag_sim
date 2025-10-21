@@ -51,7 +51,7 @@ Hardware/software snapshot:
 
 ### 2.1 Convergence comparison
 
-![CG vs SOR convergence overlay](images/CG_vs_SOR_convergence_overlay.png)
+![CG vs SOR convergence overlay](../../assets/images/CG_vs_SOR_convergence_overlay.png)
 
 The overlay highlights how quickly the CG backend suppresses low-frequency
 error compared with SOR on the iron-ring + magnet scenario. Both runs use the
@@ -59,21 +59,21 @@ same tolerance (1e-6) and operate entirely on a single CPU core.
 
 ### 2.2 Field evolution snapshots
 
-![CG progress snapshots](images/progress_snapshots_cg.gif)
+![CG progress snapshots](../../assets/images/progress_snapshots_cg.gif)
 
 The animated field map (CG trace shown; an SOR variant lives at
-`images/progress_snapshots_sor.gif`) illustrates which spatial structures are
+`../../assets/images/progress_snapshots_sor.gif`) illustrates which spatial structures are
 responsible for the final residual plateau. These snapshots are handy when
 explaining solver behaviour or validating new preconditioners.
 
 ### 2.3 Single-thread scaling measurements
 
-![Solver scaling comparison](solver_benchmark/benchmark/solver_scaling.png)
+![Solver scaling comparison](../../solver_benchmark/benchmark/solver_scaling.png)
 
 The plot combines per-solve timings for grids from 65² up to 961² (CG) and
 65²–129² (SOR). The straight lines show least-squares fits of the form
 `solve_time ≈ a · N^k`; coefficients are recorded in
-`solver_benchmark/benchmark/solver_scaling_summary.txt`:
+`docs/solver_benchmark/benchmark/solver_scaling_summary.txt`:
 
 * CG: \(k = 2.99,\ a = 1.82 \times 10^{-7}\) seconds.
 * SOR: \(k = 4.05,\ a = 1.07 \times 10^{-8}\) seconds (fit based on three
@@ -143,7 +143,7 @@ whenever posting new numbers to this table.
 To approximate wall-clock runtime for a new configuration:
 
 1. Decide which solver you intend to use and locate the closest grid size in
-  `solver_benchmark/benchmark/solver_scaling_summary.txt`.
+  `docs/solver_benchmark/benchmark/solver_scaling_summary.txt`.
 2. For CG, scale from the \(1.82 \times 10^{-7} N^3\) fit; for SOR, start from
   the \(1.07 \times 10^{-8} N^{4.05}\) estimate and adjust using the measured
   per-cycle numbers above.

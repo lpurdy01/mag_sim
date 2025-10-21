@@ -116,3 +116,5 @@ for future report/CSV exports and the three-phase PM motor walkthrough.
 The `tests/probe_output_test.cpp` fixture exercises the ingestion and evaluation
 path with a synthetic field that generates a known downward force, providing a
 regression guard for the new feature.
+
+[Open in GUI](../developer-guide/dev-environment.md){ .md-button }

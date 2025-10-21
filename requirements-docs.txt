@@ -1,0 +1,7 @@
+mkdocs
+mkdocs-material
+mkdocstrings[python]
+mkdocs-section-index
+mkdocs-redirects
+mkdocs-git-revision-date-localized-plugin
+pymdown-extensions
