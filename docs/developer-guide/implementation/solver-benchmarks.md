@@ -21,9 +21,11 @@ per iteration.
   converges slowly on low-frequency modes. For uniform grids, iteration counts on
   the wire test scale approximately with \(\mathcal{O}(n_x)\).
 * Wall-clock time is therefore well-approximated by
-  \
-  t \approx \alpha \; n_x n_y N_\text{iter},
-  \
+
+  $$
+  t \approx \alpha\, n_x n_y N_\text{iter},
+  $$
+
   where \(\alpha\) is the time per cell-iteration. On the single-threaded
   reference hardware below \(\alpha \approx 9.4 \times 10^{-8}\) s (≈ 94 ms per
   million cell-iterations).

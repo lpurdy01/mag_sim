@@ -77,6 +77,7 @@ plugins:
 extra_javascript:
   - assets/javascripts/mathjax.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - assets/javascripts/mathjax-init.js
 
 nav:
   - Home: index.md
