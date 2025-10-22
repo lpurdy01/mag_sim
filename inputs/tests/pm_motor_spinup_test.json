@@ -751,10 +751,7 @@
           "source": "Vc",
           "value": 17.321
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": -30.0
-      }
+      ]
     },
     {
       "t": 0.002,
@@ -779,10 +776,7 @@
           "source": "Vc",
           "value": 8.135
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 6.0
-      }
+      ]
     },
     {
       "t": 0.003,
@@ -807,10 +801,7 @@
           "source": "Vc",
           "value": -4.158
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 42.0
-      }
+      ]
     },
     {
       "t": 0.005,
@@ -835,10 +826,7 @@
           "source": "Vc",
           "value": -14.863
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 78.0
-      }
+      ]
     },
     {
       "t": 0.007,
@@ -863,10 +851,7 @@
           "source": "Vc",
           "value": -19.89
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 114.0
-      }
+      ]
     },
     {
       "t": 0.008,
@@ -891,10 +876,7 @@
           "source": "Vc",
           "value": -17.321
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 150.0
-      }
+      ]
     },
     {
       "t": 0.01,
@@ -919,10 +901,7 @@
           "source": "Vc",
           "value": -8.135
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 186.0
-      }
+      ]
     },
     {
       "t": 0.012,
@@ -947,10 +926,7 @@
           "source": "Vc",
           "value": 4.158
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 222.0
-      }
+      ]
     },
     {
       "t": 0.013,
@@ -975,10 +951,7 @@
           "source": "Vc",
           "value": 14.863
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 258.0
-      }
+      ]
     },
     {
       "t": 0.015,
@@ -1003,10 +976,7 @@
           "source": "Vc",
           "value": 19.89
         }
-      ],
-      "rotor_angles": {
-        "pm_rotor": 294.0
-      }
+      ]
     }
   ],
   "outputs": [
@@ -1024,14 +994,6 @@
       "type": "polyline_outlines",
       "id": "pm_motor_spinup_outlines",
       "path": "outputs/pm_motor_spinup_outlines.vtp"
-    },
-    {
-      "type": "circuit_trace",
-      "id": "pm_motor_spinup_currents",
-      "path": "outputs/pm_motor_spinup_currents.csv",
-      "circuits": [
-        "stator_three_phase"
-      ]
     },
     {
       "type": "bore_avg_B",

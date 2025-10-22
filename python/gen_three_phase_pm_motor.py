@@ -290,7 +290,8 @@ def generate_scenario(
                 {"circuit": "stator_three_phase", "source": "Vc", "value": vc},
             ],
         }
-        frame_entry["rotor_angles"] = {"pm_rotor": rotor_angle_deg}
+        if mode == "locked":
+            frame_entry["rotor_angles"] = {"pm_rotor": rotor_angle_deg}
         timeline.append(frame_entry)
 
     circuits = [

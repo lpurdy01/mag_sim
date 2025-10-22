@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import math
@@ -24,34 +25,52 @@ SCENARIO = ROOT / "inputs" / "tests" / "pm_motor_spinup_test.json"
 OUTPUT_DIR = ROOT / "outputs"
 
 
-def assert_timeline_has_rotor_angles(path: Path, rotor: str) -> None:
+def load_scenario(path: Path) -> tuple[dict, list[dict]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     timeline = data.get("timeline")
     if not timeline:
         raise SystemExit("Scenario timeline is missing for rotor animation smoke test")
-    missing_entries = [idx for idx, frame in enumerate(timeline) if rotor not in frame.get("rotor_angles", {})]
-    if missing_entries:
-        raise SystemExit(
-            "Scenario timeline lacks rotor_angles for rotor '{rotor}' in frames: {frames}".format(
-                rotor=rotor,
-                frames=", ".join(str(idx) for idx in missing_entries),
-            )
-        )
+    return data, timeline
 
 
-def write_mechanical_trace(path: Path, rotor: str) -> None:
-    times = [0.0, 0.001, 0.002, 0.003, 0.004]
-    angles_deg = [0.0, 2.0, 4.5, 7.0, 9.5]
-    omega = [math.radians(angles_deg[i] - angles_deg[i - 1]) / (times[i] - times[i - 1]) if i > 0 else 0.0 for i in range(len(times))]
+def initial_rotor_angle_deg(spec: dict, rotor: str) -> float:
+    mechanical = spec.get("mechanical", {}) or {}
+    for entry in mechanical.get("rotors", []):
+        if entry.get("name") == rotor:
+            return float(entry.get("initial_angle_deg", 0.0))
+    return 0.0
+
+
+def synthesise_rotor_motion(times: list[float], initial_angle_deg: float) -> tuple[list[float], list[float]]:
+    if not times:
+        raise SystemExit("Timeline has no samples for rotor animation smoke test")
+    angles_deg: list[float] = []
+    omega_rad: list[float] = []
+    for idx, current_time in enumerate(times):
+        if idx == 0:
+            angle = initial_angle_deg
+            omega = 0.0
+        else:
+            dt = current_time - times[idx - 1]
+            if dt <= 0.0:
+                raise SystemExit("Scenario timeline is not strictly increasing")
+            angle = initial_angle_deg + 6.0 * idx
+            omega = math.radians(angle - angles_deg[-1]) / dt
+        angles_deg.append(angle)
+        omega_rad.append(omega)
+    return angles_deg, omega_rad
+
+
+def write_mechanical_trace(path: Path, rotor: str, times: list[float], angles_deg: list[float], omega_rad: list[float]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["time_s", "rotor", "angle_deg", "omega_rad_s", "omega_rpm", "torque_Nm"])
-        for t, angle, w in zip(times, angles_deg, omega):
+        for t, angle, w in zip(times, angles_deg, omega_rad):
             rpm = w * 60.0 / (2.0 * math.pi)
             writer.writerow([t, rotor, angle, w, rpm, 0.05])
 
 
-def write_circuit_trace(path: Path) -> None:
+def write_circuit_trace(path: Path, times: list[float]) -> None:
     slot_ids = [
         "A_pos",
         "A_neg",
@@ -60,7 +79,6 @@ def write_circuit_trace(path: Path) -> None:
         "C_pos",
         "C_neg",
     ]
-    times = [0.0, 0.001, 0.002, 0.003, 0.004]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
@@ -86,6 +104,15 @@ def write_circuit_trace(path: Path) -> None:
                 writer.writerow([t, "stator_three_phase", slot, slot, 120.0, 1.0, current, current, ampere_turns, 0.0])
 
 
+def write_timeline_with_rotor_angles(path: Path, spec: dict, rotor: str, angles_deg: list[float]) -> None:
+    patched = copy.deepcopy(spec)
+    timeline = patched.get("timeline", [])
+    for frame, angle in zip(timeline, angles_deg):
+        rotor_angles = frame.setdefault("rotor_angles", {})
+        rotor_angles[rotor] = angle
+    path.write_text(json.dumps(patched, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -93,11 +120,17 @@ def main() -> None:
     circuit_csv = OUTPUT_DIR / "rotor_anim_circuit.csv"
     gif_path = OUTPUT_DIR / "rotor_anim.gif"
     png_path = OUTPUT_DIR / "rotor_anim.png"
+    timeline_scenario_path = OUTPUT_DIR / "pm_motor_spinup_timeline.json"
 
-    assert_timeline_has_rotor_angles(SCENARIO, "pm_rotor")
+    spec, timeline = load_scenario(SCENARIO)
+    times = [float(frame.get("t", 0.0)) for frame in timeline]
+    rotor_name = "pm_rotor"
+    initial_angle = initial_rotor_angle_deg(spec, rotor_name)
+    angles_deg, omega_rad = synthesise_rotor_motion(times, initial_angle)
 
-    write_mechanical_trace(mechanical_csv, "pm_rotor")
-    write_circuit_trace(circuit_csv)
+    write_mechanical_trace(mechanical_csv, rotor_name, times, angles_deg, omega_rad)
+    write_circuit_trace(circuit_csv, times)
+    write_timeline_with_rotor_angles(timeline_scenario_path, spec, rotor_name, angles_deg)
 
     cmd = [
         sys.executable,
@@ -130,15 +163,16 @@ def main() -> None:
             raise SystemExit(f"Expected artifact {artifact} was not created")
 
     # Exercise the timeline fallbacks (rotor angles + phase currents) by omitting
-    # the explicit traces. The PM spin-up scenario ships both series, so the
-    # helper should succeed without additional CSV inputs.
+    # the explicit traces. A patched copy of the scenario injects synthetic rotor
+    # angles derived from the same motion used for the CSV traces so the helper
+    # can operate without additional files.
     timeline_gif = OUTPUT_DIR / "rotor_anim_timeline.gif"
     timeline_png = OUTPUT_DIR / "rotor_anim_timeline.png"
     timeline_cmd = [
         sys.executable,
         str(ROOT / "python" / "generate_rotor_animation.py"),
         "--scenario",
-        str(SCENARIO),
+        str(timeline_scenario_path),
         "--rotor",
         "pm_rotor",
         "--gif",
