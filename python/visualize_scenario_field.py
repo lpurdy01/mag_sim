@@ -9,7 +9,7 @@ import json
 import pathlib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, IO, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -461,7 +461,7 @@ def plot_field(
     bmag: np.ndarray,
     wires: List[Wire],
     quiver_skip: int,
-    save: pathlib.Path | None,
+    save: pathlib.Path | IO[bytes] | None,
     title: str,
     color_scale: str,
     log_floor: float,
@@ -473,6 +473,8 @@ def plot_field(
     streamlines: bool,
     analytic: Optional[Dict[str, np.ndarray]],
     analytic_levels: int,
+    *,
+    show: bool = True,
 ) -> None:
     fig, ax = plt.subplots(figsize=(7, 6))
     display_mag = bmag
@@ -575,9 +577,13 @@ def plot_field(
 
     if save is not None:
         fig.savefig(save, dpi=200, bbox_inches="tight")
-        print(f"Saved figure to {save}")
+        if isinstance(save, pathlib.Path):
+            print(f"Saved figure to {save}")
 
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def main() -> None:
