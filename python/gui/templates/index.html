@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="row">
+    <div class="col-lg-8">
+      <h1 class="mb-3">Run a Simulation</h1>
+      <p class="text-muted">Upload a scenario JSON, select solver options, and monitor progress in real time.</p>
+      {% if error %}
+        <div class="alert alert-danger" role="alert">
+          {{ error }}
+        </div>
+      {% endif %}
+      <form id="run-form" class="card card-body mb-3" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label class="form-label" for="geometry-file">Scenario file (JSON)</label>
+          <input class="form-control" type="file" id="geometry-file" name="geometry_file" accept=".json,.dxf" required>
+          <div class="form-text">DXF uploads are reserved for a future update; please use JSON scenarios for now.</div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label" for="solver">Solver</label>
+            <select class="form-select" id="solver" name="solver">
+              <option value="cg" {% if default_solver == 'cg' %}selected{% endif %}>Conjugate Gradient (CG)</option>
+              <option value="sor" {% if default_solver == 'sor' %}selected{% endif %}>Successive Over-Relaxation (SOR)</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="tol">Tolerance</label>
+            <input class="form-control" type="number" step="any" id="tol" name="tol" value="{{ default_tolerance }}" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="max-iters">Max iterations</label>
+            <input class="form-control" type="number" id="max-iters" name="max_iters" value="{{ default_max_iters }}" min="1" required>
+          </div>
+        </div>
+        <div class="mb-3 mt-3">
+          <label class="form-label" for="outputs">Outputs (optional)</label>
+          <input class="form-control" type="text" id="outputs" name="outputs" placeholder="field_map">
+          <div class="form-text">Pass through to <code>motor_sim --outputs</code>; leave blank to use the solver default.</div>
+        </div>
+        <div class="d-flex gap-2">
+          <button id="run-btn" class="btn btn-primary" type="submit" {% if running %}disabled{% endif %}>Run simulation</button>
+          <button id="stop-btn" class="btn btn-warning" type="button" {% if not running %}disabled{% endif %}>Stop</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="progress-container" class="card card-body mb-3" style="display: none;">
+    <h2 class="h5">Progress</h2>
+    <div class="progress" style="height: 24px;">
+      <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;">0%</div>
+    </div>
+  </div>
+  <div id="log-container" class="card card-body mb-3" style="display: none;">
+    <h2 class="h5">Solver log</h2>
+    <pre id="log-area" class="bg-dark text-white p-3" style="max-height: 320px; overflow-y: auto;"></pre>
+  </div>
+  <div id="results" class="card card-body" style="display: none;">
+    <h2 class="h5">Downloads</h2>
+    <ul id="results-list" class="list-group list-group-flush"></ul>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const runForm = document.getElementById("run-form");
+      const runBtn = document.getElementById("run-btn");
+      const stopBtn = document.getElementById("stop-btn");
+      const progressContainer = document.getElementById("progress-container");
+      const progressBar = document.getElementById("progress-bar");
+      const logContainer = document.getElementById("log-container");
+      const logArea = document.getElementById("log-area");
+      const resultsContainer = document.getElementById("results");
+      const resultsList = document.getElementById("results-list");
+      const downloadBase = "{{ url_for('download') }}";
+      const isRunning = {{ 'true' if running else 'false' }};
+
+      if (isRunning) {
+        progressContainer.style.display = 'block';
+        logContainer.style.display = 'block';
+        runBtn.disabled = true;
+        stopBtn.disabled = false;
+      }
+
+      if (runForm) {
+        runForm.addEventListener("submit", function () {
+          runBtn.disabled = true;
+          stopBtn.disabled = false;
+          progressContainer.style.display = 'block';
+          logContainer.style.display = 'block';
+          resultsContainer.style.display = 'none';
+          resultsList.innerHTML = '';
+          logArea.textContent = '';
+          progressBar.classList.remove('bg-danger', 'bg-success');
+          progressBar.style.width = '0%';
+          progressBar.textContent = '0%';
+        });
+      }
+
+      stopBtn.addEventListener("click", function (event) {
+        event.preventDefault();
+        fetch("{{ url_for('stop') }}", { method: "POST" });
+      });
+
+      const source = new EventSource("{{ url_for('stream_progress') }}");
+      source.onmessage = function (event) {
+        if (!event.data) {
+          return;
+        }
+
+        let payload;
+        try {
+          payload = JSON.parse(event.data);
+        } catch (err) {
+          return;
+        }
+
+        if (payload.started) {
+          progressContainer.style.display = 'block';
+          logContainer.style.display = 'block';
+          stopBtn.disabled = false;
+        }
+
+        if (typeof payload.progress === 'number') {
+          const pct = Math.max(0, Math.min(100, payload.progress));
+          progressBar.style.width = pct + '%';
+          progressBar.textContent = pct + '%';
+        }
+
+        if (payload.message) {
+          const needsNewline = logArea.textContent.length > 0;
+          logArea.textContent += (needsNewline ? '\n' : '') + payload.message;
+          logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        if (payload.error) {
+          progressBar.classList.add('bg-danger');
+        }
+
+        if (payload.complete) {
+          runBtn.disabled = false;
+          stopBtn.disabled = true;
+          if (payload.success) {
+            progressBar.classList.remove('bg-danger');
+            progressBar.classList.add('bg-success');
+            progressBar.style.width = '100%';
+            progressBar.textContent = '100%';
+          }
+
+          if (Array.isArray(payload.downloads) && payload.downloads.length > 0) {
+            resultsContainer.style.display = 'block';
+            resultsList.innerHTML = '';
+            payload.downloads.forEach(function (item) {
+              if (!item.filename || !item.category) {
+                return;
+              }
+              const url = new URL(downloadBase, window.location.origin);
+              url.searchParams.set('category', item.category);
+              url.searchParams.set('filename', item.filename);
+
+              const entry = document.createElement('li');
+              entry.className = 'list-group-item';
+              const link = document.createElement('a');
+              link.href = url.toString();
+              link.textContent = item.label || item.filename;
+              entry.appendChild(link);
+              resultsList.appendChild(entry);
+            });
+          }
+        }
+      };
+    });
+  </script>
+{% endblock %}
