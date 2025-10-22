@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install visualization dependencies
+        run: python3 -m pip install --user numpy matplotlib vtk
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -18,8 +20,6 @@ jobs:
         run: cd build && ctest --output-on-failure --parallel $(nproc)
       - name: Analytic wire regression test
         run: cd build && ctest --output-on-failure -R analytic_wire
-      - name: Install visualization dependencies
-        run: python3 -m pip install --user numpy matplotlib vtk
       - name: Prepare artifact directories
         run: |
           rm -rf outputs ci_artifacts

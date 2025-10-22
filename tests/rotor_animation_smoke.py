@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 import os
 import subprocess
@@ -21,6 +22,21 @@ except ModuleNotFoundError as exc:  # pragma: no cover - graceful skip
 ROOT = Path(__file__).resolve().parent.parent
 SCENARIO = ROOT / "inputs" / "tests" / "pm_motor_spinup_test.json"
 OUTPUT_DIR = ROOT / "outputs"
+
+
+def assert_timeline_has_rotor_angles(path: Path, rotor: str) -> None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    timeline = data.get("timeline")
+    if not timeline:
+        raise SystemExit("Scenario timeline is missing for rotor animation smoke test")
+    missing_entries = [idx for idx, frame in enumerate(timeline) if rotor not in frame.get("rotor_angles", {})]
+    if missing_entries:
+        raise SystemExit(
+            "Scenario timeline lacks rotor_angles for rotor '{rotor}' in frames: {frames}".format(
+                rotor=rotor,
+                frames=", ".join(str(idx) for idx in missing_entries),
+            )
+        )
 
 
 def write_mechanical_trace(path: Path, rotor: str) -> None:
@@ -77,6 +93,8 @@ def main() -> None:
     circuit_csv = OUTPUT_DIR / "rotor_anim_circuit.csv"
     gif_path = OUTPUT_DIR / "rotor_anim.gif"
     png_path = OUTPUT_DIR / "rotor_anim.png"
+
+    assert_timeline_has_rotor_angles(SCENARIO, "pm_rotor")
 
     write_mechanical_trace(mechanical_csv, "pm_rotor")
     write_circuit_trace(circuit_csv)
