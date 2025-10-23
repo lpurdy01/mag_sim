@@ -477,6 +477,7 @@ def _index_context(
         "last_visualization_url": last_image_url,
         "last_visualization_caption": visualization_caption,
         "visualization_message": visualization_message,
+        "visualization_visible": bool(last_result),
         "DEFAULT_LOG_FLOOR": DEFAULT_LOG_FLOOR,
     }
 

@@ -111,7 +111,7 @@
       </div>
     </div>
     <div class="col-xl-8">
-      <div id="visualization-panel" class="card h-100">
+      <div id="visualization-panel" class="card h-100"{% if not visualization_visible %} style="display: none;"{% endif %}>
         <div class="card-header">Results visualisation</div>
         <div class="card-body">
           <p id="visualization-message" class="text-muted small {% if last_visualization_url %}d-none{% endif %}">
@@ -215,9 +215,16 @@
           progressBar.classList.remove('bg-danger', 'bg-success');
           progressBar.style.width = '0%';
           progressBar.textContent = '0%';
+          if (visualizationPanel) {
+            visualizationPanel.style.display = 'none';
+          }
           if (visualizationMessage) {
-            visualizationMessage.classList.remove('d-none');
-            visualizationMessage.textContent = 'Preparing results…';
+            visualizationMessage.classList.add('d-none');
+            visualizationMessage.textContent = '';
+          }
+          if (visualizationCaption) {
+            visualizationCaption.classList.add('d-none');
+            visualizationCaption.textContent = '';
           }
           if (visualizationError) {
             visualizationError.classList.add('d-none');
@@ -311,6 +318,9 @@
         if (!details) {
           return;
         }
+        if (visualizationPanel) {
+          visualizationPanel.style.display = 'block';
+        }
         if (visualizationError) {
           visualizationError.classList.add('d-none');
           visualizationError.textContent = '';
@@ -337,6 +347,10 @@
           if (visualizationMessage) {
             visualizationMessage.textContent = details.message;
             visualizationMessage.classList.remove('d-none');
+          }
+          resultImage.classList.add('d-none');
+          if (visualizationCaption) {
+            visualizationCaption.classList.add('d-none');
           }
           if (updateVizBtn) {
             updateVizBtn.disabled = true;
@@ -376,6 +390,9 @@
                 URL.revokeObjectURL(currentBlobUrl);
               }
               currentBlobUrl = URL.createObjectURL(blob);
+              if (visualizationPanel) {
+                visualizationPanel.style.display = 'block';
+              }
               resultImage.src = currentBlobUrl;
               resultImage.classList.remove('d-none');
               if (visualizationMessage) {
