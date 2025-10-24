@@ -3,24 +3,139 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>mag_sim Flask GUI</title>
+    <title>mag_sim Studio</title>
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
       rel="stylesheet"
       integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
       crossorigin="anonymous"
     >
+    <style>
+      body {
+        background-color: #f5f7fb;
+        min-height: 100vh;
+      }
+
+      .app-topbar {
+        --bs-navbar-padding-y: 0.5rem;
+      }
+
+      .app-shell {
+        min-height: calc(100vh - 60px);
+      }
+
+      .app-sidebar {
+        width: 260px;
+        background-color: #fff;
+      }
+
+      .app-sidebar .nav-link {
+        border-radius: 0.5rem;
+      }
+
+      .app-sidebar .nav-link.active {
+        background-color: #0d6efd;
+        color: #fff;
+      }
+
+      .app-content {
+        flex: 1;
+        padding: 2rem 3rem;
+      }
+
+      @media (max-width: 992px) {
+        .app-shell {
+          flex-direction: column;
+        }
+
+        .app-sidebar {
+          width: 100%;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .app-content {
+          padding: 1.5rem 1rem;
+        }
+      }
+
+      .stage-section + .stage-section {
+        margin-top: 2rem;
+      }
+
+      .card-elevated {
+        box-shadow: 0 0.5rem 1.2rem rgba(15, 23, 42, 0.08);
+        border: none;
+      }
+    </style>
     {% block head %}{% endblock %}
   </head>
-  <body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm app-topbar">
       <div class="container-fluid">
-        <a class="navbar-brand" href="{{ url_for('index') }}">mag_sim GUI</a>
+        <a class="navbar-brand fw-semibold" href="{{ url_for('index') }}">mag_sim Studio</a>
+        <div class="d-flex align-items-center gap-3">
+          <div class="text-muted small d-none d-md-block">
+            {% if project %}
+              <span class="fw-semibold">Project:</span>
+              {{ project.scenario_name or project.filename }}
+            {% else %}
+              <span class="fw-semibold">Project:</span>
+              <em>No scenario loaded</em>
+            {% endif %}
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">File</button>
+            <ul class="dropdown-menu dropdown-menu-end shadow">
+              <li>
+                <form method="post" action="{{ url_for('project_reset') }}" class="dropdown-item p-0">
+                  <button class="dropdown-item" type="submit" {% if running %}disabled{% endif %}>New project</button>
+                </form>
+              </li>
+              <li>
+                {% if has_project %}
+                  <a class="dropdown-item" href="{{ project_download_url }}">Save scenario…</a>
+                {% else %}
+                  <span class="dropdown-item disabled">Save scenario…</span>
+                {% endif %}
+              </li>
+            </ul>
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Help</button>
+            <ul class="dropdown-menu dropdown-menu-end shadow">
+              <li>
+                <a class="dropdown-item" href="https://github.com/mag-co/mag_sim/blob/main/docs/user-guide/gui_flask.md" target="_blank" rel="noopener">Documentation</a>
+              </li>
+              <li>
+                <span class="dropdown-item disabled">Keyboard shortcuts (coming soon)</span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </nav>
-    <main class="container mb-5">
-      {% block content %}{% endblock %}
-    </main>
+    <div class="app-shell d-flex">
+      <aside class="app-sidebar border-end">
+        <div class="p-3">
+          <div class="text-uppercase text-muted small mb-3">Workflow</div>
+          <nav class="nav flex-column gap-2">
+            <a class="nav-link" href="#project-overview">Workspace summary</a>
+            <a class="nav-link" href="#geometry-preview">Geometry preview</a>
+            <a class="nav-link" href="#simulation-setup">Simulation setup</a>
+            <a class="nav-link" href="#progress-stage">Progress &amp; logs</a>
+            <a class="nav-link" href="#results-stage">Results &amp; visuals</a>
+          </nav>
+        </div>
+      </aside>
+      <main class="app-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+      crossorigin="anonymous"
+    ></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>
