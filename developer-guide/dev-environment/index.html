@@ -1,0 +1,1604 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="2D Motor Simulator — user & developer docs">
+      
+      
+      
+        <link rel="canonical" href="https://lpurdy01.github.io/mag_sim/developer-guide/dev-environment/">
+      
+      
+        <link rel="prev" href="../../user-guide/torque-and-forces/">
+      
+      
+        <link rel="next" href="../implementation/status/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.22">
+    
+    
+      
+        <title>Developer Guide - mag_sim Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../assets/css/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#developer-environment-vs-code-workflow" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="mag_sim Documentation" class="md-header__button md-logo" aria-label="mag_sim Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            mag_sim Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Developer Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lpurdy01/mag_sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    mag_sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="mag_sim Documentation" class="md-nav__button md-logo" aria-label="mag_sim Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    mag_sim Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lpurdy01/mag_sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    mag_sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Quickstart
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../user-guide/running-simulations/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    User Guide
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            User Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/gui_flask/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Web GUI (Flask)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../user-guide/machines/three-phase-stator/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Machines
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            Machines
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/machines/induction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Three-Phase Induction Motor Spin-Up
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/machines/pm-synchronous/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Three-Phase PM Motor Scenario
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/machines/dc-commutated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DC motor with commutated armature
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../user-guide/visualization/overview/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Visualization
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            Visualization
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/visualization/vtk-output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    VTK Field Map Exports
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/visualization/comparison-sor-vs-cg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SOR vs CG Visual Comparison
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/torque-and-forces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Torque & Forces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="./" class="md-nav__link md-nav__link--active">
+              
+  
+  
+  <span class="md-ellipsis">
+    Developer Guide
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link md-nav__link--active" for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Developer Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../implementation/status/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Implementation
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            Implementation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Solver Epic Implementation Progress
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/flask-gui-progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Flask GUI Implementation Progress
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/validation-stages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Analytical Validation Ladder
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/solver-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Solver Performance &amp; Complexity Notes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../math-and-solver/overview/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Math & Solver
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            Math & Solver
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../math-and-solver/fundamentals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Magnetostatic Solver Math Notes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../math-and-solver/back-emf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Back-EMF Probes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../math-and-solver/time-series/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Time-Series Frames and Parallel Solving
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/equations/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Reference
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    CLI
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/file-formats/vtk/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    File Formats
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            File Formats
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/file-formats/scenario-json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Scenario JSON
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-command-line-quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Command-line quickstart
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Command-line quickstart">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-iteration-friendly-test-cadence" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1 Iteration-friendly test cadence
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-github-ci-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.2 GitHub CI parity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-documentation-builds-and-preview" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.3 Documentation builds and preview
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vs-code-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. VS Code configuration
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. VS Code configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      2.1 Tasks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-debugging" class="md-nav__link">
+    <span class="md-ellipsis">
+      2.2 Debugging
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-intellisense-hints" class="md-nav__link">
+    <span class="md-ellipsis">
+      2.3 IntelliSense hints
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-codespaces-resource-guidance" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Codespaces resource guidance
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-solver-benchmarking-toolkit" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Solver benchmarking toolkit
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-updating-documentation-with-new-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Updating documentation with new metrics
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-visualisation-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Visualisation helpers
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-other-ides" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Other IDEs
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="developer-environment-vs-code-workflow">Developer Environment &amp; VS Code Workflow<a class="headerlink" href="#developer-environment-vs-code-workflow" title="Permanent link">&para;</a></h1>
+<p>This guide captures the day-to-day tooling expected for contributors. It assumes
+GitHub Codespaces, VS Code Remote (WSL/SSH), or a local Linux workstation with
+CMake ≥ 3.16 and GCC ≥ 11.</p>
+<h2 id="1-command-line-quickstart">1. Command-line quickstart<a class="headerlink" href="#1-command-line-quickstart" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>scripts/setup_env.sh<span class="w">           </span><span class="c1"># optional helper for Codespaces/WSL</span>
+cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug
+cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>-j
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build<span class="w"> </span>--output-on-failure
+</code></pre></div>
+<p>Always close the loop with <code>scripts/run_ci_checks.sh</code> before publishing a
+branch. It rebuilds, runs the full CTest suite in parallel, executes every
+regression harness, and mirrors the GitHub Actions workflow (scenario solves,
+ParaView-friendly exports, GIF renders, and CSV collection). A green run here is
+the fastest way to confirm the hosted CI will pass.</p>
+<p>The build directory is never committed (<code>.gitignore</code> keeps it clean). Tests live
+under <code>tests/</code> and are surfaced through CTest so they can be executed both from
+the terminal and IDE integrations.</p>
+<h3 id="11-iteration-friendly-test-cadence">1.1 Iteration-friendly test cadence<a class="headerlink" href="#11-iteration-friendly-test-cadence" title="Permanent link">&para;</a></h3>
+<p>For day-to-day work, favour the smallest slice of the suite that exercises your
+changes before falling back to the full battery:</p>
+<ul>
+<li>Use <code>ctest --output-on-failure -R &lt;regex&gt;</code> (or invoke an individual binary
+  such as <code>./build/torque_validation_test</code>) while iterating on a specific
+  feature. This keeps turnaround low and mirrors the CI harness.</li>
+<li>When touching the solver or scenario ingestion, rerun the relevant timeline
+  with <code>./build/motor_sim ...</code> to double-check CSV/VTK outputs without waiting
+  for unrelated regressions.</li>
+<li>Before publishing a branch or opening a PR, always follow up with
+  <code>ctest --output-on-failure --parallel $(nproc)</code> (or
+  <code>scripts/run_ci_checks.sh</code>) so the code you push matches the CI matrix.</li>
+</ul>
+<p><code>ctest --parallel</code> honours the <code>CTEST_PARALLEL_LEVEL</code> environment variable; the
+CI helper script defaults it to <code>$(nproc)</code> so local runs use all available
+hardware. Set it explicitly (e.g. <code>CTEST_PARALLEL_LEVEL=4</code>) if you need to
+reserve cores for other tasks.</p>
+<h3 id="12-github-ci-parity">1.2 GitHub CI parity<a class="headerlink" href="#12-github-ci-parity" title="Permanent link">&para;</a></h3>
+<p>Unit tests alone are not enough when preparing a change. The GitHub Actions
+workflow exercises additional scenario solves, renders, and artifact
+collections. Always finish a feature branch by running <code>scripts/run_ci_checks.sh</code>
+from the repository root. The helper mirrors <code>.github/workflows/ci.yml</code>, so the
+results should match what the cloud CI will execute (VTK exports, animation
+renders, CSV copies, etc.). When the script passes locally you can be confident
+that the PR will produce the same artefacts as the hosted runner.</p>
+<p>Key runtime flags for <code>motor_sim</code>:</p>
+<ul>
+<li><code>--solver {sor|cg}</code> toggles between the legacy Gauss–Seidel solver and the new preconditioned conjugate gradient (default is
+  SOR for continuity).</li>
+<li><code>--pc {none|jacobi|ssor}</code> selects the preconditioner used by CG. Jacobi is a solid first step on lightly conductive grids,
+  while SSOR accelerates highly anisotropic problems.</li>
+<li><code>--warm-start</code> reuses the previous frame's field as the initial guess when traversing a timeline, dramatically cutting CG
+  iterations.</li>
+<li><code>--use-prolongation</code> seeds the fine-grid solve from an automatically selected coarse solve; adjust with <code>--coarse-nx/--coarse-ny</code>.</li>
+<li><code>--progress-every &lt;seconds&gt;</code> controls the live progress cadence (default 2 s). Set it to <code>0</code> to emit a sample every iteration
+  when collecting detailed residual histories.</li>
+<li><code>--snapshot-every &lt;iters&gt;</code> enables downsampled field dumps requested by progress sinks (handy for spotting spatial stagnation).</li>
+<li><code>--progress-history &lt;path&gt;</code> writes the emitted residual samples to a CSV. Timeline runs append <code>_frame_###</code> to the basename;
+  combine with <code>--progress-every 0</code> for a full per-iteration log.</li>
+<li><code>--quiet</code> suppresses progress output when scripting multiple runs.</li>
+</ul>
+<h3 id="13-documentation-builds-and-preview">1.3 Documentation builds and preview<a class="headerlink" href="#13-documentation-builds-and-preview" title="Permanent link">&para;</a></h3>
+<p>The MkDocs site mirrors the repository layout under <code>docs/</code>. Run
+<code>scripts/build_docs.sh</code> to install the documentation dependencies and execute
+<code>mkdocs build --strict</code>, matching the CI workflow. Reuse the same command with
+<code>--skip-install</code> once a virtual environment already contains the requirements.
+For a live preview during edits, launch <code>mkdocs serve</code> from the repository root
+and open the reported <code>http://127.0.0.1:8000/</code> URL in a browser; the server
+reloads automatically when files change.</p>
+<h2 id="2-vs-code-configuration">2. VS Code configuration<a class="headerlink" href="#2-vs-code-configuration" title="Permanent link">&para;</a></h2>
+<p>The repo ships with <code>.vscode/</code> settings tuned for the <code>CMake Tools</code> and <code>C/C++</code>
+extensions.</p>
+<h3 id="21-tasks">2.1 Tasks<a class="headerlink" href="#21-tasks" title="Permanent link">&para;</a></h3>
+<p>Use <code>Terminal → Run Task</code> (or the command palette) to access the predefined
+tasks:</p>
+<table>
+<thead>
+<tr>
+<th>Task label</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cmake-configure</code></td>
+<td>Configure the out-of-source build directory in Debug mode.</td>
+</tr>
+<tr>
+<td><code>cmake-build</code></td>
+<td>Build all targets; depends on configuration.</td>
+</tr>
+<tr>
+<td><code>ctest</code></td>
+<td>Run the full test suite with verbose failure output.</td>
+</tr>
+<tr>
+<td><code>run-analytic-wire-test</code></td>
+<td>Compile + launch the analytic validation binary in place.</td>
+</tr>
+<tr>
+<td><code>run-solver-benchmark</code></td>
+<td>Compile + execute the benchmark helper with a lean 129×129 grid preset.</td>
+</tr>
+<tr>
+<td><code>run-two-wire-scenario</code></td>
+<td>Build + execute <code>motor_sim</code> against the bundled JSON scenario.</td>
+</tr>
+</tbody>
+</table>
+<p>These tasks chain automatically (for example, running the benchmark will trigger
+a build if required). Feel free to duplicate them locally for custom grids or
+release builds.</p>
+<h3 id="22-debugging">2.2 Debugging<a class="headerlink" href="#22-debugging" title="Permanent link">&para;</a></h3>
+<p>The <code>Run and Debug</code> panel exposes launch configurations for four executables:</p>
+<ol>
+<li><strong>motor_sim</strong> — loads JSON scenarios; defaults to printing usage when no args are supplied.</li>
+<li><strong>Run two-wire scenario</strong> — launches <code>motor_sim</code> with the bundled cancellation case and writes the midline CSV.</li>
+<li><strong>analytic_wire_test</strong> — deterministic regression for the single-wire case.</li>
+<li><strong>solver_benchmark</strong> — convenience harness for measuring throughput.</li>
+</ol>
+<p>All launchers invoke the <code>cmake-build</code> task beforehand to guarantee the binary is
+up to date. Adjust command-line arguments via the <code>args</code> array in
+<code>.vscode/launch.json</code> if you need alternative solver tolerances or grids.</p>
+<h3 id="23-intellisense-hints">2.3 IntelliSense hints<a class="headerlink" href="#23-intellisense-hints" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Compiler path defaults to <code>/usr/bin/g++</code> (set in <code>.vscode/settings.json</code>).</li>
+<li><code>compile_commands.json</code> is generated automatically inside <code>build/</code> by CMake;
+  the C/C++ extension will pick it up to power IntelliSense if you add the build
+  directory to VS Code's workspace settings (the default setup already does this
+  via the CMake Tools extension).</li>
+</ul>
+<h2 id="3-codespaces-resource-guidance">3. Codespaces resource guidance<a class="headerlink" href="#3-codespaces-resource-guidance" title="Permanent link">&para;</a></h2>
+<p>Codespaces typically provide 2 vCPUs and 4 GB RAM on the basic tier. To keep
+turnaround snappy:</p>
+<ul>
+<li>Prefer grid sizes ≤ 257² for exploratory runs. Larger domains converge but can
+  exceed a minute when <code>tol = 1e-6</code>.</li>
+<li>Disable verbose logging (<code>SolveOptions::verbose = false</code>) unless debugging
+  convergence, as streaming residuals slows execution considerably.</li>
+<li>Run <code>solver_benchmark</code> (see Section 4) before committing new solver tweaks to
+  record performance numbers for regressions.</li>
+</ul>
+<h2 id="4-solver-benchmarking-toolkit">4. Solver benchmarking toolkit<a class="headerlink" href="#4-solver-benchmarking-toolkit" title="Permanent link">&para;</a></h2>
+<p><code>build/solver_benchmark</code> exercises the same setup as the analytic regression but
+allows custom grid resolutions, tolerances, and repetition counts. Example:</p>
+<div class="highlight"><pre><span></span><code>./build/solver_benchmark<span class="w"> </span>--nx<span class="w"> </span><span class="m">129</span><span class="w"> </span>--ny<span class="w"> </span><span class="m">129</span><span class="w"> </span>--max-iters<span class="w"> </span><span class="m">5000</span><span class="w"> </span>--tol<span class="w"> </span>1e-6<span class="w"> </span>--repeats<span class="w"> </span><span class="m">5</span>
+</code></pre></div>
+<p>The tool reports:</p>
+<ul>
+<li>convergence outcome and residual,</li>
+<li>average/min/max wall-clock time,</li>
+<li>throughput expressed as millions of cell-iterations per second,</li>
+<li>milliseconds per million cell-iterations (handy for quick mental estimates).</li>
+</ul>
+<p>Add <code>--csv outputs/solver_benchmarks.csv</code> to append results for later plotting or
+diffing. The CSV header is written automatically the first time.</p>
+<h2 id="5-updating-documentation-with-new-metrics">5. Updating documentation with new metrics<a class="headerlink" href="#5-updating-documentation-with-new-metrics" title="Permanent link">&para;</a></h2>
+<p>When solver changes land, re-run the benchmark on representative grids (e.g.,
+129² and 257²) and update <code>docs/solver_performance.md</code> with the new numbers.
+Include the machine profile (Codespaces, local workstation, etc.) so future
+contributors can compare apples to apples.</p>
+<h2 id="6-visualisation-helpers">6. Visualisation helpers<a class="headerlink" href="#6-visualisation-helpers" title="Permanent link">&para;</a></h2>
+<p>The regression test and scenario runner emit optional CSV artefacts under
+<code>outputs/</code> when they finish. Three Python scripts consume them:</p>
+<ul>
+<li><code>python/visualize_wire.py</code> compares the centreline magnitude against the
+  analytic solution for a finite-radius wire. The dip to zero at the origin is a
+  physical consequence of the uniform current distribution inside the conductor.</li>
+<li><code>python/visualize_wire_field.py</code> renders a top-down map with quiver arrows so
+  you can verify the azimuthal direction of <strong>B</strong> around the wire.</li>
+<li><code>python/examples/two_wire_cancel.py</code> writes <code>inputs/two_wire_cancel.json</code> using
+  the lightweight scenario DSL. Regenerate it if you tweak parameters during
+  debugging.</li>
+</ul>
+<h2 id="7-other-ides">7. Other IDEs<a class="headerlink" href="#7-other-ides" title="Permanent link">&para;</a></h2>
+<p>CLion, Qt Creator, or bare-terminal workflows operate via the same CMake entry
+points. The only project-specific requirement is that headers under <code>include/</code>
+remain on the compiler include path. The <code>scripts/setup_env.sh</code> helper installs
+the minimal toolchain on Debian/Ubuntu-based systems if you need a quick start.</p>
+
+
+
+
+
+
+
+  
+    
+  
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 21, 2025 00:02:02 UTC">October 21, 2025</span>
+  </span>
+
+    
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.sections", "navigation.indexes", "navigation.instant", "content.code.copy", "search.suggest", "search.highlight"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      
+        <script src="../../assets/javascripts/mathjax.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../assets/javascripts/mathjax-init.js"></script>
+      
+    
+  </body>
+</html>

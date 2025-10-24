@@ -1,0 +1,1520 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="2D Motor Simulator — user & developer docs">
+      
+      
+      
+        <link rel="canonical" href="https://lpurdy01.github.io/mag_sim/developer-guide/implementation/status/">
+      
+      
+        <link rel="prev" href="../../dev-environment/">
+      
+      
+        <link rel="next" href="../progress/">
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.22">
+    
+    
+      
+        <title>Implementation - mag_sim Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.84d31ad4.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../../assets/css/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#next-stage-plan-implementation-status" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="mag_sim Documentation" class="md-header__button md-logo" aria-label="mag_sim Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            mag_sim Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Implementation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lpurdy01/mag_sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    mag_sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="mag_sim Documentation" class="md-nav__button md-logo" aria-label="mag_sim Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    mag_sim Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lpurdy01/mag_sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    mag_sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Quickstart
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/running-simulations/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    User Guide
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            User Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/gui_flask/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Web GUI (Flask)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/machines/three-phase-stator/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Machines
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            Machines
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/machines/induction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Three-Phase Induction Motor Spin-Up
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/machines/pm-synchronous/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Three-Phase PM Motor Scenario
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/machines/dc-commutated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DC motor with commutated armature
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/visualization/overview/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Visualization
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            Visualization
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/visualization/vtk-output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    VTK Field Map Exports
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/visualization/comparison-sor-vs-cg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SOR vs CG Visual Comparison
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/torque-and-forces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Torque & Forces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../dev-environment/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Developer Guide
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Developer Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="./" class="md-nav__link md-nav__link--active">
+              
+  
+  
+  <span class="md-ellipsis">
+    Implementation
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link md-nav__link--active" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            Implementation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Solver Epic Implementation Progress
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../flask-gui-progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Flask GUI Implementation Progress
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../validation-stages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Analytical Validation Ladder
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../solver-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Solver Performance &amp; Complexity Notes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../math-and-solver/overview/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Math & Solver
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            Math & Solver
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math-and-solver/fundamentals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Magnetostatic Solver Math Notes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math-and-solver/back-emf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Back-EMF Probes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../math-and-solver/time-series/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Time-Series Frames and Parallel Solving
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../reference/equations/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    Reference
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    CLI
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../reference/file-formats/vtk/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    File Formats
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            File Formats
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/file-formats/scenario-json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Scenario JSON
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#stage-progress-from-magnetostatics-to-basic-motor-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Stage progress — From Magnetostatics to Basic Motor Simulation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#completed-milestones" class="md-nav__link">
+    <span class="md-ellipsis">
+      Completed Milestones
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ci-artefact-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      CI artefact coverage
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-compute-follow-up-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      High-compute follow-up runs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#remaining-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remaining work
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="next-stage-plan-implementation-status">Next-Stage Plan Implementation Status<a class="headerlink" href="#next-stage-plan-implementation-status" title="Permanent link">&para;</a></h1>
+<p>This document tracks progress against the "Next-Stage Development Plan — Time Series, Forces, and Advanced Probes" roadmap.</p>
+<h2 id="stage-progress-from-magnetostatics-to-basic-motor-simulation">Stage progress — From Magnetostatics to Basic Motor Simulation<a class="headerlink" href="#stage-progress-from-magnetostatics-to-basic-motor-simulation" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Stage 0.1 (SIMD-ready linops)</strong>: Extracted the core linear algebra kernels
+  (<code>applyA</code>, dot products, axpy/scal, residual norms) into <code>motorsim::linops</code>
+  with optional vectorisation hints guarded by the new
+  <code>MOTORSIM_ENABLE_SIMD_HINTS</code> CMake switch (<code>-DMOTORSIM_SIMD_HINTS</code>). Solver
+  code now routes through these utilities, paving the way for SIMD or threaded
+  back-ends without changing behaviour.</li>
+<li><strong>Stage 0.2 (Live progress polish)</strong>: Expanded the runtime controls with
+  <code>--progress-every</code>, <code>--snapshot-every</code>, and the new <code>--progress-history</code>
+  output. The CLI now records residual samples to CSV (timeline runs append
+  <code>_frame_###</code>), enabling CI to archive a long CG history directly from
+  <code>motor_sim</code>.</li>
+<li><strong>Stage 1 (Three-phase synchronous baseline)</strong>: Restored
+  <code>python/gen_three_phase_stator.py</code> to emit the original stator-only rotating
+  field demo. The generator continues to supply CI and hi-res profiles, and
+  <code>docs/three_phase_stator.md</code> focuses on the bore-angle regression
+  (<code>python/check_three_phase_field.py</code>), ParaView <code>.pvd</code> series, and animation
+  workflow without introducing rotor geometry. Maxwell-stress and back-EMF
+  probes remain available for stator studies, with regression coverage in
+  <code>tests/back_emf_probe_test.cpp</code>.</li>
+<li><strong>Stage 2.1 (RL circuit co-simulation)</strong>: Scenario JSON now accepts
+  lumped-element circuits with per-phase resistors, inductors, voltage sources,
+  and coil links. Timeline frames drive the network via
+  <code>"voltage_sources"</code>, the solver integrates branch currents with RK4 (while
+  feeding back <code>-dλ/dt</code> from coil flux), and the new
+  <code>python/gen_three_phase_pm_motor.py</code> emits the default three-phase star
+  connection for the permanent-magnet motor demo. <code>tests/circuit_rk_test.cpp</code>
+  exercises the RK integrator against the analytic RL step response, and
+  <code>docs/three_phase_pm_motor.md</code> documents the voltage-driven workflow. The
+  <code>current_region</code> source now records slot turns and copper fill fraction so the
+  rasteriser deposits ampere-turns instead of raw current; coil links validate
+  the turn count so the circuit and field models stay in sync, and the new
+  <code>tests/current_region_turns_test.cpp</code> regression integrates the deposited
+  density to keep the ampere-turn budget within 5% of the analytic target.
+  Each scenario can now request a <code>circuit_trace</code> output; the runtime records
+  per-coil current, ampere-turn, and back-EMF histories so downstream tooling
+  (notably <code>python/generate_rotor_animation.py</code>) can colour stator slots by the
+  solved waveforms. CI archives these CSVs for the PM, induction, and DC motor
+  demos and renders rotor-only GIF/PNG snapshots alongside the field-map
+  animations.
+  Follow-up work introduced commutator metadata on <code>coil_link</code> entries so coil
+  orientation can depend on rotor angle. <code>CircuitSimulator</code> now reads per-link
+  segment tables, queries the current <code>dc_rotor</code> angle from the mechanical or
+  timeline state, and applies the requested sign flip before depositing currents
+  or integrating flux. The DC motor generator (<code>python/gen_dc_motor.py</code>) uses
+  this plumbing to emit a brushed armature demo alongside a four-frame
+  <code>commutator_test</code> fixture. <code>tests/dc_commutator_test.cpp</code> confirms the
+  orientation switching logic, while <code>tests/dc_motor_spinup_test.cpp</code> exercises
+  the full EM/circuit/mechanical loop with balanced stator and rotor ampere-turn
+  budgets. Documentation lives in <code>docs/dc_commutated_motor.md</code>, and CI now runs
+  the generator, solver, and mechanical validator to archive the new artefacts.</li>
+<li><strong>Stage 2.2 (Mechanical coupling)</strong>: Introduced a light-weight rotor
+  dynamics module that integrates speed and position via RK4 using the torque
+  reported by Maxwell-stress probes. Scenarios can now declare inertial,
+  damping, and load torque terms under <code>"mechanical"</code>; the PM motor generator
+  provides a default configuration with a constant load, and the runtime keeps
+  timeline frames sequential to ensure warm-started field solves feed the
+  coupled ODE. The integrator automatically stands down when timeline frames
+  provide explicit rotor angles so deterministic synchronous demos (e.g. the PM
+  motor walkthrough) keep their scripted pose, while scenarios without those
+  overrides step the coupled mechanics. <code>tests/mechanical_spinup_test.cpp</code>
+  verifies the integrator against a constant-torque spin-up. Follow-up fixes
+  ensure timeline exporters respect basenames that already end in <code>_frame</code>,
+  restoring the expected <code>three_phase_frame_000.vti</code> artefact that CI archives
+  for the stator rotating-field demo, and the new
+  <code>tests/pm_motor_spinup_test.cpp</code> regression drives the full EM/circuit/mechanical
+  loop to assert the rotor angle and speed rise over a short spin-up timeline
+  while the CLI exposes a <code>mechanical_trace</code> output so CI and users can verify
+  the rotor state history via <code>python/check_pm_spinup.py</code>. The PM motor guide now
+  summarises the CI fixture parameters and documents lighter generator overrides
+  for local smoke tests so developers can iterate without modifying the stored
+  regression JSON. The generator now carves the magnet out of the rotor iron,
+  assigns it μᵣ≈1.05, and trims the magnet strength (1×10⁵ A/m) alongside the
+  phase drive (35 A peak warm-start currents, 20 V peak). The rotor bore field
+  therefore stays on the same tens-of-millitesla scale as the stator-only demo
+  instead of spiking into the 50–200 T range that occurred when the magnet
+  inherited the 800× permeability of the surrounding steel. Timeline solves now
+  aggregate torque probe samples into the requested base path
+  (<code>time_s,frame_index,Fx,Fy,Tz[,CoEnergy]</code>) so the PM, DC, and induction
+  spin-up demos expose ready-to-plot torque histories without scraping
+  individual <code>_frame_###</code> files. Follow-on cleanup reduced the CI tessellation
+  counts (18 stator vertices, 12 for the bore, 10 for the rotor loop) so the
+  committed spin-up fixture stays close to 1.3k lines, and the
+  <code>python/check_pm_spinup.py</code> helper now evaluates absolute angle/speed gains to
+  accommodate rotors that accelerate in either direction. The brushed DC spin-up
+  fixture now caps the CI profile at two electrical cycles (24 frames) so the
+  archived mechanical trace remains monotonic for the commutator regression,
+  while the hires preset retains the longer six-cycle sweep for offline studies.</li>
+<li><strong>Stage 3 (Frequency-domain induction path)</strong>: Extended the material schema
+  with per-material conductivities (<code>sigma</code>) and taught the rasteriser and grid
+  container to track <code>sigma</code>, complex impressed currents, and an imaginary
+  vector potential. A new harmonic solver assembles the coupled real/imaginary
+  system and applies CG to the normal equations so frequency-domain eddy
+  currents can be simulated without leaving the matrix-free framework. Utility
+  routines compute complex <span class="arithmatex">\(\mathbf{B}\)</span> and <span class="arithmatex">\(\mathbf{H}\)</span> fields, and the
+  regression <code>tests/skin_depth_test.cpp</code> validates skin-depth decay against the
+  analytic <span class="arithmatex">\(e^{-x/\delta}\)</span> profile for a half-space conductor, enforcing a
+  ≤15% slope error on the bundled scenario.</li>
+<li><strong>Stage 4 (Transient magnetodynamics foundations)</strong>: Introduced a
+  Crank–Nicolson-style transient wrapper that augments the existing matrix-free
+  operator with <span class="arithmatex">\(\sigma/\Delta t\)</span> mass terms and reuses the CG machinery (and
+  preconditioners) to march conductive regions forward in time. Timeline frames
+  now opt into transient solves via the <code>"transient"</code> block, and the main loop
+  detects when scripted rotor angles are absent so the coupled circuit/mechanical
+  subsystems advance in lock-step with the EM step. The regression
+  <code>tests/diffusion_test.cpp</code> drives the new
+  <code>inputs/tests/diffusion_test.json</code> scenario to check magnetic diffusion into a
+  conducting slab against the analytic erfc profile, enforcing a ≤20% envelope
+  error while archiving the recovered surface field amplitude. Stage 4.2 now ships
+  an induction spin-up path: <code>python/gen_three_phase_induction_motor.py</code> emits a
+  conductive-bar rotor demo, <code>tests/induction_spinup_test.cpp</code> verifies the coupled
+  transient/mechanical loop accelerates the rotor while staying below synchronous
+  speed, and CI captures the accompanying VTK/mechanical artefacts.</li>
+<li><strong>Stage 5 (Solver UX/perf prep)</strong>: Added a <code>--pc {none|jacobi|ssor}</code> CLI flag
+  and matching scenario schema to control CG preconditioners. Jacobi and a
+  matrix-free SSOR sweep are exposed as first-class options, documented in the
+  solver guide alongside usage tips. The default remains unpreconditioned, but
+  CI, the local workflow helper, and the docs now spell out when Jacobi or SSOR
+  provide faster convergence on conductive or highly anisotropic cases.</li>
+</ul>
+<h2 id="completed-milestones">Completed Milestones<a class="headerlink" href="#completed-milestones" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>VTK export and verification</strong>: Implemented via <code>motorsim::write_vti_field_map</code> with regression coverage in <code>tests/output_quantity_test.cpp</code> and exercised in CI through the rotor ripple timeline artefacts. Exports now bundle combined <code>B</code>/<code>H</code> vector arrays plus geometry outline polydata companions to streamline ParaView workflows. The <code>python/verify_vtk.py</code> utility (documented in <code>docs/vtk_output.md</code>) runs during CI to sanity-check the generated <code>.vti</code> files.</li>
+<li><strong>Time-series infrastructure</strong>: Scenario timelines, per-frame solving, and parallel execution are available (see <code>docs/time_series.md</code>). Rotors now group geometry, magnets, and sources under named pivots so timeline frames can rotate complete assemblies via the new <code>rotor_angles</code> overrides. The CI workflow drives <code>inputs/tests/rotor_ripple_test.json</code> with <code>--parallel-frames</code> to emit multi-frame datasets and CSV/VTI artefacts.</li>
+<li><strong>Maxwell stress probes</strong>: Force/torque evaluation and documentation reside in <code>docs/torque_forces.md</code>, with validation fixtures in <code>tests/torque_validation_test.cpp</code> and rotor ripple torque ripple checks.</li>
+<li><strong>Back-EMF probes</strong>: Flux integration across timeline frames emits per-interval voltages (<code>docs/back_emf.md</code>) and is now represented in the artefact bundle via <code>outputs/rotor_ripple_emf.csv</code>.</li>
+<li><strong>Visualization upgrades</strong>: <code>python/visualize_scenario_field.py</code> exposes log-scale colormaps, boundary overlays, streamline controls, analytic overlays, and vector scaling modes (documented in <code>docs/visualization.md</code>). CI renders both static validation scenes and the new rotor ripple frames.</li>
+<li><strong>Rotor animation toolkit</strong>: <code>python/rotor_animation.py</code> + <code>python/generate_rotor_animation.py</code> now turn scenario geometry, mechanical traces, and circuit currents into coloured slot animations. The PM, induction, and DC demos request <code>circuit_trace</code> outputs so the helper can tint slots by ampere-turns; CI runs capture both GIF and PNG artefacts, and <code>tests/rotor_animation_smoke.py</code> covers the CLI in both explicit-trace and timeline-fallback modes.</li>
+</ul>
+<h2 id="ci-artefact-coverage">CI artefact coverage<a class="headerlink" href="#ci-artefact-coverage" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Field plots: <code>ci_artifacts/rotor_ripple_frame0.png</code> and <code>ci_artifacts/rotor_ripple_frame2.png</code> illustrate timeline evolution alongside the existing two-wire/interface/iron-ring renders.</li>
+<li>Accuracy reports: <code>ci_artifacts/test_accuracy_report.txt</code> aggregates analytic/regression solver comparisons, now including force, torque, and back-EMF validation summaries captured from the dedicated regression binaries; additional torque/back-EMF CSVs are copied directly from <code>outputs/</code>.</li>
+<li>Sample VTK: <code>outputs/rotor_ripple_field_frame_000.vti</code> (and subsequent frames) are exported on every CI run and verified with <code>python/verify_vtk.py</code>. Companion outline polydata and <code>_labels.csv</code> mapping files are uploaded for ParaView inspection.</li>
+<li>Rotor timeline bundles now rotate a multi-segment rotor and high-µ stator, emit outline polydata that ParaView can load without crashing, and log symmetry metrics (<code>opposition60_120</code>, <code>repeat0_180</code>) plus relative probe/back-EMF errors in the regression summary to track solver accuracy over time.</li>
+</ul>
+<h2 id="high-compute-follow-up-runs">High-compute follow-up runs<a class="headerlink" href="#high-compute-follow-up-runs" title="Permanent link">&para;</a></h2>
+<p>The CI fixtures intentionally stay coarse (≤65×65 grids with short timelines).
+When more compute is available, regenerate the following scenarios with their
+<code>hires</code> profiles to produce denser artefacts, longer spin-ups, or complete
+electrical cycles:</p>
+<ul>
+<li><code>python/gen_three_phase_stator.py --profile hires --out inputs/three_phase_stator_hires.json</code>
+  followed by <code>./build/motor_sim --scenario inputs/three_phase_stator_hires.json --solve --vtk-series outputs/three_phase_hires.pvd</code>
+  to render the 401×401 bore field sweep.</li>
+<li><code>python/gen_three_phase_pm_motor.py --profile hires --mode spinup --out inputs/pm_motor_spinup_hires.json</code>
+  then <code>./build/motor_sim --scenario inputs/pm_motor_spinup_hires.json --solve --vtk-series outputs/pm_motor_hires.pvd</code>
+  for a multi-cycle permanent-magnet spin-up with higher polygon resolution.</li>
+<li><code>python/gen_three_phase_induction_motor.py --profile hires --mode spinup --out inputs/induction_motor_hires.json</code>
+  and <code>./build/motor_sim --scenario inputs/induction_motor_hires.json --solve --vtk-series outputs/induction_motor_hires.pvd</code>
+  to capture the transient slip behaviour over several mechanical revolutions.</li>
+<li><code>python/gen_dc_motor.py --profile hires --mode spinup --out inputs/dc_motor_spinup_hires.json</code>
+  with <code>./build/motor_sim --scenario inputs/dc_motor_spinup_hires.json --solve --vtk-series outputs/dc_motor_hires.pvd</code>
+  to inspect the commutated armature waveforms and torque under finer discretisation.</li>
+<li>After each hires solve, re-run <code>python/generate_rotor_animation.py</code> with the
+  emitted mechanical and circuit traces to capture high-resolution GIF/PNG
+  animations (matching the CI commands but pointing at the hires scenario and
+  output directories). The rotor animation helper consumes both timeline data
+  and recorded currents, so the hires artefacts retain the correct slot colour
+  modulation.</li>
+<li>For all of the above, re-run <code>python/check_pm_spinup.py</code> with the emitted
+  <code>--mechanical</code> traces and loosened thresholds to validate the long-horizon
+  acceleration, and archive the residual CSVs (<code>--progress-history 1</code>) alongside
+  the high-resolution VTK artefacts.</li>
+</ul>
+<h2 id="remaining-work">Remaining work<a class="headerlink" href="#remaining-work" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Additional UX polish (e.g., non-uniform grid bands and parallel CG kernels)
+  can build on the new preconditioner hooks once the transient pipeline settles.
+  Longer transient runs that co-simulate the RL network, slip-tuned voltage
+  sources, and coarse-to-fine prolongation for induction demos remain on the
+  wishlist alongside the optional mechanical enhancements from Stage 5.</li>
+</ul>
+
+
+
+
+
+
+
+  
+    
+  
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 21, 2025 00:02:02 UTC">October 21, 2025</span>
+  </span>
+
+    
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../../..", "features": ["navigation.sections", "navigation.indexes", "navigation.instant", "content.code.copy", "search.suggest", "search.highlight"], "search": "../../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      
+        <script src="../../../assets/javascripts/mathjax.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../../assets/javascripts/mathjax-init.js"></script>
+      
+    
+  </body>
+</html>
