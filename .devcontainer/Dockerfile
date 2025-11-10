@@ -5,4 +5,4 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Flask prototype dependencies plus plotting/dxf helpers reused by the GUI
-RUN pip3 install --no-cache-dir flask flask-cors numpy matplotlib ezdxf
+RUN pip3 install --no-cache-dir flask flask-cors numpy matplotlib ezdxf pytest
