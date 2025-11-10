@@ -3,9 +3,11 @@ import json
 import queue
 import sys
 import time
+import zipfile
 from pathlib import Path
 from typing import List
 
+import ezdxf
 import pytest
 
 pytest.importorskip("flask")
@@ -484,3 +486,104 @@ def test_progress_stream_emits_payloads(client):
 
     assert b"hello" in body
     assert b"done" in body
+
+
+def test_dxf_upload_preview_and_delete(client, tmp_path):
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)], dxfattribs={"layer": "domain"})
+    msp.add_circle((0.5, 0.5), 0.1, dxfattribs={"layer": "wire"})
+    dxf_path = tmp_path / "fixture.dxf"
+    doc.saveas(dxf_path)
+
+    with dxf_path.open("rb") as handle:
+        response = client.post(
+            "/dxf/upload",
+            data={"dxf_files": [(handle, "fixture.dxf")]},
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 302
+
+    with client.session_transaction() as session:
+        project_id = session.get("project_id")
+
+    assert project_id in app_flask.PROJECTS
+    project = app_flask.PROJECTS[project_id]
+    assert project["dxf_files"], "DXF uploads should register with the project"
+
+    entry_id, entry = next(iter(project["dxf_files"].items()))
+    preview_path = project.get("dxf_preview_path")
+    assert isinstance(preview_path, Path) and preview_path.exists()
+
+    original_version = project.get("dxf_preview_version")
+    layer_form_data = {"project_id": project_id}
+    for layer in entry["layers"]:
+        form_id = layer["form_id"]
+        category = "material" if layer["name"].lower() == "domain" else "wire"
+        layer_form_data[f"layer-{form_id}-category"] = category
+        if layer["name"].lower() == "domain":
+            # Unselect the boundary to exercise deselection logic.
+            continue
+        layer_form_data[f"layer-{form_id}-selected"] = "on"
+
+    response = client.post(
+        f"/dxf/{entry_id}/layers",
+        data=layer_form_data,
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    assert response.status_code == 302
+    updated_entry = app_flask.PROJECTS[project_id]["dxf_files"][entry_id]
+    assert any(layer["selected"] for layer in updated_entry["layers"])
+    assert original_version != app_flask.PROJECTS[project_id].get("dxf_preview_version")
+
+    response = client.post(
+        f"/dxf/{entry_id}/delete",
+        data={"project_id": project_id},
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    assert response.status_code == 302
+    assert entry_id not in app_flask.PROJECTS[project_id]["dxf_files"]
+
+
+def test_project_export_dxf_generates_archive(client, tmp_path):
+    scenario_payload = json.dumps(
+        {
+            "version": "0.2",
+            "name": "exportable",
+            "domain": {"Lx": 0.2, "Ly": 0.1},
+            "sources": [
+                {"type": "wire", "x": 0.0, "y": 0.0, "radius": 0.01, "I": 10.0},
+            ],
+            "regions": [
+                {
+                    "type": "polygon",
+                    "material": "iron",
+                    "points": [[-0.08, -0.04], [0.08, -0.04], [0.08, 0.04], [-0.08, 0.04]],
+                }
+            ],
+            "magnets": [],
+        }
+    ).encode("utf-8")
+
+    client.post(
+        "/upload",
+        data={
+            "geometry_file": (io.BytesIO(scenario_payload), "export.json"),
+            "action": "preview",
+        },
+        content_type="multipart/form-data",
+    )
+
+    response = client.get("/project/export_dxf")
+
+    assert response.status_code == 200
+    assert response.mimetype in {"application/zip", "application/octet-stream"}
+    payload = b"".join(response.response)
+    assert payload, "Expected non-empty archive payload"
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = set(archive.namelist())
+    assert {"domain.dxf"}.issubset(names)

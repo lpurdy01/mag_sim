@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import queue
 import re
+import shutil
 import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -25,6 +27,13 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
+from python.gui.dxf_utils import (
+    DxfError,
+    export_scenario_to_dxf,
+    load_primitives,
+    render_preview,
+    summarise_dxf,
+)
 from python.gui.render import (
     DEFAULT_LOG_FLOOR,
     render_field_map_image,
@@ -41,6 +50,15 @@ DEFAULT_VECTOR_MODE = "linear"
 DEFAULT_COLOR_SCALE = "linear"
 DEFAULT_QUIVER_SKIP = 4
 DEFAULT_STREAMLINES = False
+DXF_CATEGORY_OPTIONS = [
+    ("domain", "Domain boundary"),
+    ("material", "Material region"),
+    ("magnet", "Magnet region"),
+    ("wire", "Conductor path"),
+    ("structural", "Structural / reference"),
+    ("unassigned", "Unassigned"),
+]
+DXF_DEFAULT_CATEGORY = "unassigned"
 FIELD_MAP_REGEX = re.compile(
     r"Frame\\s+(?P<frame>\\d+):\\s+wrote\\s+field_map\\s+'(?P<id>[^']+)'\\s+to\\s+(?P<path>.+)"
 )
@@ -93,6 +111,7 @@ class SimulationManager:
                 "extra_downloads": extra_downloads or [],
                 "field_outputs": field_outputs or [],
                 "processed_field_maps": set(),
+                "process_cwd": Path.cwd(),
             }
             self._queue.put({
                 "started": True,
@@ -152,9 +171,13 @@ class SimulationManager:
         if not cleaned_path:
             return
 
-        output_path = Path(cleaned_path)
-        if not output_path.is_absolute():
-            output_path = scenario_path.parent / output_path
+        process_cwd: Optional[Path] = self._metadata.get("process_cwd")
+        scenario_dir = scenario_path.parent if scenario_path else None
+        output_path = _resolve_output_path(
+            Path(cleaned_path),
+            scenario_dir=scenario_dir,
+            process_cwd=process_cwd,
+        )
 
         if not output_path.exists():
             return
@@ -206,18 +229,26 @@ class SimulationManager:
     def _candidate_field_maps(self) -> List[Path]:
         scenario_path: Optional[Path] = self._metadata.get("scenario_path")
         scenario_dir = scenario_path.parent if scenario_path else None
+        process_cwd: Optional[Path] = self._metadata.get("process_cwd")
         candidates: List[Path] = []
+        seen: Set[Path] = set()
         latest = self._metadata.get("latest_field_map")
         if isinstance(latest, Path):
             candidates.append(latest)
+            seen.add(latest)
         for entry in self._metadata.get("field_outputs", []):
             path_value = entry.get("path")
             if not path_value:
                 continue
-            path = Path(path_value)
-            if not path.is_absolute() and scenario_dir is not None:
-                path = scenario_dir / path
+            path = _resolve_output_path(
+                Path(path_value),
+                scenario_dir=scenario_dir,
+                process_cwd=process_cwd,
+            )
+            if path in seen:
+                continue
             candidates.append(path)
+            seen.add(path)
         return candidates
 
     def _run_process(self, command: List[str]) -> None:
@@ -466,8 +497,96 @@ def _register_project(
         "preview_notice": None,
         "preview_version": None,
         "form_state": _build_form_state(),
+        "dxf_files": {},
+        "dxf_preview_path": None,
+        "dxf_preview_version": None,
+        "dxf_notice": None,
     }
     return project_id, PROJECTS[project_id]
+
+
+def _register_blank_project() -> Tuple[str, Dict[str, Any]]:
+    project_id = uuid.uuid4().hex
+    PROJECTS[project_id] = {
+        "scenario_path": None,
+        "spec": {},
+        "original_filename": None,
+        "scenario_name": None,
+        "created_label": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "preview_path": None,
+        "preview_notice": None,
+        "preview_version": None,
+        "form_state": _build_form_state(),
+        "dxf_files": {},
+        "dxf_preview_path": None,
+        "dxf_preview_version": None,
+        "dxf_notice": None,
+    }
+    return project_id, PROJECTS[project_id]
+
+
+def _ensure_project_for_dxf(project_id: Optional[str]) -> Tuple[str, Dict[str, Any]]:
+    active_id, project = _current_project(project_id)
+    if project is None:
+        active_id, project = _register_blank_project()
+    session["project_id"] = active_id
+    return active_id, project
+
+
+def _update_dxf_preview(project_id: str) -> None:
+    project = PROJECTS.get(project_id)
+    if not project:
+        return
+
+    preview_path = project.get("dxf_preview_path")
+    if isinstance(preview_path, Path):
+        preview_path.unlink(missing_ok=True)
+
+    primitives = []
+    dxf_store = project.get("dxf_files", {})
+    if isinstance(dxf_store, dict):
+        for entry in dxf_store.values():
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("path")
+            if not isinstance(path, Path) or not path.exists():
+                continue
+            layers = entry.get("layers", [])
+            if not isinstance(layers, list):
+                continue
+            selected_layers = [layer.get("name") for layer in layers if layer.get("selected")]
+            selected_layers = [name for name in selected_layers if isinstance(name, str) and name]
+            if not selected_layers:
+                continue
+            categories = {
+                layer.get("name"): layer.get("category") or DXF_DEFAULT_CATEGORY
+                for layer in layers
+                if isinstance(layer, dict) and layer.get("name")
+            }
+            try:
+                primitives.extend(load_primitives(path, selected_layers, categories))
+            except DxfError as exc:
+                project["dxf_notice"] = str(exc)
+                return
+
+    if not primitives:
+        project["dxf_preview_path"] = None
+        project["dxf_preview_version"] = None
+        project["dxf_notice"] = "Select DXF layers to preview."
+        return
+
+    output_name = f"dxf_preview_{project_id}_{time.strftime('%Y%m%d-%H%M%S')}"
+    preview_destination = Path(app.config["RESULTS_FOLDER"]) / f"{output_name}.png"
+    try:
+        render_preview(primitives, preview_destination)
+    except DxfError as exc:
+        project["dxf_notice"] = str(exc)
+        preview_destination.unlink(missing_ok=True)
+        return
+
+    project["dxf_preview_path"] = preview_destination
+    project["dxf_preview_version"] = time.time()
+    project["dxf_notice"] = None
 
 
 def _discard_project(project_id: str) -> None:
@@ -479,9 +598,20 @@ def _discard_project(project_id: str) -> None:
     if isinstance(preview_path, Path):
         preview_path.unlink(missing_ok=True)
 
+    dxf_preview_path = project.get("dxf_preview_path")
+    if isinstance(dxf_preview_path, Path):
+        dxf_preview_path.unlink(missing_ok=True)
+
     scenario_path = project.get("scenario_path")
     if isinstance(scenario_path, Path):
         scenario_path.unlink(missing_ok=True)
+
+    dxf_files = project.get("dxf_files", {})
+    if isinstance(dxf_files, dict):
+        for entry in dxf_files.values():
+            path = entry.get("path")
+            if isinstance(path, Path):
+                path.unlink(missing_ok=True)
 
 
 def _current_project(
@@ -555,13 +685,67 @@ def _index_context(
                 visualization_defaults[key] = settings[key]
 
     project_summary = None
+    project_has_scenario = False
+    dxf_files_summary: List[Dict[str, Any]] = []
+    dxf_preview_url = None
+    dxf_preview_token = None
+    dxf_notice = None
+    has_dxf_selection = False
+
     if project and active_id:
+        scenario_path_value = project.get("scenario_path")
+        scenario_exists = isinstance(scenario_path_value, Path) and scenario_path_value.exists()
+        project_has_scenario = scenario_exists
         project_summary = {
             "id": active_id,
             "filename": project.get("original_filename"),
             "scenario_name": project.get("scenario_name"),
             "created_label": project.get("created_label"),
+            "has_scenario": scenario_exists,
         }
+
+        dxf_store = project.get("dxf_files", {})
+        if isinstance(dxf_store, dict):
+            for dxf_id, entry in dxf_store.items():
+                if not isinstance(entry, dict):
+                    continue
+                layers_payload: List[Dict[str, Any]] = []
+                for layer in entry.get("layers", []):
+                    if not isinstance(layer, dict):
+                        continue
+                    category_value = layer.get("category") or DXF_DEFAULT_CATEGORY
+                    selected_value = bool(layer.get("selected", False))
+                    layers_payload.append(
+                        {
+                            "form_id": layer.get("form_id"),
+                            "name": layer.get("name"),
+                            "entity_count": layer.get("entity_count", 0),
+                            "types": layer.get("types", []),
+                            "selected": selected_value,
+                            "category": category_value,
+                        }
+                    )
+                    has_dxf_selection = has_dxf_selection or selected_value
+                layers_payload.sort(key=lambda item: (item["name"] or "").lower())
+                entry_path = entry.get("path")
+                display_name = entry.get("original_name") or entry.get("name")
+                if not display_name and isinstance(entry_path, Path):
+                    display_name = entry_path.name
+                dxf_files_summary.append(
+                    {
+                        "id": dxf_id,
+                        "name": display_name or dxf_id,
+                        "layers": layers_payload,
+                        "uploaded_label": entry.get("uploaded_label"),
+                    }
+                )
+            dxf_files_summary.sort(key=lambda item: item["name"].lower())
+
+        preview_path = project.get("dxf_preview_path")
+        if isinstance(preview_path, Path) and preview_path.exists():
+            dxf_preview_url = url_for("result_image", filename=preview_path.name)
+            dxf_preview_token = project.get("dxf_preview_version")
+        dxf_notice = project.get("dxf_notice")
 
     return {
         "running": manager.is_running,
@@ -579,9 +763,17 @@ def _index_context(
         "DEFAULT_LOG_FLOOR": DEFAULT_LOG_FLOOR,
         "project": project_summary,
         "has_project": project_summary is not None,
-        "project_download_url": url_for("project_scenario") if project_summary else None,
-        "form_requires_file": project_summary is None,
+        "project_download_url": url_for("project_scenario") if project_has_scenario else None,
+        "project_export_dxf_url": url_for("project_export_dxf") if project_has_scenario else None,
+        "project_has_scenario": project_has_scenario,
+        "form_requires_file": not project_has_scenario,
         "status_message": status_message,
+        "dxf_files": dxf_files_summary,
+        "dxf_preview_url": dxf_preview_url,
+        "dxf_preview_token": dxf_preview_token,
+        "dxf_notice": dxf_notice,
+        "dxf_categories": DXF_CATEGORY_OPTIONS,
+        "has_dxf_selection": has_dxf_selection,
     }
 
 
@@ -602,6 +794,28 @@ def _store_scenario_file(geometry) -> Tuple[Path, dict, str, str]:
     return scenario_path, spec, timestamp, original_name
 
 
+def _resolve_output_path(
+    raw_path: Path, *, scenario_dir: Optional[Path], process_cwd: Optional[Path]
+) -> Path:
+    if raw_path.is_absolute():
+        return raw_path
+
+    candidates: List[Path] = []
+    if scenario_dir is not None:
+        candidates.append(scenario_dir / raw_path)
+    if process_cwd is not None:
+        candidates.append(process_cwd / raw_path)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    if candidates:
+        return candidates[0]
+
+    return raw_path
+
+
 def _collect_field_outputs(spec: dict, scenario_dir: Path) -> List[Dict[str, Any]]:
     outputs: List[Dict[str, Any]] = []
     for entry in spec.get("outputs", []):
@@ -613,11 +827,151 @@ def _collect_field_outputs(spec: dict, scenario_dir: Path) -> List[Dict[str, Any
             path_value = f"outputs/{identifier}.csv"
         if not path_value:
             continue
-        path = Path(path_value)
-        if not path.is_absolute():
-            path = scenario_dir / path
-        outputs.append({"id": identifier, "path": path})
+        raw_path = Path(path_value)
+        resolved = _resolve_output_path(
+            raw_path, scenario_dir=scenario_dir, process_cwd=Path.cwd()
+        )
+        outputs.append({"id": identifier, "path": resolved})
     return outputs
+
+
+@app.post("/dxf/upload")
+def upload_dxf_files() -> Response:
+    project_hint = request.form.get("project_id")
+    project_id, project = _ensure_project_for_dxf(project_hint)
+
+    files = request.files.getlist("dxf_files")
+    if not files or all(not f.filename for f in files):
+        return redirect(url_for("index", error="Select at least one DXF file to import."))
+
+    errors: List[str] = []
+    imported = 0
+    dxf_store = project.setdefault("dxf_files", {})
+
+    for storage in files:
+        if not storage.filename:
+            continue
+        suffix = Path(storage.filename).suffix.lower()
+        if suffix != ".dxf":
+            errors.append(f"Unsupported extension for {storage.filename}; only DXF files are allowed.")
+            continue
+
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        safe_name = secure_filename(storage.filename) or f"drawing_{timestamp}.dxf"
+        destination = Path(app.config["UPLOAD_FOLDER"]) / f"{project_id}_{timestamp}_{safe_name}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        storage.save(destination)
+
+        try:
+            layer_summary = summarise_dxf(destination)
+        except DxfError as exc:
+            destination.unlink(missing_ok=True)
+            errors.append(str(exc))
+            continue
+
+        if not layer_summary:
+            destination.unlink(missing_ok=True)
+            errors.append(f"{storage.filename} does not contain supported geometry.")
+            continue
+
+        entry_id = uuid.uuid4().hex
+        dxf_store[entry_id] = {
+            "id": entry_id,
+            "path": destination,
+            "original_name": storage.filename,
+            "uploaded_label": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "layers": [
+                {
+                    "name": info.name,
+                    "entity_count": info.entity_count,
+                    "types": list(info.types),
+                    "selected": True,
+                    "category": DXF_DEFAULT_CATEGORY,
+                    "form_id": uuid.uuid4().hex[:8],
+                }
+                for info in layer_summary
+            ],
+        }
+        imported += 1
+
+    notice = None
+    if imported:
+        _update_dxf_preview(project_id)
+        project["dxf_notice"] = None
+        notice = f"Imported {imported} DXF file{'s' if imported != 1 else ''}."
+
+    if errors:
+        project["dxf_notice"] = errors[0]
+        if not imported:
+            return redirect(url_for("index", error=errors[0]))
+        if notice:
+            return redirect(url_for("index", notice=f"{notice} Some files could not be processed."))
+        return redirect(url_for("index", notice="Some DXF files could not be processed."))
+
+    if notice:
+        return redirect(url_for("index", notice=notice))
+
+    return redirect(url_for("index"))
+
+
+@app.post("/dxf/<dxf_id>/layers")
+def configure_dxf_layers(dxf_id: str) -> Response:
+    project_hint = request.form.get("project_id")
+    active_id, project = _current_project(project_hint)
+    if not project or not active_id:
+        return redirect(url_for("index", error="Project not found."))
+
+    session["project_id"] = active_id
+    dxf_store = project.get("dxf_files", {})
+    entry = dxf_store.get(dxf_id) if isinstance(dxf_store, dict) else None
+    if entry is None:
+        return redirect(url_for("index", error="DXF entry not found."))
+
+    valid_categories = {choice[0] for choice in DXF_CATEGORY_OPTIONS}
+    layers = entry.get("layers", [])
+    if isinstance(layers, list):
+        for layer in layers:
+            if not isinstance(layer, dict):
+                continue
+            form_id = layer.get("form_id")
+            if not form_id:
+                continue
+            selected = request.form.get(f"layer-{form_id}-selected") == "on"
+            category = request.form.get(f"layer-{form_id}-category") or DXF_DEFAULT_CATEGORY
+            if category not in valid_categories:
+                category = DXF_DEFAULT_CATEGORY
+            layer["selected"] = selected
+            layer["category"] = category
+
+    project["dxf_notice"] = None
+    _update_dxf_preview(active_id)
+
+    return redirect(url_for("index", notice="DXF layers updated."))
+
+
+@app.post("/dxf/<dxf_id>/delete")
+def delete_dxf_entry(dxf_id: str) -> Response:
+    project_hint = request.form.get("project_id")
+    active_id, project = _current_project(project_hint)
+    if not project or not active_id:
+        return redirect(url_for("index", error="Project not found."))
+
+    session["project_id"] = active_id
+    dxf_store = project.get("dxf_files", {})
+    entry = None
+    if isinstance(dxf_store, dict):
+        entry = dxf_store.pop(dxf_id, None)
+
+    if isinstance(entry, dict):
+        path = entry.get("path")
+        if isinstance(path, Path):
+            path.unlink(missing_ok=True)
+        project["dxf_notice"] = None
+        _update_dxf_preview(active_id)
+        return redirect(url_for("index", notice="Removed DXF file."))
+
+    _update_dxf_preview(active_id)
+    return redirect(url_for("index", error="DXF entry not found."))
 
 
 @app.get("/")
@@ -651,7 +1005,7 @@ def upload() -> Response:
 
         suffix = Path(geometry.filename).suffix.lower()
         if suffix != ".json":
-            return redirect(url_for("index", error="DXF uploads are not supported yet."))
+            return redirect(url_for("index", error="Import DXF files via the CAD workspace."))
 
         if current_project_id and current_project_id in PROJECTS:
             _discard_project(current_project_id)
@@ -865,6 +1219,35 @@ def project_scenario() -> Response:
 
     download_name = project.get("original_filename") or scenario_path.name
     return send_file(scenario_path, as_attachment=True, download_name=download_name)
+
+
+@app.get("/project/export_dxf")
+def project_export_dxf() -> Response:
+    project_id, project = _current_project()
+    if project is None:
+        abort(404)
+
+    scenario_path = project.get("scenario_path")
+    if not isinstance(scenario_path, Path) or not scenario_path.exists():
+        return redirect(url_for("index", error="Load a scenario before exporting DXF geometry."))
+
+    export_root = Path(app.config["RESULTS_FOLDER"]) / f"dxf_export_{uuid.uuid4().hex}"
+    try:
+        exported_paths = export_scenario_to_dxf(scenario_path, export_root)
+    except DxfError as exc:
+        shutil.rmtree(export_root, ignore_errors=True)
+        return redirect(url_for("index", error=str(exc)))
+
+    if not exported_paths:
+        shutil.rmtree(export_root, ignore_errors=True)
+        return redirect(url_for("index", error="Scenario does not contain exportable geometry."))
+
+    archive_path = export_root / f"{scenario_path.stem}_geometry.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for item in exported_paths:
+            archive.write(item, arcname=item.name)
+
+    return send_file(archive_path, as_attachment=True, download_name=archive_path.name)
 
 
 @app.get("/result-image/<path:filename>")

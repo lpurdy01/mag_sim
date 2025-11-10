@@ -22,11 +22,17 @@
 
       .app-shell {
         min-height: calc(100vh - 60px);
+        align-items: flex-start;
       }
 
       .app-sidebar {
         width: 260px;
         background-color: #fff;
+        position: sticky;
+        top: 60px;
+        align-self: flex-start;
+        max-height: calc(100vh - 60px);
+        overflow-y: auto;
       }
 
       .app-sidebar .nav-link {
@@ -51,6 +57,9 @@
         .app-sidebar {
           width: 100%;
           border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          position: static;
+          max-height: none;
+          overflow: visible;
         }
 
         .app-content {
@@ -98,13 +107,23 @@
                   <span class="dropdown-item disabled">Save scenario…</span>
                 {% endif %}
               </li>
+              <li>
+                {% if project_export_dxf_url %}
+                  <a class="dropdown-item" href="{{ project_export_dxf_url }}">Export DXF set…</a>
+                {% else %}
+                  <span class="dropdown-item disabled">Export DXF set…</span>
+                {% endif %}
+              </li>
             </ul>
           </div>
           <div class="dropdown">
             <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Help</button>
             <ul class="dropdown-menu dropdown-menu-end shadow">
               <li>
-                <a class="dropdown-item" href="https://github.com/mag-co/mag_sim/blob/main/docs/user-guide/gui_flask.md" target="_blank" rel="noopener">Documentation</a>
+                <a class="dropdown-item" href="https://lpurdy01.github.io/mag_sim/user-guide/gui_flask/" target="_blank" rel="noopener">GUI documentation</a>
+              </li>
+              <li>
+                <a class="dropdown-item" href="https://lpurdy01.github.io/mag_sim/" target="_blank" rel="noopener">Documentation hub</a>
               </li>
               <li>
                 <span class="dropdown-item disabled">Keyboard shortcuts (coming soon)</span>
@@ -120,6 +139,7 @@
           <div class="text-uppercase text-muted small mb-3">Workflow</div>
           <nav class="nav flex-column gap-2">
             <a class="nav-link" href="#project-overview">Workspace summary</a>
+            <a class="nav-link" href="#cad-imports">CAD workspace</a>
             <a class="nav-link" href="#geometry-preview">Geometry preview</a>
             <a class="nav-link" href="#simulation-setup">Simulation setup</a>
             <a class="nav-link" href="#progress-stage">Progress &amp; logs</a>

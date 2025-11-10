@@ -40,11 +40,15 @@ on the GUI-specific milestones.
   - Added helper scripts (`scripts/setup_gui_env.sh` and
     `scripts/maintain_gui_env.sh`) so contributors can bootstrap dependencies,
     prune artefacts, and monitor Python package freshness locally.
+- Added a DXF workspace with multi-file uploads, layer assignment, combined
+  previews, and scenario-to-DXF export support; introduced `python/gui/dxf_utils.py`
+  to encapsulate parsing and rendering logic and exercised the flow in
+  `tests/test_gui_flask.py`.
 
 ## In-flight / next steps
 
-- DXF ingestion is still stubbed. Once the geometry-to-scenario converter is
-  ready we can replace the placeholder guard in `/upload` with real processing.
+- Broaden DXF support beyond lines/polylines/circles (splines, blocks) and add
+  utilities that map layer selections back into scenario JSON automatically.
 - The progress parser currently looks for percentage tokens in stdout; refining
   this to understand the solver's exact log format will improve the progress bar
   fidelity.

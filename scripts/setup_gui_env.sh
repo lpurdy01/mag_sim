@@ -19,11 +19,12 @@ PYTHON_BIN=${1:-${PYTHON:-python3}}
 "${PYTHON_BIN}" -m pip install --upgrade \
   flask \
   matplotlib \
-  numpy
+  numpy \
+  ezdxf
 
 mkdir -p "${ROOT_DIR}/python/gui/uploads" "${ROOT_DIR}/python/gui/results"
 
 cat <<SETUP_MSG
-[setup_gui_env] Installed Flask GUI runtime dependencies using ${PYTHON_BIN}.
+[setup_gui_env] Installed Flask GUI runtime dependencies (Flask, Matplotlib, NumPy, ezdxf) using ${PYTHON_BIN}.
 [setup_gui_env] Upload/result directories are ready under python/gui/.
 SETUP_MSG

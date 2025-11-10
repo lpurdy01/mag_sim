@@ -7,9 +7,10 @@ prototype while staying close to the underlying command-line workflow.
 ## Requirements
 
 - A built `motor_sim` executable in `./build/motor_sim`.
-- Flask, Matplotlib, and NumPy available in the active Python environment.
-  Execute `./scripts/setup_gui_env.sh` to install the trio (and create the GUI
-  runtime folders) when a pre-provisioned devcontainer is not available.
+- Flask, Matplotlib, NumPy, and ezdxf available in the active Python
+  environment. Execute `./scripts/setup_gui_env.sh` to install the toolchain
+  (and create the GUI runtime folders) when a pre-provisioned devcontainer is
+  not available.
 
 ## Starting the server
 
@@ -31,30 +32,36 @@ prefer Flask's CLI wrapper.
 The CAD-inspired layout splits the page into a top navigation bar, a workflow
 sidebar, and content panels for each stage. The **File** menu exposes
 project-wide actions (**New project** clears the workspace, **Save scenario…**
-downloads the current JSON), while the sidebar links jump to the key panels
-without leaving the page.
+downloads the current JSON, **Export DXF set…** produces layered DXFs for the
+current scenario), while the sidebar links jump to the key panels without
+leaving the page.
 
-1. Visit the **Simulation setup** panel to upload a scenario JSON file. If
-   you're continuing work on an existing project, the hidden form state preserves
-   the previously uploaded file—you only need to upload again when swapping to a
-   different scenario. DXF uploads remain disabled until the converter ships.
-2. Adjust solver parameters in the same panel. Solver (`cg` or `sor`),
-   tolerance, maximum iterations, and an optional `--outputs` override all map
-   directly to the CLI arguments used when launching `motor_sim`.
-3. Use **Preview geometry** to render the domain outline without running the
-   solver. The preview is cached with the project so you can revisit other
-   panels without losing the image. Any new upload replaces the stored preview.
-4. Click **Run simulation**. The run button disables itself, the **Stop** button
-   becomes active, and the **Progress**/**Solver log** cards appear. The log is
-   streamed via server‑sent events to avoid polling.
-5. Watch the run unfold: percentage tokens update the progress bar, log entries
-   append live, and any `field_map` outputs mentioned in stdout trigger a fresh
-   render in the **Results visualisation** panel. Intermediate images replace
-   the geometry preview automatically.
-6. When the solver exits, the **Downloads** panel lists the uploaded scenario,
-   the log file, and any field-map artefacts made available by the solver. The
-   visualisation panel shows the final render and stays wired to the plotting
-   controls so you can iterate on overlays without rerunning the simulation.
+1. Visit the **CAD workspace** to import DXF files when you want to assemble or
+   revise geometry. Each upload is summarised by layer; select the layers to
+   include, assign a category (material, magnet, wire, etc.), and click **Update
+   mapping** to refresh the combined preview. The preview colours match the
+   chosen categories so you can confirm alignments before committing to a
+   scenario JSON.
+2. Use the **Simulation setup** panel to upload (or re-upload) a scenario JSON
+   when you are ready to run the solver. The form preserves solver defaults so
+   you only need to change the file when switching projects. Optional solver
+   arguments—`cg`/`sor`, tolerance, iteration limit, and `--outputs`—map directly
+   onto the `motor_sim` CLI.
+3. Choose **Preview geometry** to render the domain outline without solving.
+   Previews stay cached with the project and coexist with the DXF preview so you
+   can compare imported geometry with the scenario domain.
+4. Click **Run simulation** to launch `motor_sim`. The run button disables
+   itself, the **Stop** button becomes active, and the **Progress**/**Solver log**
+   cards appear. Logs stream via server-sent events, avoiding polling.
+5. Monitor the run: percentage tokens update the progress bar, log entries append
+   live, and any `field_map` outputs mentioned in stdout trigger refreshed images
+   in the **Results visualisation** panel. Intermediate renders replace the
+   preview automatically.
+6. Once the solver exits, the **Downloads** panel lists the uploaded scenario,
+   the log file, the combined DXF exports (when requested), and any field-map
+   artefacts produced by the solver. The visualisation panel shows the final
+   render and stays wired to the plotting controls so you can iterate on overlays
+   without rerunning the simulation.
 
 Only one solve is allowed at a time; the interface reports an error if you try
 to launch a second run before the first finishes. Use **Stop** to request
@@ -88,11 +95,12 @@ JavaScript.
 
 ## Known limitations
 
-- DXF geometry ingestion is stubbed; use JSON scenarios generated via the
-  existing Python helpers until the converter is available.
-- Preview and visualisation rendering rely on Matplotlib and NumPy. These
-  dependencies ship with the devcontainer, but a custom environment must supply
-  the same stack.
+- DXF ingestion currently supports LINE/POLYLINE/LWPOLYLINE and CIRCLE entities.
+  Splines, text, and block references are ignored. Use your CAD tool to explode
+  complex geometry before uploading.
+- Preview and visualisation rendering rely on Matplotlib, NumPy, and ezdxf.
+  These dependencies ship with the devcontainer, but a custom environment must
+  provide the same stack.
 - The progress parser uses a simple percentage heuristic. If the solver log does
   not emit percentage tokens the bar will stay at 0 % until the run completes.
 - The current prototype keeps global state and targets single-user usage. A
