@@ -22,15 +22,43 @@ on the GUI-specific milestones.
   endpoint payloads without invoking the real solver binary.
 - Documented usage (`docs/user-guide/gui_flask.md`) and linked the new page into
   the MkDocs navigation.
+- **Stage 1 UI overhaul**:
+  - Split the main page into dedicated geometry, control, progress, downloads,
+    and visualisation panels with placeholders for future DXF/animation work.
+  - Introduced a CAD-style top bar and workflow sidebar so navigation feels
+    closer to desktop tooling while leaving hooks for future menus.
+  - Added geometry preview rendering on demand plus live in-process and final
+    field-map visualisation streamed via SSE.
+  - Introduced configurable plotting controls (vector scaling, density,
+    overlays, logarithmic modes) that regenerate Matplotlib renders on request.
+  - Persisted scenario uploads as per-session projects, enabling preview and run
+    actions without re-uploading; added File-menu routes for exporting or
+    clearing the workspace.
+  - Expanded automated coverage for preview flows, solver output detection,
+    project reuse, and the visualisation endpoint to keep regression protection
+    high.
+  - Added helper scripts (`scripts/setup_gui_env.sh` and
+    `scripts/maintain_gui_env.sh`) so contributors can bootstrap dependencies,
+    prune artefacts, and monitor Python package freshness locally.
+- Added a DXF workspace with multi-file uploads, layer assignment, combined
+  previews, and scenario-to-DXF export support; introduced `python/gui/dxf_utils.py`
+  to encapsulate parsing and rendering logic and exercised the flow in
+  `tests/test_gui_flask.py`.
+- Hardened field-map discovery so relative solver outputs resolve against the
+  runtime working directory, streamed intermediate frames into a playback
+  gallery with animation controls, and published an end-to-end induction motor
+  workflow (scenario, DXFs, documentation) to guide future additions.
 
 ## In-flight / next steps
 
-- DXF ingestion is still stubbed. Once the geometry-to-scenario converter is
-  ready we can replace the placeholder guard in `/upload` with real processing.
+- Broaden DXF support beyond lines/polylines/circles (splines, blocks) and add
+  utilities that map layer selections back into scenario JSON automatically.
 - The progress parser currently looks for percentage tokens in stdout; refining
   this to understand the solver's exact log format will improve the progress bar
   fidelity.
-- Consider persisting additional solver outputs (e.g., field map CSVs) to the
-  downloads list once the CLI contract is finalised.
+- Surface more solver artefacts (line probes, streamlines) alongside field maps
+  once those exporters are exercised in real scenarios.
 - Harden long-running process management for multiple users (per-session queues
   instead of global state) if the GUI graduates beyond a single-user demo.
+- Add screenshot-driven regression tests for the Bootstrap layout when we wire
+  up a lightweight browser harness.
