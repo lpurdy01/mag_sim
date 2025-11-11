@@ -10,7 +10,7 @@ resulting field maps and animation. It assumes you have already built
 
 | Purpose | File | Notes |
 | --- | --- | --- |
-| Scenario JSON | [`inputs/induction_gui_demo.json`](../../inputs/induction_gui_demo.json) | Defines the transient spin-up with field-map, VTK series, and probe outputs. |
+| Scenario JSON | [`induction_gui_demo.json`](https://raw.githubusercontent.com/lpurdy01/mag_sim/main/inputs/induction_gui_demo.json) | Defines the transient spin-up with field-map, VTK series, and probe outputs. |
 | Domain outline | [`docs/assets/dxf/induction_demo/domain.dxf`](../../assets/dxf/induction_demo/domain.dxf) | Axis-aligned boundary for the rectangular workspace. |
 | Stator laminations | [`docs/assets/dxf/induction_demo/stator_only.dxf`](../../assets/dxf/induction_demo/stator_only.dxf) | Single layer containing the stator steel outline. |
 | Rotor back-iron | [`docs/assets/dxf/induction_demo/rotor_core.dxf`](../../assets/dxf/induction_demo/rotor_core.dxf) | Rotor core polygon. |
