@@ -27,6 +27,9 @@
   layers or assets.
 - Follow-up work should expand tests when touching related code—fixtures clear
   `PROJECTS`, so new project-oriented behaviour needs explicit coverage.
+- End-to-end tests live under `tests/e2e/` and rely on `data-testid` hooks in
+  the templates. Preserve or extend those attributes when adjusting the markup
+  so Playwright selectors remain stable.
 - When modifying behaviour, update the user guide (`docs/user-guide/gui_flask.md`)
   and extend `tests/test_gui_flask.py` so new code paths stay covered.
 - Runtime artefacts such as uploads and generated logs should stay out of the

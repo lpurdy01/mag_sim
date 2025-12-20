@@ -103,6 +103,7 @@ nav:
           - developer-guide/implementation/status.md
           - developer-guide/implementation/progress.md
           - developer-guide/implementation/flask-gui-progress.md
+          - developer-guide/gui_e2e_testing.md
           - developer-guide/implementation/AGENTS.md
           - developer-guide/implementation/validation-stages.md
           - developer-guide/implementation/solver-benchmarks.md

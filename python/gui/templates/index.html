@@ -90,11 +90,11 @@
           <div class="row g-3 align-items-end">
             <div class="col-lg-9">
               <label class="form-label" for="dxf-files">DXF files</label>
-              <input class="form-control" type="file" id="dxf-files" name="dxf_files" accept=".dxf" multiple>
+              <input class="form-control" type="file" id="dxf-files" name="dxf_files" accept=".dxf" multiple data-testid="dxf-upload-input">
               <div class="form-text">Upload one or more DXF files. Multi-part assemblies can be split across several uploads.</div>
             </div>
             <div class="col-lg-3 d-grid">
-              <button class="btn btn-primary" type="submit">Import DXF</button>
+              <button class="btn btn-primary" type="submit" data-testid="dxf-import">Import DXF</button>
             </div>
           </div>
         </form>
@@ -141,7 +141,7 @@
                               <tr>
                                 <td>
                                   <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="layer-{{ layer.form_id }}-selected" name="layer-{{ layer.form_id }}-selected" {% if layer.selected %}checked{% endif %}>
+                                    <input class="form-check-input" type="checkbox" id="layer-{{ layer.form_id }}-selected" name="layer-{{ layer.form_id }}-selected" {% if layer.selected %}checked{% endif %} data-testid="layer-select-{{ layer.form_id }}">
                                   </div>
                                 </td>
                                 <td>
@@ -150,7 +150,7 @@
                                 </td>
                                 <td class="small text-muted">{{ layer.entity_count }}</td>
                                 <td>
-                                  <select class="form-select form-select-sm" name="layer-{{ layer.form_id }}-category">
+                                  <select class="form-select form-select-sm" name="layer-{{ layer.form_id }}-category" data-testid="layer-category-{{ layer.form_id }}">
                                     {% for value, label in dxf_categories %}
                                       <option value="{{ value }}" {% if layer.category == value %}selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
@@ -162,7 +162,7 @@
                         </table>
                       </div>
                       <div class="d-grid d-sm-flex gap-2">
-                        <button class="btn btn-outline-primary btn-sm" type="submit">Update mapping</button>
+                        <button class="btn btn-outline-primary btn-sm" type="submit" data-testid="layer-update-{{ file.id }}">Update mapping</button>
                       </div>
                     </form>
                   </div>
@@ -494,6 +494,7 @@
                 name="geometry_file"
                 accept=".json,.dxf"
                 {% if form_requires_file %}required{% endif %}
+                data-testid="scenario-upload"
               >
               <div class="form-text">Use JSON scenarios for solver runs. Manage CAD layers in the CAD workspace.</div>
               {% if has_project %}
@@ -526,7 +527,7 @@
             </div>
           </div>
           <div class="d-flex flex-wrap gap-2 mt-4">
-            <button id="run-btn" class="btn btn-primary" name="action" value="run" type="submit" {% if running %}disabled{% endif %}>Run simulation</button>
+            <button id="run-btn" class="btn btn-primary" name="action" value="run" type="submit" {% if running %}disabled{% endif %} data-testid="run-simulation">Run simulation</button>
             <button id="preview-btn" class="btn btn-outline-secondary" name="action" value="preview" type="submit" formnovalidate>Preview geometry</button>
             <button id="stop-btn" class="btn btn-warning" type="button" {% if not running %}disabled{% endif %}>Stop</button>
             <button class="btn btn-outline-secondary" type="button" disabled>Save preset (coming soon)</button>
@@ -539,7 +540,7 @@
   <section id="progress-stage" class="stage-section">
     <div class="row g-4">
       <div class="col-xl-6">
-        <div id="progress-container" class="card card-elevated h-100" style="display: none;">
+        <div id="progress-container" class="card card-elevated h-100" style="display: none;" data-testid="progress-card">
           <div class="card-body">
             <h5 class="card-title">Progress</h5>
             <div class="progress" style="height: 24px;">
@@ -552,7 +553,7 @@
         <div id="log-container" class="card card-elevated h-100" style="display: none;">
           <div class="card-body">
             <h5 class="card-title">Solver log</h5>
-            <pre id="log-area" class="bg-dark text-white p-3 rounded" style="max-height: 320px; overflow-y: auto;"></pre>
+            <pre id="log-area" class="bg-dark text-white p-3 rounded" style="max-height: 320px; overflow-y: auto;" data-testid="log-output"></pre>
           </div>
         </div>
       </div>
@@ -562,10 +563,10 @@
   <section id="results-stage" class="stage-section">
     <div class="row g-4">
       <div class="col-xl-4">
-        <div id="results" class="card card-elevated h-100" style="display: none;">
+        <div id="results" class="card card-elevated h-100" style="display: none;" data-testid="downloads-card">
           <div class="card-body">
             <h5 class="card-title">Downloads</h5>
-            <ul id="results-list" class="list-group list-group-flush"></ul>
+            <ul id="results-list" class="list-group list-group-flush" data-testid="downloads-list"></ul>
           </div>
         </div>
       </div>
@@ -582,7 +583,7 @@
             <p id="visualization-message" class="text-muted small {% if last_visualization_url %}d-none{% endif %}">
               {{ visualization_message or 'Run a simulation to generate field visualisations.' }}
             </p>
-            <img id="result-image" class="img-fluid rounded border {% if not last_visualization_url %}d-none{% endif %}" src="{{ last_visualization_url or '' }}" alt="Field map visualisation">
+            <img id="result-image" class="img-fluid rounded border {% if not last_visualization_url %}d-none{% endif %}" src="{{ last_visualization_url or '' }}" alt="Field map visualisation" data-testid="result-image">
             <p id="visualization-caption" class="mt-2 text-muted small {% if not last_visualization_caption %}d-none{% endif %}">{{ last_visualization_caption }}</p>
             <div
               id="visualization-controls"

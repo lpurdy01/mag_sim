@@ -30,6 +30,19 @@ resulting field maps and animation. It assumes you have already built
 3. Download the assets listed above (or keep the repository checked out so the
    relative links work directly).
 
+### Action checklist
+
+The automated end-to-end test mirrors these user-visible steps:
+
+1. Start a clean project (File → New project).
+2. Import `domain.dxf` and `rotor_bars.dxf` in the **CAD workspace**.
+3. Tick the imported layer rows and click **Update mapping** so the combined
+   preview reflects the new selections.
+4. Upload `inputs/induction_gui_demo.json` in **Simulation setup**.
+5. Click **Run simulation** and wait for the log to show “Simulation complete.”
+6. Confirm the **Downloads** list exposes the field-map artefacts and the
+   **Results visualisation** panel renders the frame.
+
 ## Step 2 – Import CAD layers
 
 Use the **CAD workspace** panel to upload each DXF. The recommended order helps

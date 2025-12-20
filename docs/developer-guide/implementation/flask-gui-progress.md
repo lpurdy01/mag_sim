@@ -48,6 +48,9 @@ on the GUI-specific milestones.
   runtime working directory, streamed intermediate frames into a playback
   gallery with animation controls, and published an end-to-end induction motor
   workflow (scenario, DXFs, documentation) to guide future additions.
+- Added a Playwright-driven E2E harness mirroring the induction walkthrough so
+  DXF uploads, scenario runs, and downloads/visuals stay covered in a real
+  browser session.
 
 ## In-flight / next steps
 
