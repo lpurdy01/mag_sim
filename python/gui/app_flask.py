@@ -904,20 +904,29 @@ def _resolve_output_path(
     raw_path: Path, *, scenario_dir: Optional[Path], process_cwd: Optional[Path]
 ) -> Path:
     if raw_path.is_absolute():
-        return raw_path
+        # The path may already be absolute if it came from a prior resolution. If
+        # it no longer exists we fall back to the candidate search below so that
+        # we can detect solver outputs written relative to a different base
+        # directory (e.g. the solver's working directory).
+        if raw_path.exists() or (scenario_dir is None and process_cwd is None):
+            return raw_path
 
-    candidates: List[Path] = []
+    scenario_candidate: Optional[Path] = None
+    process_candidate: Optional[Path] = None
+
     if scenario_dir is not None:
-        candidates.append(scenario_dir / raw_path)
+        scenario_candidate = (scenario_dir / raw_path).resolve()
     if process_cwd is not None:
-        candidates.append(process_cwd / raw_path)
+        process_candidate = (process_cwd / raw_path).resolve()
 
-    for candidate in candidates:
-        if candidate.exists():
+    for candidate in (scenario_candidate, process_candidate):
+        if candidate is not None and candidate.exists():
             return candidate
 
-    if candidates:
-        return candidates[0]
+    if process_candidate is not None:
+        return process_candidate
+    if scenario_candidate is not None:
+        return scenario_candidate
 
     return raw_path
 

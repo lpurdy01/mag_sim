@@ -363,6 +363,118 @@ def test_visualization_route_after_run(monkeypatch, client):
     assert payload, "Expected PNG bytes from visualisation route"
 
 
+def test_visualization_detects_outputs_from_process_cwd(monkeypatch, client, tmp_path):
+    stdout_queue: "queue.Queue[str | None]" = queue.Queue()
+
+    class DummyStdout:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            item = stdout_queue.get()
+            if item is None:
+                raise StopIteration
+            return item
+
+    class DummyProcess:
+        def __init__(self) -> None:
+            self.stdout = DummyStdout()
+            self.returncode = 0
+
+        def wait(self) -> int:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.returncode = 143
+
+    def fake_popen(cmd, **kwargs):  # noqa: ANN001 - signature mirrors subprocess
+        return DummyProcess()
+
+    monkeypatch.setattr(app_flask.subprocess, "Popen", fake_popen)
+    monkeypatch.chdir(tmp_path)
+
+    scenario_payload = json.dumps(
+        {
+            "version": "0.2",
+            "domain": {"Lx": 0.1, "Ly": 0.1},
+            "sources": [
+                {"type": "wire", "x": 0.0, "y": 0.0, "radius": 0.002, "I": 5.0}
+            ],
+            "outputs": [
+                {
+                    "type": "field_map",
+                    "id": "cwd_field",
+                    "path": "outputs/cwd_field.csv",
+                }
+            ],
+        }
+    ).encode("utf-8")
+
+    response = client.post(
+        "/upload",
+        data={
+            "geometry_file": (io.BytesIO(scenario_payload), "scenario.json"),
+            "solver": "cg",
+            "tol": "1e-6",
+            "max_iters": "100",
+            "outputs": "cwd_field",
+        },
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+
+    deadline = time.time() + 2
+    scenario_path: Path | None = None
+    while time.time() < deadline:
+        scenario = app_flask.manager._metadata.get("scenario_path")  # type: ignore[attr-defined]
+        if isinstance(scenario, Path):
+            scenario_path = scenario
+            break
+        time.sleep(0.01)
+
+    assert scenario_path is not None
+
+    cwd_output = Path.cwd() / "outputs" / "cwd_field.csv"
+    cwd_output.parent.mkdir(parents=True, exist_ok=True)
+    cwd_output.write_text(
+        "x,y,Bx,By,Bmag\n"
+        "0.0,0.0,0.1,0.0,0.1\n"
+        "0.05,0.0,0.1,0.0,0.1\n"
+        "0.0,0.05,0.1,0.0,0.1\n"
+        "0.05,0.05,0.1,0.0,0.1\n",
+        encoding="utf-8",
+    )
+
+    stdout_queue.put("Frame 0: wrote field_map 'cwd_field' to \"outputs/cwd_field.csv\"\n")
+    stdout_queue.put("Finished\n")
+    stdout_queue.put(None)
+
+    events = []
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        try:
+            item = app_flask.manager.queue.get(timeout=0.1)
+            events.append(item)
+            if item.get("complete"):
+                break
+        except queue.Empty:
+            pass
+
+    visualization_events = [evt for evt in events if evt.get("visualization")]
+    assert visualization_events, "Expected visualization update for process-cwd outputs"
+
+    completion_event = next(evt for evt in events if evt.get("complete"))
+    downloads = completion_event.get("downloads", [])
+    assert any(entry.get("filename") == cwd_output.name for entry in downloads)
+
+    last_result = app_flask.manager.get_last_result()
+    field_map_path = Path(last_result.get("field_map", ""))
+    assert field_map_path.exists()
+    assert field_map_path == cwd_output
+
+
 def test_cli_only_field_output_tracked(monkeypatch, client):
     stdout_queue: "queue.Queue[str | None]" = queue.Queue()
 
