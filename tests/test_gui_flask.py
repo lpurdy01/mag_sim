@@ -9,6 +9,7 @@ from typing import List
 
 import ezdxf
 import pytest
+from werkzeug.datastructures import MultiDict
 
 pytest.importorskip("flask")
 
@@ -77,6 +78,44 @@ def visualization_ready(tmp_path):
     }
 
     return {"scenario": scenario, "field_map": field_map}
+
+
+def _create_project(client, *, name: str = "fixture") -> str:
+    scenario_payload = json.dumps(
+        {
+            "version": "0.2",
+            "name": name,
+            "domain": {"Lx": 0.2, "Ly": 0.1, "nx": 41, "ny": 41},
+            "materials": [
+                {"name": "air", "mu_r": 1.0},
+                {"name": "steel", "mu_r": 500.0},
+            ],
+            "regions": [
+                {"type": "uniform", "material": "air"},
+            ],
+            "sources": [],
+        }
+    ).encode("utf-8")
+
+    response = client.post(
+        "/upload",
+        data={
+            "geometry_file": (io.BytesIO(scenario_payload), f"{name}.json"),
+            "action": "preview",
+            "solver": "cg",
+            "tol": "1e-6",
+            "max_iters": "10",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+
+    with client.session_transaction() as session:
+        project_id = session.get("project_id")
+
+    assert project_id in app_flask.PROJECTS
+    return project_id  # type: ignore[return-value]
 
 
 def test_upload_starts_simulation(monkeypatch, client):
@@ -250,7 +289,7 @@ def test_run_after_preview_without_new_upload(monkeypatch, client):
     assert str(stored_path) in popen_calls[0]
 
 
-def test_visualization_route_after_run(monkeypatch, client):
+def test_visualization_route_after_run(monkeypatch, tmp_path, client):
     stdout_queue: "queue.Queue[str | None]" = queue.Queue()
 
     class DummyStdout:
@@ -278,6 +317,7 @@ def test_visualization_route_after_run(monkeypatch, client):
         return DummyProcess()
 
     monkeypatch.setattr(app_flask.subprocess, "Popen", fake_popen)
+    monkeypatch.chdir(tmp_path)
 
     scenario_payload = json.dumps(
         {
@@ -322,7 +362,7 @@ def test_visualization_route_after_run(monkeypatch, client):
 
     assert scenario_path is not None
 
-    field_path = scenario_path.parent / "outputs" / "test_field.csv"
+    field_path = Path.cwd() / "outputs" / "test_field.csv"
     field_path.parent.mkdir(parents=True, exist_ok=True)
     field_path.write_text(
         "x,y,Bx,By,Bmag\n"
@@ -475,7 +515,7 @@ def test_visualization_detects_outputs_from_process_cwd(monkeypatch, client, tmp
     assert field_map_path == cwd_output
 
 
-def test_cli_only_field_output_tracked(monkeypatch, client):
+def test_cli_only_field_output_tracked(monkeypatch, tmp_path, client):
     stdout_queue: "queue.Queue[str | None]" = queue.Queue()
 
     class DummyStdout:
@@ -503,6 +543,7 @@ def test_cli_only_field_output_tracked(monkeypatch, client):
         return DummyProcess()
 
     monkeypatch.setattr(app_flask.subprocess, "Popen", fake_popen)
+    monkeypatch.chdir(tmp_path)
 
     scenario_payload = json.dumps(
         {
@@ -541,7 +582,7 @@ def test_cli_only_field_output_tracked(monkeypatch, client):
 
     assert scenario_path is not None
 
-    output_path = scenario_path.parent / "outputs" / "cli_field.csv"
+    output_path = Path.cwd() / "outputs" / "cli_field.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         "x,y,Bx,By,Bmag\n"
@@ -807,3 +848,142 @@ def test_project_export_dxf_generates_archive(client, tmp_path):
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         names = set(archive.namelist())
     assert {"domain.dxf"}.issubset(names)
+
+
+def test_update_materials_replaces_palette(client):
+    project_id = _create_project(client, name="materials_case")
+
+    response = client.post(
+        "/workspace/materials",
+        data={
+            "project_id": project_id,
+            "materials-count": "2",
+            "material-0-name": "air",
+            "material-0-mu": "1.0",
+            "material-1-name": "iron",
+            "material-1-mu": "1500",
+            "material-1-sigma": "6.2e6",
+        },
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    assert response.status_code == 302
+    project = app_flask.PROJECTS[project_id]
+    palette = project["spec"].get("materials")
+    assert isinstance(palette, list)
+    assert palette[1]["name"] == "iron"
+    assert palette[1]["sigma"] == pytest.approx(6.2e6)
+    scenario_path = project["scenario_path"]
+    disk_spec = json.loads(Path(scenario_path).read_text())
+    assert disk_spec["materials"][1]["mu_r"] == 1500
+
+
+def test_update_windings_generates_sources_from_dxf_layers(client, tmp_path):
+    project_id = _create_project(client, name="windings_case")
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (0.01, 0), (0.01, 0.01), (0, 0.01), (0, 0)], dxfattribs={"layer": "coil_a"})
+    msp.add_lwpolyline([(0.02, 0), (0.03, 0), (0.03, 0.01), (0.02, 0.01), (0.02, 0)], dxfattribs={"layer": "coil_b"})
+    dxf_path = tmp_path / "windings_fixture.dxf"
+    doc.saveas(dxf_path)
+
+    with dxf_path.open("rb") as handle:
+        upload_response = client.post(
+            "/dxf/upload",
+            data={"project_id": project_id, "dxf_files": [(handle, dxf_path.name)]},
+            content_type="multipart/form-data",
+        )
+
+    assert upload_response.status_code == 302
+    project = app_flask.PROJECTS[project_id]
+    entry_id, entry = next(iter(project["dxf_files"].items()))
+
+    layer_form = {"project_id": project_id}
+    for layer in entry["layers"]:
+        layer_form[f"layer-{layer['form_id']}-selected"] = "on"
+        layer_form[f"layer-{layer['form_id']}-category"] = "wire"
+
+    layer_response = client.post(
+        f"/dxf/{entry_id}/layers",
+        data=layer_form,
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    assert layer_response.status_code == 302
+    layer_token = f"{entry_id}::{entry['layers'][0]['name']}"
+    form_data = MultiDict(
+        [
+            ("project_id", project_id),
+            ("winding-count", "1"),
+            ("winding-0-name", "Phase A"),
+            ("winding-0-phase", "A"),
+            ("winding-0-turns", "120"),
+            ("winding-0-fill", "0.75"),
+            ("winding-0-orientation", "1"),
+            ("winding-0-layers", layer_token),
+        ]
+    )
+
+    response = client.post(
+        "/workspace/windings",
+        data=form_data,
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    assert response.status_code == 302
+    project = app_flask.PROJECTS[project_id]
+    windings = project["windings"]
+    assert len(windings) == 1
+    assert windings[0]["phase"] == "A"
+    sources = project["spec"].get("sources")
+    assert sources and sources[0]["type"] == "current_region"
+
+
+def test_update_timeline_balanced_mode_updates_spec(client):
+    project_id = _create_project(client, name="timeline_case")
+    response = client.post(
+        "/workspace/timeline",
+        data={
+            "project_id": project_id,
+            "timeline-mode": "balanced",
+            "timeline-amplitude": "25",
+            "timeline-frequency": "60",
+            "timeline-steps": "12",
+            "timeline-cycles": "2",
+            "timeline-phase-offset": "0",
+            "timeline-sequence": "ABC",
+            "timeline-dc-offset": "1.5",
+        },
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    assert response.status_code == 302
+    project = app_flask.PROJECTS[project_id]
+    spec = project["spec"]
+    timeline = spec.get("timeline")
+    assert isinstance(timeline, list)
+    assert len(timeline) == 24
+    assert "phase_currents" in timeline[0]
+    transient = spec.get("transient")
+    assert transient["n_steps"] == len(timeline)
+    assert project["timeline_mode"] == "balanced"
+
+
+def test_download_serves_staged_result_file(client, tmp_path):
+    results_dir = Path(app_flask.app.config["RESULTS_FOLDER"])
+    external = tmp_path / "field.csv"
+    external.parent.mkdir(parents=True, exist_ok=True)
+    external.write_text("x,y\n0,0\n", encoding="utf-8")
+
+    staged = app_flask._stage_result_file(external, results_dir)
+    assert staged.exists()
+
+    response = client.get(
+        "/download",
+        query_string={"category": "result", "filename": staged.name},
+    )
+
+    assert response.status_code == 200
+    payload = b"".join(response.response)
+    assert b"x,y" in payload

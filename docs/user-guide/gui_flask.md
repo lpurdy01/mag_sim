@@ -36,36 +36,39 @@ downloads the current JSON, **Export DXF set…** produces layered DXFs for the
 current scenario), while the sidebar links jump to the key panels without
 leaving the page.
 
-Looking for a guided example? Follow the
-[Induction motor GUI workflow](gui-workflows/induction-demo.md) to import the
-bundled DXF set, run the transient spin-up, and inspect the field-map gallery.
+Looking for a guided example? Follow the hosted walkthroughs:
 
-1. Visit the **CAD workspace** to import DXF files when you want to assemble or
-   revise geometry. Each upload is summarised by layer; select the layers to
-   include, assign a category (material, magnet, wire, etc.), and click **Update
-   mapping** to refresh the combined preview. The preview colours match the
-   chosen categories so you can confirm alignments before committing to a
-   scenario JSON.
-2. Use the **Simulation setup** panel to upload (or re-upload) a scenario JSON
-   when you are ready to run the solver. The form preserves solver defaults so
-   you only need to change the file when switching projects. Optional solver
-   arguments—`cg`/`sor`, tolerance, iteration limit, and `--outputs`—map directly
-   onto the `motor_sim` CLI.
-3. Choose **Preview geometry** to render the domain outline without solving.
-   Previews stay cached with the project and coexist with the DXF preview so you
-   can compare imported geometry with the scenario domain.
-4. Click **Run simulation** to launch `motor_sim`. The run button disables
-   itself, the **Stop** button becomes active, and the **Progress**/**Solver log**
-   cards appear. Logs stream via server-sent events, avoiding polling.
-5. Monitor the run: percentage tokens update the progress bar, log entries append
-   live, and any `field_map` outputs mentioned in stdout trigger refreshed images
-   in the **Results visualisation** panel. Intermediate renders replace the
-   preview automatically.
-6. Once the solver exits, the **Downloads** panel lists the uploaded scenario,
-   the log file, the combined DXF exports (when requested), and any field-map
-   artefacts produced by the solver. The visualisation panel shows the final
-   render and stays wired to the plotting controls so you can iterate on overlays
-   without rerunning the simulation.
+- [Induction motor GUI workflow](https://lpurdy01.github.io/mag_sim/user-guide/gui-workflows/induction-demo/)
+  – multi-file DXF import and transient animation.
+- [Iron ring GUI workflow](https://lpurdy01.github.io/mag_sim/user-guide/gui-workflows/iron-ring-demo/)
+  – mapping custom DXF layers to materials, windings, and timelines.
+
+Work through the panels in order:
+
+1. **CAD workspace:** Import DXF files, mark each layer with a category (domain,
+   material, magnet, conductor), and update the combined preview. Upload domain
+   references first, then materials/magnets, and finally wire layers. Each file
+   can contain multiple categories; the form lets you toggle inclusion per
+   layer.
+2. **Materials & regions:** Define the permeability palette that the scenario’s
+   `materials` block uses. The table feeds the DXF layer drop-downs so your CAD
+   mapping stays in sync with the JSON.
+3. **Windings & conductor mapping:** Create one row per phase/coil group,
+   configure turns/fill/orientation, and assign the conductor layers that were
+   tagged in the CAD workspace. Saving the form rasterises the DXF geometry into
+   `current_region` entries and stores the winding metadata in the project.
+4. **Timeline designer:** Generate balanced three-phase drive patterns or paste
+   manual timeline JSON. The GUI updates both the `timeline` array and the
+   `transient` parameters so subsequent CLI runs remain consistent.
+5. **Geometry preview:** Render the scenario’s domain/magnets without solving to
+   confirm the JSON matches the CAD stack-up.
+6. **Simulation setup:** Upload or reuse the scenario JSON, tweak solver
+   settings (`cg`/`sor`, tolerance, iteration cap, `--outputs`), and launch the
+   solve. Use the alert inside the card as a reminder that the sections above
+   control the graphical scenario composer.
+7. **Progress, results, and downloads:** Watch the SSE-driven progress bar and
+   log, review the live field-map gallery, and download the scenario/log/DXF
+   exports/field-map CSVs that the run produced.
 
 Only one solve is allowed at a time; the interface reports an error if you try
 to launch a second run before the first finishes. Use **Stop** to request
@@ -102,6 +105,26 @@ During a simulation the GUI also builds a frame gallery from each reported
 step frame-by-frame, or drag the slider to inspect a single moment. The caption
 updates with the frame index, making it easy to cross-reference the solver log
 without leaving the page.
+
+### Materials, windings, and timeline composer
+
+The three new stages share the same persistence model:
+
+- Saving the **Materials** form rewrites the `materials` array in the current
+  project JSON and immediately feeds those entries back into the DXF layer
+  pickers.
+- The **Windings** form stores a project-local winding list and generates
+  `current_region` sources by rasterising the selected DXF layers. Every selected
+  layer can be reused across multiple windings (the UI simply records the
+  token). Orientation switches flip the sign of the generated `orientation`
+  field.
+- The **Timeline** designer stores both the generated frames and the inputs used
+  to create them so you can revisit the balanced parameters or edit the raw JSON
+  later.
+
+Whenever you change any of these composer stages, use **File → Save scenario…**
+to export the updated JSON, or simply press **Run simulation** to drive
+`motor_sim` with the newly generated spec.
 
 ## Known limitations
 

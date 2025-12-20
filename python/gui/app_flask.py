@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import math
 import queue
 import re
 import shutil
@@ -29,6 +31,7 @@ from werkzeug.utils import secure_filename
 
 from python.gui.dxf_utils import (
     DxfError,
+    DxfPrimitive,
     export_scenario_to_dxf,
     load_primitives,
     render_preview,
@@ -50,6 +53,10 @@ DEFAULT_VECTOR_MODE = "linear"
 DEFAULT_COLOR_SCALE = "linear"
 DEFAULT_QUIVER_SKIP = 4
 DEFAULT_STREAMLINES = False
+DEFAULT_WINDING_TURNS = 50.0
+DEFAULT_FILL_FRACTION = 0.55
+DEFAULT_PHASE_SEQUENCE = ["A", "B", "C"]
+MIN_TIMELINE_STEPS = 2
 DXF_CATEGORY_OPTIONS = [
     ("domain", "Domain boundary"),
     ("material", "Material region"),
@@ -85,6 +92,24 @@ class SimulationManager:
     @property
     def queue(self) -> "queue.Queue[Dict[str, Any]]":
         return self._queue
+
+    def get_scenario_path(self) -> Optional[Path]:
+        with self._lock:
+            scenario = self._metadata.get("scenario_path")
+            if isinstance(scenario, Path):
+                return scenario
+            if isinstance(scenario, str) and scenario:
+                return Path(scenario)
+            return None
+
+    def get_latest_field_map(self) -> Optional[Path]:
+        with self._lock:
+            latest = self._metadata.get("latest_field_map")
+            if isinstance(latest, Path):
+                return latest
+            if isinstance(latest, str) and latest:
+                return Path(latest)
+            return None
 
     def get_last_result(self) -> Dict[str, Any]:
         with self._lock:
@@ -391,11 +416,12 @@ class SimulationManager:
             path = Path(extra.get("path"))
             if not path.exists():
                 continue
+            staged_path = _stage_result_file(path, Path(self._app.config["RESULTS_FOLDER"]))
             downloads.append(
                 {
                     "category": extra.get("category", "result"),
-                    "filename": path.name,
-                    "label": extra.get("label", path.name),
+                    "filename": staged_path.name,
+                    "label": extra.get("label", staged_path.name),
                 }
             )
 
@@ -558,6 +584,23 @@ def _build_form_state(overrides: Optional[Dict[str, str]] = None) -> Dict[str, s
     return state
 
 
+def _default_windings() -> List[Dict[str, Any]]:
+    windings: List[Dict[str, Any]] = []
+    for phase in DEFAULT_PHASE_SEQUENCE:
+        windings.append(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "name": f"Phase {phase}",
+                "phase": phase,
+                "orientation": 1.0,
+                "turns": DEFAULT_WINDING_TURNS,
+                "fill_fraction": DEFAULT_FILL_FRACTION,
+                "layers": [],
+            }
+        )
+    return windings
+
+
 def _register_project(
     scenario_path: Path, spec: Dict[str, Any], original_name: str
 ) -> Tuple[str, Dict[str, Any]]:
@@ -576,6 +619,11 @@ def _register_project(
         "dxf_preview_path": None,
         "dxf_preview_version": None,
         "dxf_notice": None,
+        "materials_notice": None,
+        "windings": _default_windings(),
+        "timeline_mode": "balanced",
+        "timeline_config": None,
+        "timeline_frames": 0,
     }
     return project_id, PROJECTS[project_id]
 
@@ -596,6 +644,11 @@ def _register_blank_project() -> Tuple[str, Dict[str, Any]]:
         "dxf_preview_path": None,
         "dxf_preview_version": None,
         "dxf_notice": None,
+        "materials_notice": None,
+        "windings": _default_windings(),
+        "timeline_mode": "balanced",
+        "timeline_config": None,
+        "timeline_frames": 0,
     }
     return project_id, PROJECTS[project_id]
 
@@ -725,6 +778,11 @@ def _index_context(
     else:
         form_state = _build_form_state(form_state)
 
+    workflow_docs = {
+        "induction": "https://lpurdy01.github.io/mag_sim/user-guide/gui-workflows/induction-demo/",
+        "iron_ring": "https://lpurdy01.github.io/mag_sim/user-guide/gui-workflows/iron-ring-demo/",
+    }
+
     preview_source = preview_url
     preview_token = None
     notice = preview_notice
@@ -795,6 +853,12 @@ def _index_context(
     dxf_preview_token = None
     dxf_notice = None
     has_dxf_selection = False
+    materials_palette: List[Dict[str, Any]] = []
+    wire_layer_options: List[Dict[str, str]] = []
+    windings_form: List[Dict[str, Any]] = []
+    timeline_summary: Optional[Dict[str, Any]] = None
+    timeline_config = None
+    timeline_mode = "balanced"
 
     if project and active_id:
         scenario_path_value = project.get("scenario_path")
@@ -851,6 +915,35 @@ def _index_context(
             dxf_preview_token = project.get("dxf_preview_version")
         dxf_notice = project.get("dxf_notice")
 
+        spec = project.get("spec") if isinstance(project.get("spec"), dict) else {}
+        if isinstance(spec, dict):
+            materials_palette = copy.deepcopy(spec.get("materials") or [])
+            if not materials_palette:
+                materials_palette = [
+                    {"name": "air", "mu_r": 1.0},
+                    {"name": "steel", "mu_r": 1000.0},
+                ]
+            timeline_data = spec.get("timeline")
+            if isinstance(timeline_data, list) and timeline_data:
+                start_t = float(timeline_data[0].get("t", 0.0))
+                end_t = float(timeline_data[-1].get("t", start_t))
+                timeline_summary = {
+                    "frames": len(timeline_data),
+                    "duration": max(0.0, end_t - start_t),
+                }
+
+        windings_value = project.get("windings")
+        if not isinstance(windings_value, list):
+            windings_value = _default_windings()
+            project["windings"] = windings_value
+        windings_form = copy.deepcopy(windings_value)
+        wire_layer_options = _wire_layer_options(project)
+        timeline_config = project.get("timeline_config")
+        timeline_mode = project.get("timeline_mode", "balanced")
+        if project.get("timeline_frames"):
+            timeline_summary = timeline_summary or {}
+            timeline_summary.setdefault("frames", project.get("timeline_frames"))
+
     return {
         "running": manager.is_running,
         "error": error,
@@ -880,6 +973,15 @@ def _index_context(
         "dxf_notice": dxf_notice,
         "dxf_categories": DXF_CATEGORY_OPTIONS,
         "has_dxf_selection": has_dxf_selection,
+        "materials_palette": materials_palette,
+        "wire_layer_options": wire_layer_options,
+        "windings_form": windings_form,
+        "timeline_summary": timeline_summary,
+        "timeline_config": timeline_config,
+        "timeline_mode": timeline_mode,
+        "workflow_docs": workflow_docs,
+        "DEFAULT_WINDING_TURNS": DEFAULT_WINDING_TURNS,
+        "DEFAULT_FILL_FRACTION": DEFAULT_FILL_FRACTION,
     }
 
 
@@ -972,6 +1074,433 @@ def _collect_cli_field_outputs(outputs_arg: str) -> List[Dict[str, Any]]:
         outputs.append({"id": identifier, "path": raw_path})
 
     return outputs
+
+
+def _wire_layer_options(project: Dict[str, Any]) -> List[Dict[str, str]]:
+    options: List[Dict[str, str]] = []
+    dxf_store = project.get("dxf_files", {})
+    if not isinstance(dxf_store, dict):
+        return options
+
+    for dxf_id, entry in dxf_store.items():
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("path")
+        if not isinstance(path, Path) or not path.exists():
+            continue
+        display_name = entry.get("original_name") or entry.get("name") or dxf_id
+        for layer in entry.get("layers", []):
+            if not isinstance(layer, dict):
+                continue
+            if not layer.get("selected"):
+                continue
+            category = (layer.get("category") or DXF_DEFAULT_CATEGORY).lower()
+            if category != "wire":
+                continue
+            layer_name = layer.get("name")
+            if not layer_name:
+                continue
+            options.append(
+                {
+                    "value": f"{dxf_id}::{layer_name}",
+                    "label": f"{display_name} • {layer_name}",
+                    "file_id": dxf_id,
+                    "layer": layer_name,
+                }
+            )
+
+    options.sort(key=lambda item: item["label"].lower())
+    return options
+
+
+def _resolve_layer_reference(project: Dict[str, Any], token: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    if "::" not in token:
+        return None, None
+    dxf_id, layer_name = token.split("::", 1)
+    dxf_store = project.get("dxf_files", {})
+    if not isinstance(dxf_store, dict):
+        return None, None
+    entry = dxf_store.get(dxf_id)
+    if not isinstance(entry, dict):
+        return None, None
+    for layer in entry.get("layers", []):
+        if not isinstance(layer, dict):
+            continue
+        if layer.get("name") == layer_name:
+            return entry, layer
+    return entry, None
+
+
+def _primitive_vertices(primitive: DxfPrimitive) -> List[List[float]]:
+    if primitive.kind == "polyline" and primitive.points:
+        vertices = [[float(x), float(y)] for x, y in primitive.points]
+        if vertices and vertices[0] != vertices[-1]:
+            vertices.append(vertices[0])
+        return vertices
+    if (
+        primitive.kind == "circle"
+        and primitive.center is not None
+        and primitive.radius is not None
+    ):
+        cx, cy = primitive.center
+        r = primitive.radius
+        segments = 48
+        vertices: List[List[float]] = []
+        for idx in range(segments):
+            angle = (2 * math.pi * idx) / segments
+            vertices.append([cx + r * math.cos(angle), cy + r * math.sin(angle)])
+        vertices.append(vertices[0])
+        return vertices
+    return []
+
+
+def _slugify_identifier(value: str) -> str:
+    token = re.sub(r"[^0-9a-zA-Z]+", "_", value).strip("_")
+    return token or "layer"
+
+
+def _build_sources_from_windings(project: Dict[str, Any]) -> List[Dict[str, Any]]:
+    windings = project.get("windings") or []
+    if not windings:
+        spec = project.get("spec")
+        if isinstance(spec, dict):
+            return list(spec.get("sources", []))
+        return []
+
+    cache: Dict[Tuple[str, str], List[DxfPrimitive]] = {}
+    sources: List[Dict[str, Any]] = []
+    for winding in windings:
+        if not isinstance(winding, dict):
+            continue
+        layers = winding.get("layers") or []
+        if not layers:
+            continue
+        turns = float(winding.get("turns") or DEFAULT_WINDING_TURNS)
+        fill_fraction = float(winding.get("fill_fraction") or DEFAULT_FILL_FRACTION)
+        orientation = float(winding.get("orientation") or 1.0)
+        phase = (winding.get("phase") or winding.get("name") or "P").strip()
+        name = winding.get("name") or phase or "Winding"
+
+        for token in layers:
+            entry, layer_info = _resolve_layer_reference(project, token)
+            if not entry or not layer_info:
+                continue
+            path = entry.get("path")
+            if not isinstance(path, Path) or not path.exists():
+                continue
+            layer_name = layer_info.get("name")
+            if not layer_name:
+                continue
+            cache_key = (entry.get("id") or token, layer_name)
+            if cache_key not in cache:
+                try:
+                    cache[cache_key] = load_primitives(
+                        path,
+                        [layer_name],
+                        {layer_name: layer_info.get("category")},
+                    )
+                except DxfError as exc:
+                    raise exc
+
+            primitives = cache.get(cache_key) or []
+            for idx, primitive in enumerate(primitives):
+                vertices = _primitive_vertices(primitive)
+                if not vertices:
+                    continue
+                slug = _slugify_identifier(layer_name)
+                source_id = f"{_slugify_identifier(phase)}_{slug}_{idx}"
+                sources.append(
+                    {
+                        "type": "current_region",
+                        "id": source_id,
+                        "label": f"{name} – {layer_name} #{idx + 1}",
+                        "phase": phase or name,
+                        "orientation": orientation,
+                        "vertices": vertices,
+                        "I": 0.0,
+                        "turns": turns,
+                        "fill_fraction": fill_fraction,
+                    }
+                )
+
+    return sources
+
+
+def _persist_project_spec(project: Dict[str, Any]) -> None:
+    spec = project.get("spec")
+    if not isinstance(spec, dict):
+        return
+    scenario_path = project.get("scenario_path")
+    if isinstance(scenario_path, Path):
+        scenario_path.parent.mkdir(parents=True, exist_ok=True)
+        scenario_path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+        project["scenario_name"] = spec.get("name") or scenario_path.stem
+
+
+def _stage_result_file(path: Path, results_dir: Path) -> Path:
+    results_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.exists() and path.parent.resolve() == results_dir.resolve():
+            return path
+    except FileNotFoundError:
+        pass
+
+    target = results_dir / path.name
+    counter = 1
+    while target.exists():
+        try:
+            if target.resolve() == path.resolve():
+                return target
+        except FileNotFoundError:
+            break
+        target = results_dir / f"{path.stem}_{counter}{path.suffix}"
+        counter += 1
+
+    if path.exists():
+        shutil.copy2(path, target)
+    return target
+
+
+def _generate_balanced_timeline(
+    *,
+    amplitude: float,
+    frequency_hz: float,
+    steps_per_cycle: int,
+    cycles: int,
+    phase_offset_deg: float,
+    sequence: str,
+    dc_offset: float,
+) -> Tuple[List[Dict[str, Any]], float]:
+    if frequency_hz <= 0:
+        raise ValueError("Frequency must be positive for balanced generation.")
+    if steps_per_cycle < MIN_TIMELINE_STEPS or cycles < 1:
+        raise ValueError("Increase steps/cycles to generate a usable timeline.")
+
+    total_steps = steps_per_cycle * cycles
+    dt = 1.0 / frequency_hz / steps_per_cycle
+    frames: List[Dict[str, Any]] = []
+    base_offset = math.radians(phase_offset_deg)
+    seq = [char.strip() for char in sequence if char.strip()]
+    if not seq:
+        seq = DEFAULT_PHASE_SEQUENCE
+
+    for step in range(total_steps):
+        t = step * dt
+        angle = (2 * math.pi * step) / steps_per_cycle
+        phase_currents: Dict[str, float] = {}
+        for idx, phase in enumerate(seq):
+            phase_angle = angle + base_offset + idx * (2 * math.pi / 3)
+            phase_currents[phase] = amplitude * math.sin(phase_angle) + dc_offset
+        frames.append({"t": t, "phase_currents": phase_currents})
+
+    return frames, dt
+
+
+def _parse_manual_timeline(raw: str) -> List[Dict[str, Any]]:
+    data = json.loads(raw)
+    if not isinstance(data, list):
+        raise ValueError("Manual timeline must be a list of frames.")
+    frames: List[Dict[str, Any]] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            raise ValueError("Each timeline entry must be an object.")
+        t = entry.get("t")
+        if not isinstance(t, (int, float)):
+            raise ValueError("Timeline entries require numeric 't' values.")
+        currents = entry.get("phase_currents")
+        if not isinstance(currents, dict):
+            raise ValueError("Timeline entries require 'phase_currents'.")
+        phase_currents: Dict[str, float] = {}
+        for key, value in currents.items():
+            if not isinstance(value, (int, float)):
+                raise ValueError("Phase currents must be numeric.")
+            phase_currents[key] = float(value)
+        frames.append({"t": float(t), "phase_currents": phase_currents})
+    frames.sort(key=lambda item: item.get("t", 0.0))
+    return frames
+
+
+@app.post("/workspace/materials")
+def update_materials() -> Response:
+    project_id, project = _current_project()
+    if project is None:
+        return redirect(url_for("index", error="Load a scenario to edit materials."))
+
+    spec = project.get("spec")
+    if not isinstance(spec, dict):
+        return redirect(url_for("index", error="Scenario metadata is unavailable."))
+
+    try:
+        count = int(request.form.get("materials-count", "0") or 0)
+    except ValueError:
+        count = 0
+
+    materials: List[Dict[str, Any]] = []
+    for idx in range(max(0, count)):
+        prefix = f"material-{idx}"
+        name = (request.form.get(f"{prefix}-name") or "").strip()
+        if not name:
+            continue
+        try:
+            mu_r = float(request.form.get(f"{prefix}-mu", "1"))
+        except ValueError:
+            return redirect(url_for("index", error="Relative permeability must be numeric."))
+        material_entry: Dict[str, Any] = {"name": name, "mu_r": mu_r}
+        sigma_value = request.form.get(f"{prefix}-sigma")
+        if sigma_value:
+            try:
+                material_entry["sigma"] = float(sigma_value)
+            except ValueError:
+                return redirect(url_for("index", error="Conductivity must be numeric."))
+        materials.append(material_entry)
+
+    if not materials:
+        return redirect(url_for("index", error="Add at least one material before saving."))
+
+    spec["materials"] = materials
+    project["spec"] = spec
+    _persist_project_spec(project)
+    return redirect(url_for("index", notice="Materials updated."))
+
+
+@app.post("/workspace/windings")
+def update_windings() -> Response:
+    project_id, project = _current_project()
+    if project is None:
+        return redirect(url_for("index", error="Load a project to configure windings."))
+
+    spec = project.get("spec")
+    if not isinstance(spec, dict):
+        return redirect(url_for("index", error="Upload a scenario before assigning windings."))
+
+    scenario_path = project.get("scenario_path")
+    if not isinstance(scenario_path, Path):
+        return redirect(url_for("index", error="Upload a scenario before assigning windings."))
+
+    try:
+        count = int(request.form.get("winding-count", "0") or 0)
+    except ValueError:
+        count = 0
+
+    windings: List[Dict[str, Any]] = []
+    for idx in range(max(0, count)):
+        prefix = f"winding-{idx}"
+        name = (request.form.get(f"{prefix}-name") or "").strip()
+        phase = (request.form.get(f"{prefix}-phase") or name or f"W{idx + 1}").strip()
+        layers = request.form.getlist(f"{prefix}-layers")
+        if not name and not layers:
+            continue
+        try:
+            turns = float(request.form.get(f"{prefix}-turns", DEFAULT_WINDING_TURNS))
+        except ValueError:
+            return redirect(url_for("index", error="Turns must be numeric."))
+        try:
+            fill_fraction = float(request.form.get(f"{prefix}-fill", DEFAULT_FILL_FRACTION))
+        except ValueError:
+            return redirect(url_for("index", error="Fill fraction must be numeric."))
+        orientation = request.form.get(f"{prefix}-orientation", "1")
+        orientation_value = -1.0 if orientation == "-1" else 1.0
+        windings.append(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "name": name or phase or f"Winding {idx + 1}",
+                "phase": phase or name or f"W{idx + 1}",
+                "layers": layers,
+                "turns": turns,
+                "fill_fraction": fill_fraction,
+                "orientation": orientation_value,
+            }
+        )
+
+    if not windings:
+        windings = _default_windings()
+
+    project["windings"] = windings
+
+    try:
+        sources = _build_sources_from_windings(project)
+    except DxfError as exc:
+        return redirect(url_for("index", error=str(exc)))
+
+    if sources:
+        spec["sources"] = sources
+        project["spec"] = spec
+        _persist_project_spec(project)
+
+    return redirect(url_for("index", notice="Windings updated."))
+
+
+@app.post("/workspace/timeline")
+def update_timeline() -> Response:
+    project_id, project = _current_project()
+    if project is None:
+        return redirect(url_for("index", error="Load a scenario before editing the timeline."))
+
+    spec = project.get("spec")
+    if not isinstance(spec, dict):
+        return redirect(url_for("index", error="Scenario metadata is unavailable."))
+
+    mode = (request.form.get("timeline-mode") or "balanced").lower()
+    frames: List[Dict[str, Any]] = []
+    dt = None
+
+    if mode == "balanced":
+        try:
+            amplitude = float(request.form.get("timeline-amplitude", "1"))
+            frequency = float(request.form.get("timeline-frequency", "50"))
+            steps = int(request.form.get("timeline-steps", "12"))
+            cycles = int(request.form.get("timeline-cycles", "1"))
+            phase_offset = float(request.form.get("timeline-phase-offset", "0"))
+            dc_offset = float(request.form.get("timeline-dc-offset", "0"))
+        except ValueError:
+            return redirect(url_for("index", error="Timeline parameters must be numeric."))
+        sequence = request.form.get("timeline-sequence", "ABC")
+        try:
+            frames, dt = _generate_balanced_timeline(
+                amplitude=amplitude,
+                frequency_hz=frequency,
+                steps_per_cycle=steps,
+                cycles=cycles,
+                phase_offset_deg=phase_offset,
+                sequence=sequence,
+                dc_offset=dc_offset,
+            )
+        except ValueError as exc:
+            return redirect(url_for("index", error=str(exc)))
+        project["timeline_config"] = {
+            "amplitude": amplitude,
+            "frequency": frequency,
+            "steps": steps,
+            "cycles": cycles,
+            "phase_offset": phase_offset,
+            "sequence": sequence,
+            "dc_offset": dc_offset,
+        }
+    elif mode == "manual":
+        raw = request.form.get("timeline-json", "").strip()
+        if not raw:
+            return redirect(url_for("index", error="Paste timeline JSON before saving."))
+        try:
+            frames = _parse_manual_timeline(raw)
+        except (ValueError, json.JSONDecodeError) as exc:
+            return redirect(url_for("index", error=f"Invalid timeline JSON: {exc}"))
+        project["timeline_config"] = {"raw": raw}
+    else:
+        return redirect(url_for("index", error="Unsupported timeline mode."))
+
+    if not frames:
+        return redirect(url_for("index", error="Timeline did not produce any frames."))
+
+    spec["timeline"] = frames
+    if dt is not None:
+        transient = spec.setdefault("transient", {})
+        transient["dt"] = dt
+        transient["n_steps"] = len(frames)
+    project["timeline_frames"] = len(frames)
+    project["timeline_mode"] = mode
+    project["spec"] = spec
+    _persist_project_spec(project)
+    return redirect(url_for("index", notice="Timeline updated."))
 
 
 @app.post("/dxf/upload")
@@ -1417,9 +1946,19 @@ def result_image(filename: str) -> Response:
 @app.get("/visualization.png")
 def visualization_image() -> Response:
     last_result = manager.get_last_result()
-    scenario_path = Path(last_result.get("scenario_path", ""))
-    field_map_path = Path(last_result.get("field_map", ""))
-    if not scenario_path.exists() or not field_map_path.exists():
+    scenario_value = last_result.get("scenario_path")
+    scenario_path = Path(scenario_value) if scenario_value else None
+    if not scenario_path or not scenario_path.exists():
+        scenario_path = manager.get_scenario_path()
+
+    field_value = last_result.get("field_map")
+    field_map_path = Path(field_value) if field_value else None
+    if not field_map_path or not field_map_path.exists():
+        fallback_field = manager.get_latest_field_map()
+        if fallback_field and fallback_field.exists():
+            field_map_path = fallback_field
+
+    if not scenario_path or not scenario_path.exists() or not field_map_path or not field_map_path.exists():
         abort(404)
 
     vector_mode = request.args.get("vector", DEFAULT_VECTOR_MODE)

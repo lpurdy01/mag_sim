@@ -69,6 +69,20 @@
           </div>
           <span class="badge rounded-pill text-bg-info">DXF tooling</span>
         </div>
+        <div class="alert alert-info" role="alert">
+          <div class="fw-semibold mb-1">DXF quickstart</div>
+          <ul class="mb-0 small">
+            <li>Upload domain and structural references first, then material regions, magnets, and finally the wire layers.</li>
+            <li>Use multiple files when CAD exports separate stators, rotors, or wiring harnesses&mdash;each file can be mapped independently.</li>
+            <li>
+              Need a walkthrough? Follow the
+              <a href="{{ workflow_docs.induction }}" target="_blank" rel="noopener">induction motor</a>
+              or
+              <a href="{{ workflow_docs.iron_ring }}" target="_blank" rel="noopener">iron ring</a>
+              workflows.
+            </li>
+          </ul>
+        </div>
         <form method="post" action="{{ url_for('upload_dxf_files') }}" enctype="multipart/form-data" class="mb-4">
           {% if project %}
             <input type="hidden" name="project_id" value="{{ project.id }}">
@@ -181,6 +195,235 @@
     </div>
   </section>
 
+  <section id="materials-stage" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Materials &amp; regions</h5>
+            <p class="text-muted mb-0">Define the permeability palette that powers the scenario.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Scenario editor</span>
+        </div>
+        <p class="text-muted small">Each entry maps to a <code>materials</code> block inside the scenario JSON. Use descriptive names (air, rotor_steel, PM) so layer assignments and region scripts can reference them clearly.</p>
+        <div class="alert alert-info small" role="alert">
+          <div class="fw-semibold">How the palette is used</div>
+          <ul class="mb-0 ps-3">
+            <li>The first entry typically stays as air so uniform regions always resolve.</li>
+            <li>Additional entries feed the DXF layer categories &mdash; when you label a DXF layer as a <em>Material region</em>, the drop-down lists the names you define here.</li>
+            <li>Update and save the palette any time you change permeability data; the scenario JSON is rewritten automatically.</li>
+          </ul>
+        </div>
+        {% if not project_has_scenario %}
+          <div class="alert alert-info" role="alert">Upload or create a scenario before editing materials.</div>
+        {% else %}
+          <form id="materials-form" method="post" action="{{ url_for('update_materials') }}" class="mt-3">
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+            <input type="hidden" id="materials-count" name="materials-count" value="{{ materials_palette | length }}">
+            <div id="materials-rows" class="row g-3">
+              {% for material in materials_palette %}
+                <div class="col-lg-6 material-row" data-index="{{ loop.index0 }}">
+                  <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <label class="form-label mb-0">Name</label>
+                      <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-material>Remove</button>
+                    </div>
+                    <input class="form-control form-control-sm mb-3" type="text" name="material-{{ loop.index0 }}-name" value="{{ material.name }}" required>
+                    <div class="row g-2">
+                      <div class="col-sm-6">
+                        <label class="form-label small" for="material-{{ loop.index0 }}-mu">Relative permeability</label>
+                        <input class="form-control form-control-sm" type="number" step="any" name="material-{{ loop.index0 }}-mu" id="material-{{ loop.index0 }}-mu" value="{{ material.mu_r }}" required>
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small" for="material-{{ loop.index0 }}-sigma">Conductivity (S/m)</label>
+                        <input class="form-control form-control-sm" type="number" step="any" name="material-{{ loop.index0 }}-sigma" id="material-{{ loop.index0 }}-sigma" value="{{ material.sigma if material.sigma is defined }}" placeholder="Optional">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="add-material-row">Add material</button>
+              <button class="btn btn-primary btn-sm" type="submit">Save materials</button>
+            </div>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section id="windings-stage" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Windings &amp; conductor mapping</h5>
+            <p class="text-muted mb-0">Group DXF wire layers into named phases and automatically generate <code>current_region</code> sources.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Sources</span>
+        </div>
+        <p class="text-muted small">Assign the conductor layers exported from CAD to logical windings (Phase A, B, C, excitation coils, etc.). Each selected layer is rasterised into a <code>current_region</code> with the turn count and fill fraction you specify.</p>
+        <div class="alert alert-info small" role="alert">
+          <div class="fw-semibold">Winding layout tips</div>
+          <ul class="mb-0 ps-3">
+            <li>Mark DXF layers that contain copper as <strong>Conductor path</strong> in the CAD workspace. Only those layers appear in the multi-selects below.</li>
+            <li>Create one row per phase or coil group (e.g. Phase A, Phase B, Excitation). Use the orientation pickers to flip into/out of the page.</li>
+            <li>Hold Ctrl/Cmd to assign multiple layers to the same winding when you split coils across uploads.</li>
+            <li>Click <em>Apply windings</em> to rewrite the scenario's <code>sources</code> array; the File menu &ldquo;Save scenario…&rdquo; action exports the updated JSON.</li>
+          </ul>
+        </div>
+        {% if not project_has_scenario %}
+          <div class="alert alert-info" role="alert">Upload a scenario before configuring windings.</div>
+        {% elif not wire_layer_options %}
+          <div class="alert alert-warning" role="alert">Mark DXF layers as <strong>Conductor path</strong> in the CAD workspace to unlock the winding builder.</div>
+        {% else %}
+          <form id="windings-form" method="post" action="{{ url_for('update_windings') }}" class="mt-3">
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+            <input type="hidden" id="winding-count" name="winding-count" value="{{ windings_form | length }}">
+            <div id="windings-rows">
+              {% for winding in windings_form %}
+                <div class="border rounded p-3 mb-3 winding-row" data-index="{{ loop.index0 }}">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <strong>{{ winding.name or ('Winding ' ~ (loop.index0 + 1)) }}</strong>
+                    <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-winding>Remove</button>
+                  </div>
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-name">Display name</label>
+                      <input class="form-control form-control-sm" type="text" id="winding-{{ loop.index0 }}-name" name="winding-{{ loop.index0 }}-name" value="{{ winding.name }}" placeholder="Phase A">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-phase">Phase ID</label>
+                      <input class="form-control form-control-sm" type="text" id="winding-{{ loop.index0 }}-phase" name="winding-{{ loop.index0 }}-phase" value="{{ winding.phase }}" placeholder="A">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-orientation">Orientation</label>
+                      <select class="form-select form-select-sm" id="winding-{{ loop.index0 }}-orientation" name="winding-{{ loop.index0 }}-orientation">
+                        <option value="1" {% if winding.orientation|float >= 0 %}selected{% endif %}>Into page (+)</option>
+                        <option value="-1" {% if winding.orientation|float < 0 %}selected{% endif %}>Out of page (-)</option>
+                      </select>
+                    </div>
+                    <div class="col-md-1">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-turns">Turns</label>
+                      <input class="form-control form-control-sm" type="number" step="any" id="winding-{{ loop.index0 }}-turns" name="winding-{{ loop.index0 }}-turns" value="{{ winding.turns or DEFAULT_WINDING_TURNS }}">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-fill">Fill fraction</label>
+                      <input class="form-control form-control-sm" type="number" step="any" id="winding-{{ loop.index0 }}-fill" name="winding-{{ loop.index0 }}-fill" value="{{ winding.fill_fraction or DEFAULT_FILL_FRACTION }}">
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-layers">Wire layers</label>
+                      <select class="form-select form-select-sm" id="winding-{{ loop.index0 }}-layers" name="winding-{{ loop.index0 }}-layers" multiple size="4">
+                        {% for option in wire_layer_options %}
+                          <option value="{{ option.value }}" {% if winding.layers and option.value in winding.layers %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                      </select>
+                      <div class="form-text">Select all conductor layers that belong to this winding (hold Ctrl/Cmd for multi-select).</div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="add-winding-row">Add winding</button>
+              <button class="btn btn-primary btn-sm" type="submit">Apply windings</button>
+            </div>
+          </form>
+          <template id="wire-layer-options-template">
+            {% for option in wire_layer_options %}
+              <option value="{{ option.value }}">{{ option.label }}</option>
+            {% endfor %}
+          </template>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section id="timeline-stage" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Stimulus &amp; timeline designer</h5>
+            <p class="text-muted mb-0">Create balanced three-phase waveforms or import custom JSON timelines.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Transient controls</span>
+        </div>
+        <p class="text-muted small">Balanced mode synthesises sinusoidal phase currents for you&mdash;just set the amplitude, frequency, and number of steps. Manual mode accepts the same JSON structure as the solver (<code>{"t": 0.0, "phase_currents": {"A": 10}}</code>).</p>
+        <div class="alert alert-info small" role="alert">
+          <div class="fw-semibold">Timeline workflow</div>
+          <ul class="mb-0 ps-3">
+            <li>Balanced mode emits evenly spaced frames with three-phase sinusoids. Adjust the sequence string (ABC, ACB, etc.) to match your winding order.</li>
+            <li>Manual mode is ideal for arbitrary drive patterns. Paste the JSON frames directly from an external script or spreadsheet.</li>
+            <li>The solver's <code>transient.dt</code> and <code>transient.n_steps</code> fields update automatically so the CLI run matches the generated timeline.</li>
+            <li>Link back to the <a href="{{ workflow_docs.iron_ring }}" target="_blank" rel="noopener">iron ring walkthrough</a> for a concrete example.</li>
+          </ul>
+        </div>
+        {% if not project_has_scenario %}
+          <div class="alert alert-info" role="alert">Upload a scenario to enable timeline editing.</div>
+        {% endif %}
+        <form id="timeline-form" method="post" action="{{ url_for('update_timeline') }}" class="mt-3">
+          {% if project %}
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+          {% endif %}
+          <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-mode">Mode</label>
+              <select class="form-select" id="timeline-mode" name="timeline-mode" {% if not project_has_scenario %}disabled{% endif %}>
+                <option value="balanced" {% if timeline_mode != 'manual' %}selected{% endif %}>Balanced three-phase</option>
+                <option value="manual" {% if timeline_mode == 'manual' %}selected{% endif %}>Manual JSON</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-amplitude">Peak current (A)</label>
+              <input class="form-control" type="number" step="any" id="timeline-amplitude" name="timeline-amplitude" value="{{ timeline_config.amplitude if timeline_config and timeline_config.amplitude is defined else 36.0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-frequency">Electrical frequency (Hz)</label>
+              <input class="form-control" type="number" step="any" id="timeline-frequency" name="timeline-frequency" value="{{ timeline_config.frequency if timeline_config and timeline_config.frequency is defined else 50.0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-steps">Steps per cycle</label>
+              <input class="form-control" type="number" min="2" id="timeline-steps" name="timeline-steps" value="{{ timeline_config.steps if timeline_config and timeline_config.steps is defined else 12 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-cycles">Cycles</label>
+              <input class="form-control" type="number" min="1" id="timeline-cycles" name="timeline-cycles" value="{{ timeline_config.cycles if timeline_config and timeline_config.cycles is defined else 1 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-phase-offset">Phase offset (deg)</label>
+              <input class="form-control" type="number" step="any" id="timeline-phase-offset" name="timeline-phase-offset" value="{{ timeline_config.phase_offset if timeline_config and timeline_config.phase_offset is defined else 0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-sequence">Sequence</label>
+              <input class="form-control" type="text" id="timeline-sequence" name="timeline-sequence" value="{{ timeline_config.sequence if timeline_config and timeline_config.sequence is defined else 'ABC' }}" {% if not project_has_scenario %}disabled{% endif %}>
+              <div class="form-text">Order of phase labels (e.g. ABC, ACB).</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-dc-offset">DC offset (A)</label>
+              <input class="form-control" type="number" step="any" id="timeline-dc-offset" name="timeline-dc-offset" value="{{ timeline_config.dc_offset if timeline_config and timeline_config.dc_offset is defined else 0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+          </div>
+          <div id="manual-fields" class="mt-3 {% if timeline_mode != 'manual' %}d-none{% endif %}">
+            <label class="form-label" for="timeline-json">Manual timeline JSON</label>
+            <textarea class="form-control" id="timeline-json" name="timeline-json" rows="4" placeholder='[{"t": 0.0, "phase_currents": {"A": 0, "B": -10, "C": 10}}]' {% if not project_has_scenario %}disabled{% endif %}>{{ timeline_config.raw if timeline_config and timeline_config.raw is defined }}</textarea>
+            <div class="form-text">Provide an ordered list of frames. Each entry must include a time <code>t</code> (seconds) and a <code>phase_currents</code> mapping.</div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" type="submit" {% if not project_has_scenario %}disabled{% endif %}>Save timeline</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Preset library (coming soon)</button>
+            <a class="btn btn-link btn-sm" href="{{ workflow_docs.induction }}" target="_blank" rel="noopener">See induction demo</a>
+          </div>
+        </form>
+        {% if timeline_summary %}
+          <div class="alert alert-success small mt-3" role="alert">
+            <strong>{{ timeline_summary.frames }}</strong> frames • {{ '{:.4f}'.format(timeline_summary.duration) }} s total duration
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
 
   <section id="geometry-preview" class="stage-section">
     <div class="card card-elevated">
@@ -233,6 +476,10 @@
         {% if error %}
           <div class="alert alert-danger" role="alert">{{ error }}</div>
         {% endif %}
+        <div class="alert alert-info" role="alert">
+          <div class="fw-semibold">Need to edit the scenario?</div>
+          Use the <strong>Materials</strong>, <strong>Windings</strong>, and <strong>Timeline</strong> sections above to compose the JSON graphically, then save or run it from here.
+        </div>
         <form id="run-form" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" novalidate>
           {% if project %}
             <input type="hidden" name="project_id" value="{{ project.id }}">
@@ -432,8 +679,21 @@
       const vizNextBtn = document.getElementById("viz-next");
       const vizSlider = document.getElementById("viz-slider");
       const vizFrameLabel = document.getElementById("viz-frame-label");
+      const materialsForm = document.getElementById("materials-form");
+      const materialsRows = document.getElementById("materials-rows");
+      const materialsCountInput = document.getElementById("materials-count");
+      const addMaterialBtn = document.getElementById("add-material-row");
+      const windingsForm = document.getElementById("windings-form");
+      const windingsRows = document.getElementById("windings-rows");
+      const windingsCountInput = document.getElementById("winding-count");
+      const addWindingBtn = document.getElementById("add-winding-row");
+      const layerOptionsTemplate = document.getElementById("wire-layer-options-template");
+      const timelineModeSelect = document.getElementById("timeline-mode");
+      const manualTimelineFields = document.getElementById("manual-fields");
       const downloadBase = "{{ url_for('download') }}";
       const isRunning = {{ 'true' if running else 'false' }};
+      const defaultTurns = {{ DEFAULT_WINDING_TURNS | tojson }};
+      const defaultFill = {{ DEFAULT_FILL_FRACTION | tojson }};
       let currentBlobUrl = null;
       const lastImageUrl = {{ (last_visualization_url or '') | tojson | safe }};
       const initialFrames = {{ last_visualization_frames | tojson | safe }} || [];
@@ -456,6 +716,234 @@
       let activeFrameIndex = frameGallery.length ? frameGallery.length - 1 : -1;
       let playbackTimer = null;
       let isPlaying = false;
+
+      function renumberMaterialRows() {
+        if (!materialsRows || !materialsCountInput) {
+          return;
+        }
+        const rows = materialsRows.querySelectorAll('.material-row');
+        rows.forEach(function (row, idx) {
+          row.dataset.index = String(idx);
+          const nameInput = row.querySelector("input[name$='-name']");
+          const muInput = row.querySelector("input[name$='-mu']");
+          const sigmaInput = row.querySelector("input[name$='-sigma']");
+          const muLabel = row.querySelector("label[for^='material-'][for$='-mu']");
+          const sigmaLabel = row.querySelector("label[for^='material-'][for$='-sigma']");
+          if (nameInput) {
+            nameInput.name = 'material-' + idx + '-name';
+          }
+          if (muInput) {
+            muInput.name = 'material-' + idx + '-mu';
+            muInput.id = 'material-' + idx + '-mu';
+          }
+          if (muLabel) {
+            muLabel.setAttribute('for', 'material-' + idx + '-mu');
+          }
+          if (sigmaInput) {
+            sigmaInput.name = 'material-' + idx + '-sigma';
+            sigmaInput.id = 'material-' + idx + '-sigma';
+          }
+          if (sigmaLabel) {
+            sigmaLabel.setAttribute('for', 'material-' + idx + '-sigma');
+          }
+        });
+        materialsCountInput.value = String(rows.length);
+      }
+
+      function addMaterialRow(initial) {
+        if (!materialsRows || !materialsCountInput) {
+          return;
+        }
+        const index = parseInt(materialsCountInput.value || '0', 10);
+        const nameValue = initial && initial.name ? initial.name : 'Material ' + (index + 1);
+        const muValue = initial && typeof initial.mu !== 'undefined' ? initial.mu : 1.0;
+        const sigmaValue = initial && typeof initial.sigma !== 'undefined' ? initial.sigma : '';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'col-lg-6 material-row';
+        wrapper.dataset.index = String(index);
+        wrapper.innerHTML = `
+          <div class="border rounded p-3 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <label class="form-label mb-0">Name</label>
+              <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-material>Remove</button>
+            </div>
+            <input class="form-control form-control-sm mb-3" type="text" name="material-${index}-name" value="${nameValue}" required>
+            <div class="row g-2">
+              <div class="col-sm-6">
+                <label class="form-label small" for="material-${index}-mu">Relative permeability</label>
+                <input class="form-control form-control-sm" type="number" step="any" id="material-${index}-mu" name="material-${index}-mu" value="${muValue}" required>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label small" for="material-${index}-sigma">Conductivity (S/m)</label>
+                <input class="form-control form-control-sm" type="number" step="any" id="material-${index}-sigma" name="material-${index}-sigma" placeholder="Optional">
+              </div>
+            </div>
+          </div>`;
+        const sigmaInput = wrapper.querySelector("input[name='material-" + index + "-sigma']");
+        if (sigmaInput && sigmaValue !== '') {
+          sigmaInput.value = sigmaValue;
+        }
+        materialsRows.appendChild(wrapper);
+        materialsCountInput.value = String(index + 1);
+      }
+
+      function renumberWindingRows() {
+        if (!windingsRows || !windingsCountInput) {
+          return;
+        }
+        const rows = windingsRows.querySelectorAll('.winding-row');
+        rows.forEach(function (row, idx) {
+          row.dataset.index = String(idx);
+          const nameInput = row.querySelector("input[name$='-name']");
+          const phaseInput = row.querySelector("input[name$='-phase']");
+          const turnsInput = row.querySelector("input[name$='-turns']");
+          const fillInput = row.querySelector("input[name$='-fill']");
+          const orientationSelect = row.querySelector("select[name$='-orientation']");
+          const layersSelect = row.querySelector("select[name$='-layers']");
+          if (nameInput) {
+            nameInput.name = 'winding-' + idx + '-name';
+            nameInput.id = 'winding-' + idx + '-name';
+          }
+          if (phaseInput) {
+            phaseInput.name = 'winding-' + idx + '-phase';
+            phaseInput.id = 'winding-' + idx + '-phase';
+          }
+          if (turnsInput) {
+            turnsInput.name = 'winding-' + idx + '-turns';
+            turnsInput.id = 'winding-' + idx + '-turns';
+          }
+          if (fillInput) {
+            fillInput.name = 'winding-' + idx + '-fill';
+            fillInput.id = 'winding-' + idx + '-fill';
+          }
+          if (orientationSelect) {
+            orientationSelect.name = 'winding-' + idx + '-orientation';
+            orientationSelect.id = 'winding-' + idx + '-orientation';
+          }
+          if (layersSelect) {
+            layersSelect.name = 'winding-' + idx + '-layers';
+            layersSelect.id = 'winding-' + idx + '-layers';
+          }
+        });
+        windingsCountInput.value = String(rows.length);
+      }
+
+      function addWindingRow(initial) {
+        if (!windingsRows || !windingsCountInput) {
+          return;
+        }
+        const index = parseInt(windingsCountInput.value || '0', 10);
+        const nameValue = initial && initial.name ? initial.name : 'Winding ' + (index + 1);
+        const phaseValue = initial && initial.phase ? initial.phase : '';
+        const turnsValue = initial && typeof initial.turns !== 'undefined' ? initial.turns : defaultTurns;
+        const fillValue = initial && typeof initial.fill_fraction !== 'undefined' ? initial.fill_fraction : defaultFill;
+        const orientationValue = initial && typeof initial.orientation !== 'undefined' ? Number(initial.orientation) : 1;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'border rounded p-3 mb-3 winding-row';
+        wrapper.dataset.index = String(index);
+        const layerOptions = layerOptionsTemplate ? layerOptionsTemplate.innerHTML : '';
+        wrapper.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <strong>${nameValue}</strong>
+            <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-winding>Remove</button>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label small" for="winding-${index}-name">Display name</label>
+              <input class="form-control form-control-sm" type="text" id="winding-${index}-name" name="winding-${index}-name" value="${nameValue}" placeholder="Phase A">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small" for="winding-${index}-phase">Phase ID</label>
+              <input class="form-control form-control-sm" type="text" id="winding-${index}-phase" name="winding-${index}-phase" value="${phaseValue}" placeholder="A">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="winding-${index}-orientation">Orientation</label>
+              <select class="form-select form-select-sm" id="winding-${index}-orientation" name="winding-${index}-orientation">
+                <option value="1" ${orientationValue >= 0 ? 'selected' : ''}>Into page (+)</option>
+                <option value="-1" ${orientationValue < 0 ? 'selected' : ''}>Out of page (-)</option>
+              </select>
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small" for="winding-${index}-turns">Turns</label>
+              <input class="form-control form-control-sm" type="number" step="any" id="winding-${index}-turns" name="winding-${index}-turns" value="${turnsValue}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="winding-${index}-fill">Fill fraction</label>
+              <input class="form-control form-control-sm" type="number" step="any" id="winding-${index}-fill" name="winding-${index}-fill" value="${fillValue}">
+            </div>
+            <div class="col-12">
+              <label class="form-label small" for="winding-${index}-layers">Wire layers</label>
+              <select class="form-select form-select-sm" id="winding-${index}-layers" name="winding-${index}-layers" multiple size="4">${layerOptions}</select>
+              <div class="form-text">Select all conductor layers that belong to this winding (hold Ctrl/Cmd for multi-select).</div>
+            </div>
+          </div>`;
+        if (initial && Array.isArray(initial.layers)) {
+          const selectEl = wrapper.querySelector('select');
+          if (selectEl) {
+            const values = new Set(initial.layers);
+            selectEl.querySelectorAll('option').forEach(function (option) {
+              option.selected = values.has(option.value);
+            });
+          }
+        }
+        windingsRows.appendChild(wrapper);
+        windingsCountInput.value = String(index + 1);
+      }
+
+      if (materialsRows) {
+        materialsRows.addEventListener('click', function (event) {
+          if (event.target && event.target.matches('[data-remove-material]')) {
+            const row = event.target.closest('.material-row');
+            if (row) {
+              row.remove();
+              renumberMaterialRows();
+            }
+          }
+        });
+      }
+
+      if (addMaterialBtn) {
+        addMaterialBtn.addEventListener('click', function () {
+          addMaterialRow();
+        });
+      }
+
+      if (windingsRows) {
+        windingsRows.addEventListener('click', function (event) {
+          if (event.target && event.target.matches('[data-remove-winding]')) {
+            const row = event.target.closest('.winding-row');
+            if (row) {
+              row.remove();
+              renumberWindingRows();
+            }
+          }
+        });
+      }
+
+      if (addWindingBtn) {
+        addWindingBtn.addEventListener('click', function () {
+          addWindingRow();
+        });
+      }
+
+      function syncTimelineMode() {
+        if (!timelineModeSelect || !manualTimelineFields) {
+          return;
+        }
+        if (timelineModeSelect.value === 'manual') {
+          manualTimelineFields.classList.remove('d-none');
+        } else {
+          manualTimelineFields.classList.add('d-none');
+        }
+      }
+
+      if (timelineModeSelect) {
+        timelineModeSelect.addEventListener('change', syncTimelineMode);
+        syncTimelineMode();
+      }
+
+      renumberMaterialRows();
+      renumberWindingRows();
 
       const navLinks = document.querySelectorAll('.app-sidebar .nav-link');
       function setActiveNav(target) {
