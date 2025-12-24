@@ -15,6 +15,8 @@ python3 python/animate_three_phase.py --pvd outputs/three_phase_ci.pvd --scenari
 The generated scenario exports cell-centred VTK frames, a bore-average CSV, and
 polyline outlines that highlight the stator geometry.
 
+![Three-phase rotating stator field](../../assets/images/three_phase_demo.gif)
+
 ## Scaling up
 
 The generator exposes two profiles:

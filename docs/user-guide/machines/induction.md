@@ -28,6 +28,10 @@ rotor torque comes from induced currents in the conductive bars, so the transien
 solver must stay enabled and the mechanical integrator consumes the torque probe
 output every frame.
 
+![Induction motor spin-up full field](../../assets/images/induction_motor_spinup.gif)
+
+![Induction motor rotor animation](../../assets/images/induction_motor_rotor.gif)
+
 ## Profiles
 
 `python/gen_three_phase_induction_motor.py` ships with the familiar `ci` and

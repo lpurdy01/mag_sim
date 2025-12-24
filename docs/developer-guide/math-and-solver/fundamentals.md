@@ -231,6 +231,8 @@ Simulated and analytic \(|\mathbf{B}|\) profiles along vertical probe lines in e
 The automated regression focuses on the air-side probe, where the relative error
 stays below 40% despite the coarse grid and Dirichlet boundary at the outer box.
 
+![Line current interface field](../../assets/images/line_current_interface_field.png)
+
 ## 10. Validation with an infinite straight wire
 
 To validate the solver, we model an infinite straight wire carrying current \(I\). The analytic magnetic field magnitude is
@@ -246,6 +248,8 @@ J_z = \frac{I}{\pi r_c^2}.
 $$
 
 Cells with centre radius \(r \le r_c\) receive this current density, while the rest are zero. Choosing \(r_c\) a few cells wide (e.g., three cell widths) reduces discretisation error from approximating the singular source. After solving for \(A_z\), we compute \(\mathbf{B}\) and sample points along a ring of radius \(r_{\text{sample}}\) to compare the simulated \(\lVert \mathbf{B} \rVert\) against the analytic expression. A relative error below 25% is deemed acceptable for the coarse grid and finite domain used in the automated test.
+
+![Analytic wire validation](../../assets/images/analytic_wire_line.png)
 
 ---
 

@@ -50,6 +50,8 @@ magnitude, and the rotor ripple frames feed their per-frame `_outlines.vtp`
 files back into the renderer via `--outline-vtp` so the rotating rotor geometry
 is visible in the PNGs.
 
+![Rotor ripple frame example](../../assets/images/rotor_ripple_frame2.png)
+
 ## Rotor geometry animations
 
 The new `python/generate_rotor_animation.py` helper renders rotor/stator motion

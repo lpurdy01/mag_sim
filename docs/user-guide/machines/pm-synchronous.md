@@ -21,6 +21,8 @@ drives sinusoidal phase voltages, integrates coil currents via the circuit
 solver, and keeps the rotor phased to the stator field via explicit
 `rotor_angles` entries.
 
+![PM motor spin-up animation](../../assets/images/pm_motor_spinup.gif)
+
 ## Spin-up mode
 
 ```bash

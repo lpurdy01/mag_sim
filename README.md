@@ -93,6 +93,32 @@ induction demos.
 
 ## Sample scenarios
 
+### Two-wire cancellation demo
+
+The two-wire cancellation scenario demonstrates field superposition with two
+parallel wires carrying equal and opposite currents. The magnetic fields from
+the two sources partially cancel between them and reinforce on the outside,
+providing a clear validation of the solver's ability to handle multiple current
+sources and field superposition.
+
+![Two-wire field visualization](docs/assets/images/two_wire_field.png)
+
+### Three-phase rotating field
+
+The three-phase stator demo showcases a six-slot, two-pole configuration that
+produces a smooth rotating magnetic field in the bore. Balanced sinusoidal
+currents in the three phases create a field vector that rotates at the
+electrical frequency, forming the basis for synchronous and induction motor
+operation. The animation shows the field magnitude and direction evolving over
+one complete electrical cycle.
+
+![Three-phase rotating field](docs/assets/images/three_phase_demo.gif)
+
+See [docs/user-guide/machines/three-phase-stator.md](docs/user-guide/machines/three-phase-stator.md)
+for the full walkthrough.
+
+### Additional validation scenarios
+
 * `inputs/line_current_interface.json` — two-material validation that exercises
   the planar permeability interface analytic case described in
   `docs/math_and_solver.md`.
@@ -104,6 +130,13 @@ induction demos.
   --field-map outputs/iron_ring_field.csv --save outputs/iron_ring_field.png`.
   (CI runs capture the same render as an artifact, so the repository stays free
   of committed binaries.)
+
+  ![Iron ring field visualization](docs/assets/images/iron_ring_field.png)
+
+* `inputs/magnet_strip_demo.json` — permanent magnet strip demonstration showing
+  the field pattern around a magnetized rectangular region.
+
+  ![Magnet strip field visualization](docs/assets/images/magnet_strip_field.png)
 
 ## Time-series demos
 
