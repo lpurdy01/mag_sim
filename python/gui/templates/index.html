@@ -1,63 +1,171 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="row">
-    <div class="col-lg-8">
-      <h1 class="mb-3">Run a Simulation</h1>
-      <p class="text-muted">Upload a scenario JSON, select solver options, and monitor progress in real time.</p>
-      {% if error %}
-        <div class="alert alert-danger" role="alert">
-          {{ error }}
+  <div class="row g-3">
+    <div class="col-xl-4">
+      <div class="card h-100">
+        <div class="card-header">Geometry preview</div>
+        <div class="card-body">
+          {% if preview_notice %}
+            <div class="alert alert-success" role="alert">{{ preview_notice }}</div>
+          {% endif %}
+          {% if preview_error %}
+            <div class="alert alert-danger" role="alert">{{ preview_error }}</div>
+          {% endif %}
+          <p id="preview-placeholder" class="text-muted small {% if preview_url %}d-none{% endif %}">
+            Upload a scenario and choose <strong>Preview geometry</strong> to render the domain outline.
+          </p>
+          <img id="geometry-preview-image" class="img-fluid {% if not preview_url %}d-none{% endif %}" src="{{ preview_url or '' }}" alt="Geometry preview">
         </div>
-      {% endif %}
-      <form id="run-form" class="card card-body mb-3" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
-        <div class="mb-3">
-          <label class="form-label" for="geometry-file">Scenario file (JSON)</label>
-          <input class="form-control" type="file" id="geometry-file" name="geometry_file" accept=".json,.dxf" required>
-          <div class="form-text">DXF uploads are reserved for a future update; please use JSON scenarios for now.</div>
+        <div class="card-footer text-muted small">
+          DXF upload support is planned for a later stage.
         </div>
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label" for="solver">Solver</label>
-            <select class="form-select" id="solver" name="solver">
-              <option value="cg" {% if default_solver == 'cg' %}selected{% endif %}>Conjugate Gradient (CG)</option>
-              <option value="sor" {% if default_solver == 'sor' %}selected{% endif %}>Successive Over-Relaxation (SOR)</option>
-            </select>
+      </div>
+    </div>
+    <div class="col-xl-8">
+      <div class="card mb-3">
+        <div class="card-header">Simulation controls</div>
+        <div class="card-body">
+          <p class="text-muted mb-3">Upload a scenario JSON, adjust solver settings, then launch the solve. Geometry previews are generated entirely server-side.</p>
+          {% if error %}
+            <div class="alert alert-danger" role="alert">{{ error }}</div>
+          {% endif %}
+          <form id="run-form" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" novalidate>
+            <div class="mb-3">
+              <label class="form-label" for="geometry-file">Scenario file (JSON)</label>
+              <input class="form-control" type="file" id="geometry-file" name="geometry_file" accept=".json,.dxf" required>
+              <div class="form-text">DXF ingestion is on the roadmap; JSON scenarios are supported today.</div>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label" for="solver">Solver</label>
+                <select class="form-select" id="solver" name="solver">
+                  <option value="cg" {% if form_state.solver == 'cg' %}selected{% endif %}>Conjugate Gradient (CG)</option>
+                  <option value="sor" {% if form_state.solver == 'sor' %}selected{% endif %}>Successive Over-Relaxation (SOR)</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="tol">Tolerance</label>
+                <input class="form-control" type="number" step="any" id="tol" name="tol" value="{{ form_state.tol }}" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="max-iters">Max iterations</label>
+                <input class="form-control" type="number" id="max-iters" name="max_iters" value="{{ form_state.max_iters }}" min="1" required>
+              </div>
+            </div>
+            <div class="mb-3 mt-3">
+              <label class="form-label" for="outputs">Outputs (optional)</label>
+              <input class="form-control" type="text" id="outputs" name="outputs" value="{{ form_state.outputs }}" placeholder="field_map">
+              <div class="form-text">Forwarded to <code>motor_sim --outputs</code>; leave blank for the scenario default.</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <button id="run-btn" class="btn btn-primary" name="action" value="run" type="submit" {% if running %}disabled{% endif %}>Run simulation</button>
+              <button id="preview-btn" class="btn btn-outline-secondary" name="action" value="preview" type="submit" formnovalidate>Preview geometry</button>
+              <button id="stop-btn" class="btn btn-warning" type="button" {% if not running %}disabled{% endif %}>Stop</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="card border-secondary text-muted">
+        <div class="card-header">Future enhancements</div>
+        <div class="card-body">
+          <p class="mb-2">Coming soon:</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-secondary" type="button" disabled>DXF import</button>
+            <button class="btn btn-outline-secondary" type="button" disabled>Animation view</button>
+            <button class="btn btn-outline-secondary" type="button" disabled>Circuit coupling</button>
           </div>
-          <div class="col-md-4">
-            <label class="form-label" for="tol">Tolerance</label>
-            <input class="form-control" type="number" step="any" id="tol" name="tol" value="{{ default_tolerance }}" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label" for="max-iters">Max iterations</label>
-            <input class="form-control" type="number" id="max-iters" name="max_iters" value="{{ default_max_iters }}" min="1" required>
-          </div>
         </div>
-        <div class="mb-3 mt-3">
-          <label class="form-label" for="outputs">Outputs (optional)</label>
-          <input class="form-control" type="text" id="outputs" name="outputs" placeholder="field_map">
-          <div class="form-text">Pass through to <code>motor_sim --outputs</code>; leave blank to use the solver default.</div>
-        </div>
-        <div class="d-flex gap-2">
-          <button id="run-btn" class="btn btn-primary" type="submit" {% if running %}disabled{% endif %}>Run simulation</button>
-          <button id="stop-btn" class="btn btn-warning" type="button" {% if not running %}disabled{% endif %}>Stop</button>
-        </div>
-      </form>
+      </div>
     </div>
   </div>
-  <div id="progress-container" class="card card-body mb-3" style="display: none;">
-    <h2 class="h5">Progress</h2>
-    <div class="progress" style="height: 24px;">
-      <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;">0%</div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div id="progress-container" class="card h-100" style="display: none;">
+        <div class="card-header">Progress</div>
+        <div class="card-body">
+          <div class="progress" style="height: 24px;">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;">0%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div id="log-container" class="card h-100" style="display: none;">
+        <div class="card-header">Solver log</div>
+        <div class="card-body">
+          <pre id="log-area" class="bg-dark text-white p-3" style="max-height: 320px; overflow-y: auto;"></pre>
+        </div>
+      </div>
     </div>
   </div>
-  <div id="log-container" class="card card-body mb-3" style="display: none;">
-    <h2 class="h5">Solver log</h2>
-    <pre id="log-area" class="bg-dark text-white p-3" style="max-height: 320px; overflow-y: auto;"></pre>
-  </div>
-  <div id="results" class="card card-body" style="display: none;">
-    <h2 class="h5">Downloads</h2>
-    <ul id="results-list" class="list-group list-group-flush"></ul>
+
+  <div class="row g-3 mt-1">
+    <div class="col-xl-4">
+      <div id="results" class="card h-100" style="display: none;">
+        <div class="card-header">Downloads</div>
+        <div class="card-body">
+          <ul id="results-list" class="list-group list-group-flush"></ul>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-8">
+      <div id="visualization-panel" class="card h-100"{% if not visualization_visible %} style="display: none;"{% endif %}>
+        <div class="card-header">Results visualisation</div>
+        <div class="card-body">
+          <p id="visualization-message" class="text-muted small {% if last_visualization_url %}d-none{% endif %}">
+            {{ visualization_message or 'Run a simulation to generate field visualisations.' }}
+          </p>
+          <img id="result-image" class="img-fluid {% if not last_visualization_url %}d-none{% endif %}" src="{{ last_visualization_url or '' }}" alt="Field map visualisation">
+          <p id="visualization-caption" class="mt-2 text-muted small {% if not last_visualization_caption %}d-none{% endif %}">{{ last_visualization_caption }}</p>
+          <form id="visualization-form" class="row g-2 mt-3" data-endpoint="{{ url_for('visualization_image') }}">
+            <div class="col-md-3">
+              <label class="form-label small" for="vector-mode">Vector scaling</label>
+              <select class="form-select form-select-sm" id="vector-mode" name="vector">
+                <option value="linear" {% if visualization_defaults.vector_mode == 'linear' %}selected{% endif %}>Linear</option>
+                <option value="log" {% if visualization_defaults.vector_mode == 'log' %}selected{% endif %}>Logarithmic</option>
+                <option value="off" {% if visualization_defaults.vector_mode == 'off' %}selected{% endif %}>Hidden</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small" for="color-scale">Colour scale</label>
+              <select class="form-select form-select-sm" id="color-scale" name="scale">
+                <option value="linear" {% if visualization_defaults.color_scale == 'linear' %}selected{% endif %}>Linear</option>
+                <option value="log" {% if visualization_defaults.color_scale == 'log' %}selected{% endif %}>Logarithmic</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="quiver-skip">Arrow skip</label>
+              <input class="form-control form-control-sm" type="number" min="1" id="quiver-skip" name="skip" value="{{ visualization_defaults.quiver_skip }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="log-floor">Log floor</label>
+              <input class="form-control form-control-sm" type="number" step="any" id="log-floor" name="log_floor" value="{{ '{:.1e}'.format(DEFAULT_LOG_FLOOR) }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="vector-floor">Vector floor</label>
+              <input class="form-control form-control-sm" type="number" step="any" id="vector-floor" name="vector_floor" value="{{ '{:.1e}'.format(DEFAULT_LOG_FLOOR) }}">
+            </div>
+            <div class="col-md-12">
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="draw-boundaries" name="boundaries" value="1" {% if visualization_defaults.draw_boundaries %}checked{% endif %}>
+                <label class="form-check-label small" for="draw-boundaries">Show region outlines</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="streamlines" name="stream" value="1" {% if visualization_defaults.streamlines %}checked{% endif %}>
+                <label class="form-check-label small" for="streamlines">Streamlines</label>
+              </div>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-2">
+              <button id="update-visualization" class="btn btn-primary btn-sm" type="button" {% if not last_visualization_url %}disabled{% endif %}>Update visualisation</button>
+              <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Save preset (coming soon)</button>
+            </div>
+          </form>
+          <div id="visualization-error" class="text-danger small mt-2 d-none"></div>
+        </div>
+      </div>
+    </div>
   </div>
 {% endblock %}
 
@@ -73,8 +181,16 @@
       const logArea = document.getElementById("log-area");
       const resultsContainer = document.getElementById("results");
       const resultsList = document.getElementById("results-list");
+      const visualizationPanel = document.getElementById("visualization-panel");
+      const visualizationMessage = document.getElementById("visualization-message");
+      const visualizationCaption = document.getElementById("visualization-caption");
+      const visualizationError = document.getElementById("visualization-error");
+      const resultImage = document.getElementById("result-image");
+      const updateVizBtn = document.getElementById("update-visualization");
+      const vizForm = document.getElementById("visualization-form");
       const downloadBase = "{{ url_for('download') }}";
       const isRunning = {{ 'true' if running else 'false' }};
+      let currentBlobUrl = null;
 
       if (isRunning) {
         progressContainer.style.display = 'block';
@@ -84,7 +200,11 @@
       }
 
       if (runForm) {
-        runForm.addEventListener("submit", function () {
+        runForm.addEventListener("submit", function (event) {
+          const submitter = event.submitter;
+          if (submitter && submitter.value === 'preview') {
+            return;
+          }
           runBtn.disabled = true;
           stopBtn.disabled = false;
           progressContainer.style.display = 'block';
@@ -95,6 +215,24 @@
           progressBar.classList.remove('bg-danger', 'bg-success');
           progressBar.style.width = '0%';
           progressBar.textContent = '0%';
+          if (visualizationPanel) {
+            visualizationPanel.style.display = 'none';
+          }
+          if (visualizationMessage) {
+            visualizationMessage.classList.add('d-none');
+            visualizationMessage.textContent = '';
+          }
+          if (visualizationCaption) {
+            visualizationCaption.classList.add('d-none');
+            visualizationCaption.textContent = '';
+          }
+          if (visualizationError) {
+            visualizationError.classList.add('d-none');
+            visualizationError.textContent = '';
+          }
+          if (updateVizBtn) {
+            updateVizBtn.disabled = true;
+          }
         });
       }
 
@@ -168,8 +306,113 @@
               resultsList.appendChild(entry);
             });
           }
+          if (payload.visualization) {
+            handleVisualization(payload.visualization);
+          }
+        } else if (payload.visualization) {
+          handleVisualization(payload.visualization);
         }
       };
+
+      function handleVisualization(details) {
+        if (!details) {
+          return;
+        }
+        if (visualizationPanel) {
+          visualizationPanel.style.display = 'block';
+        }
+        if (visualizationError) {
+          visualizationError.classList.add('d-none');
+          visualizationError.textContent = '';
+        }
+        if (details.image) {
+          const url = details.image + (details.image.includes('?') ? '&' : '?') + 't=' + Date.now();
+          resultImage.src = url;
+          resultImage.classList.remove('d-none');
+          if (visualizationMessage) {
+            visualizationMessage.classList.add('d-none');
+          }
+          if (visualizationCaption) {
+            if (details.caption) {
+              visualizationCaption.textContent = details.caption;
+              visualizationCaption.classList.remove('d-none');
+            } else {
+              visualizationCaption.classList.add('d-none');
+            }
+          }
+          if (updateVizBtn) {
+            updateVizBtn.disabled = false;
+          }
+        } else if (details.message) {
+          if (visualizationMessage) {
+            visualizationMessage.textContent = details.message;
+            visualizationMessage.classList.remove('d-none');
+          }
+          resultImage.classList.add('d-none');
+          if (visualizationCaption) {
+            visualizationCaption.classList.add('d-none');
+          }
+          if (updateVizBtn) {
+            updateVizBtn.disabled = true;
+          }
+        }
+      }
+
+      if (updateVizBtn && vizForm) {
+        updateVizBtn.addEventListener('click', function () {
+          if (!vizForm.dataset.endpoint) {
+            return;
+          }
+          const formData = new FormData(vizForm);
+          if (!formData.has('boundaries')) {
+            formData.set('boundaries', document.getElementById('draw-boundaries').checked ? '1' : '0');
+          }
+          if (!formData.has('stream')) {
+            formData.set('stream', document.getElementById('streamlines').checked ? '1' : '0');
+          }
+          const params = new URLSearchParams(formData);
+          params.set('t', Date.now().toString());
+          const endpoint = vizForm.dataset.endpoint + '?' + params.toString();
+          updateVizBtn.disabled = true;
+          if (visualizationError) {
+            visualizationError.classList.add('d-none');
+            visualizationError.textContent = '';
+          }
+          fetch(endpoint)
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error('Request failed');
+              }
+              return response.blob();
+            })
+            .then(function (blob) {
+              if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+              }
+              currentBlobUrl = URL.createObjectURL(blob);
+              if (visualizationPanel) {
+                visualizationPanel.style.display = 'block';
+              }
+              resultImage.src = currentBlobUrl;
+              resultImage.classList.remove('d-none');
+              if (visualizationMessage) {
+                visualizationMessage.classList.add('d-none');
+              }
+              if (visualizationCaption) {
+                visualizationCaption.classList.add('d-none');
+              }
+            })
+            .catch(function () {
+              if (visualizationError) {
+                visualizationError.textContent = 'Unable to refresh the visualisation.';
+                visualizationError.classList.remove('d-none');
+              }
+            })
+            .finally(function () {
+              updateVizBtn.disabled = false;
+            });
+        });
+      }
     });
   </script>
 {% endblock %}

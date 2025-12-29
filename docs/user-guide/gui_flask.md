@@ -29,30 +29,53 @@ prefer Flask's CLI wrapper.
 
 ## Using the interface
 
-1. Upload a scenario JSON file via the **Scenario file** input. (DXF uploads are
-   reserved for a future update and currently return a validation error.)
+1. Upload a scenario JSON file via the **Scenario file** input. DXF uploads are
+   acknowledged but remain disabled until the converter lands in a later stage.
 2. Pick a solver (`cg` or `sor`), adjust the tolerance and maximum iteration
    count if required, and optionally pass a value for `--outputs`.
-3. Click **Run simulation**. The form disables itself, the **Stop** button
-   becomes available, and a progress card appears.
-4. The server streams the solver's stdout via Server-Sent Events (SSE). The
-   progress bar reacts to any percentage tokens in the log, and the log panel
-   fills with the live output.
-5. When the run finishes, the log persists and a **Downloads** card appears with
-   links to the uploaded scenario and the captured log file. The log is useful
-   for sharing solver traces without leaving the browser.
-6. Click **Run simulation** again to process another scenario. Only one solve is
-   allowed at a time; the interface reports an error if you attempt to start a
-   second run before the first completes.
+3. Use **Preview geometry** to render the domain outline without running the
+   solver. The preview appears in the left-hand card and is regenerated on each
+   upload.
+4. Click **Run simulation**. The form disables itself, the **Stop** button
+   becomes available, and progress/log cards appear underneath the controls.
+5. While the solve runs the server streams stdout via SSE. The progress bar
+   reacts to percentage tokens and the log window scrolls in real time. When the
+   solver writes a field-map output the UI replaces the placeholder image with
+   the rendered snapshot.
+6. At completion a **Downloads** card lists the uploaded scenario, the log, and
+   any field-map artefacts surfaced by the solver. The visualisation panel also
+   shows the final render with a caption so you can inspect results immediately.
 
-Use the **Stop** button to request early termination. The server sends
-`terminate()` to the subprocess and the final log entry marks the stop request.
-Depending on solver state, expect a short delay while the child process exits.
+Only one solve is allowed at a time; the interface reports an error if you try
+to launch a second run before the first finishes. Use **Stop** to request
+termination—`terminate()` is sent to the subprocess and the log records the
+request before the child exits.
+
+### Visualisation controls
+
+The results card includes a lightweight form for regenerating the field-map
+image without leaving the browser:
+
+- **Vector scaling**: switch between linear arrows, logarithmic scaling, or hide
+  vectors entirely.
+- **Colour scale**: toggle between linear and logarithmic magnitude mapping.
+- **Arrow skip**: control the quiver density (defaults to every fourth sample).
+- **Log floor / Vector floor**: clamp low values when using logarithmic modes.
+- **Region outlines / Streamlines**: enable or disable material/magnet borders
+  and streamline overlays.
+
+Choose the desired parameters and click **Update visualisation**. The server
+re-renders the image with Matplotlib and returns a fresh PNG via the
+`/visualization.png` endpoint, keeping the UI responsive with minimal
+JavaScript.
 
 ## Known limitations
 
 - DXF geometry ingestion is stubbed; use JSON scenarios generated via the
   existing Python helpers until the converter is available.
+- Preview and visualisation rendering rely on Matplotlib and NumPy. These
+  dependencies ship with the devcontainer, but a custom environment must supply
+  the same stack.
 - The progress parser uses a simple percentage heuristic. If the solver log does
   not emit percentage tokens the bar will stay at 0 % until the run completes.
 - The current prototype keeps global state and targets single-user usage. A
