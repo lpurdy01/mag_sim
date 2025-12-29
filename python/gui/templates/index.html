@@ -1,64 +1,658 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="row">
-    <div class="col-lg-8">
-      <h1 class="mb-3">Run a Simulation</h1>
-      <p class="text-muted">Upload a scenario JSON, select solver options, and monitor progress in real time.</p>
-      {% if error %}
-        <div class="alert alert-danger" role="alert">
-          {{ error }}
-        </div>
-      {% endif %}
-      <form id="run-form" class="card card-body mb-3" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
-        <div class="mb-3">
-          <label class="form-label" for="geometry-file">Scenario file (JSON)</label>
-          <input class="form-control" type="file" id="geometry-file" name="geometry_file" accept=".json,.dxf" required>
-          <div class="form-text">DXF uploads are reserved for a future update; please use JSON scenarios for now.</div>
-        </div>
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label" for="solver">Solver</label>
-            <select class="form-select" id="solver" name="solver">
-              <option value="cg" {% if default_solver == 'cg' %}selected{% endif %}>Conjugate Gradient (CG)</option>
-              <option value="sor" {% if default_solver == 'sor' %}selected{% endif %}>Successive Over-Relaxation (SOR)</option>
-            </select>
+  <section id="project-overview" class="stage-section">
+    <div class="row g-4">
+      <div class="col-xl-8">
+        <div class="card card-elevated h-100">
+          <div class="card-body">
+            <h5 class="card-title">Workspace summary</h5>
+            <p class="text-muted mb-4">Keep track of the active scenario and overall project state.</p>
+            {% if status_message %}
+              <div class="alert alert-info" role="alert">{{ status_message }}</div>
+            {% endif %}
+            {% if has_project %}
+              {% if project.has_scenario %}
+                <dl class="row small mb-0">
+                  <dt class="col-sm-4 text-uppercase text-muted">Scenario name</dt>
+                  <dd class="col-sm-8">{{ project.scenario_name or 'Unnamed scenario' }}</dd>
+                  <dt class="col-sm-4 text-uppercase text-muted">Source file</dt>
+                  <dd class="col-sm-8">{{ project.filename }}</dd>
+                  <dt class="col-sm-4 text-uppercase text-muted">Created</dt>
+                  <dd class="col-sm-8">{{ project.created_label }}</dd>
+                  <dt class="col-sm-4 text-uppercase text-muted">Next steps</dt>
+                  <dd class="col-sm-8">Preview the geometry, reconcile CAD layers, and configure solver controls.</dd>
+                </dl>
+              {% else %}
+                <p class="mb-3">This workspace is ready for CAD imports or a fresh scenario upload. Use the <strong>CAD workspace</strong> section to assemble layers before exporting a scenario.</p>
+                <ul class="text-muted small mb-0">
+                  <li>Import DXF files and assign layers to magnets, materials, and conductors.</li>
+                  <li>Generate previews to validate alignment prior to scenario creation.</li>
+                  <li>Upload a scenario JSON at any time to enable solver runs.</li>
+                </ul>
+              {% endif %}
+            {% else %}
+              <p class="mb-3">Start a new project by uploading a scenario JSON file in the <strong>Simulation setup</strong> section or import CAD assets in the <strong>CAD workspace</strong>.</p>
+              <ul class="text-muted small mb-0">
+                <li>Preview the geometry to ensure regions, magnets, and conductors look correct.</li>
+                <li>Adjust solver tolerances and iteration caps as needed.</li>
+                <li>Watch the live progress and log stream to monitor convergence.</li>
+              </ul>
+            {% endif %}
           </div>
-          <div class="col-md-4">
-            <label class="form-label" for="tol">Tolerance</label>
-            <input class="form-control" type="number" step="any" id="tol" name="tol" value="{{ default_tolerance }}" required>
+        </div>
+      </div>
+      <div class="col-xl-4">
+      <div class="card card-elevated h-100">
+        <div class="card-body">
+          <h6 class="text-uppercase text-muted mb-3">Coming soon</h6>
+          <p class="small text-muted">Upcoming milestones include animation tooling, circuit co-simulation, and shared preset libraries.</p>
+          <div class="d-grid gap-2">
+            <button class="btn btn-outline-secondary" type="button" disabled>Animation timeline</button>
+            <button class="btn btn-outline-secondary" type="button" disabled>Circuit coupling</button>
+            <button class="btn btn-outline-secondary" type="button" disabled>Shared presets</button>
+            <button class="btn btn-outline-secondary" type="button" disabled>Batch solves</button>
           </div>
-          <div class="col-md-4">
-            <label class="form-label" for="max-iters">Max iterations</label>
-            <input class="form-control" type="number" id="max-iters" name="max_iters" value="{{ default_max_iters }}" min="1" required>
-          </div>
         </div>
-        <div class="mb-3 mt-3">
-          <label class="form-label" for="outputs">Outputs (optional)</label>
-          <input class="form-control" type="text" id="outputs" name="outputs" placeholder="field_map">
-          <div class="form-text">Pass through to <code>motor_sim --outputs</code>; leave blank to use the solver default.</div>
-        </div>
-        <div class="d-flex gap-2">
-          <button id="run-btn" class="btn btn-primary" type="submit" {% if running %}disabled{% endif %}>Run simulation</button>
-          <button id="stop-btn" class="btn btn-warning" type="button" {% if not running %}disabled{% endif %}>Stop</button>
-        </div>
-      </form>
+      </div>
+      </div>
     </div>
-  </div>
-  <div id="progress-container" class="card card-body mb-3" style="display: none;">
-    <h2 class="h5">Progress</h2>
-    <div class="progress" style="height: 24px;">
-      <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;">0%</div>
+  </section>
+
+  <section id="cad-imports" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">CAD workspace</h5>
+            <p class="text-muted mb-0">Import DXF files, assign layers, and preview combined geometry.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-info">DXF tooling</span>
+        </div>
+        <div class="alert alert-info" role="alert">
+          <div class="fw-semibold mb-1">DXF quickstart</div>
+          <ul class="mb-0 small">
+            <li>Upload domain and structural references first, then material regions, magnets, and finally the wire layers.</li>
+            <li>Use multiple files when CAD exports separate stators, rotors, or wiring harnesses&mdash;each file can be mapped independently.</li>
+            <li>
+              Need a walkthrough? Follow the
+              <a href="{{ workflow_docs.induction }}" target="_blank" rel="noopener">induction motor</a>
+              or
+              <a href="{{ workflow_docs.iron_ring }}" target="_blank" rel="noopener">iron ring</a>
+              workflows.
+            </li>
+          </ul>
+        </div>
+        <form method="post" action="{{ url_for('upload_dxf_files') }}" enctype="multipart/form-data" class="mb-4">
+          {% if project %}
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+          {% endif %}
+          <div class="row g-3 align-items-end">
+            <div class="col-lg-9">
+              <label class="form-label" for="dxf-files">DXF files</label>
+              <input class="form-control" type="file" id="dxf-files" name="dxf_files" accept=".dxf" multiple data-testid="dxf-upload-input">
+              <div class="form-text">Upload one or more DXF files. Multi-part assemblies can be split across several uploads.</div>
+            </div>
+            <div class="col-lg-3 d-grid">
+              <button class="btn btn-primary" type="submit" data-testid="dxf-import">Import DXF</button>
+            </div>
+          </div>
+        </form>
+        {% if dxf_notice %}
+          <div class="alert alert-warning" role="alert">{{ dxf_notice }}</div>
+        {% endif %}
+        <div class="row g-4">
+          <div class="col-xl-6">
+            <h6 class="text-uppercase text-muted mb-3">Layer assignments</h6>
+            {% if dxf_files %}
+              {% for file in dxf_files %}
+                <div class="card border mb-3">
+                  <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <h6 class="mb-0">{{ file.name }}</h6>
+                        {% if file.uploaded_label %}
+                          <span class="text-muted small">Imported {{ file.uploaded_label }}</span>
+                        {% endif %}
+                      </div>
+                      <form method="post" action="{{ url_for('delete_dxf_entry', dxf_id=file.id) }}">
+                        {% if project %}
+                          <input type="hidden" name="project_id" value="{{ project.id }}">
+                        {% endif %}
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Remove</button>
+                      </form>
+                    </div>
+                    <form method="post" action="{{ url_for('configure_dxf_layers', dxf_id=file.id) }}" class="layer-form">
+                      {% if project %}
+                        <input type="hidden" name="project_id" value="{{ project.id }}">
+                      {% endif %}
+                      <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-3">
+                          <thead>
+                            <tr class="text-muted small">
+                              <th scope="col">Include</th>
+                              <th scope="col">Layer</th>
+                              <th scope="col">Entities</th>
+                              <th scope="col">Category</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for layer in file.layers %}
+                              <tr>
+                                <td>
+                                  <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="layer-{{ layer.form_id }}-selected" name="layer-{{ layer.form_id }}-selected" {% if layer.selected %}checked{% endif %} data-testid="layer-select-{{ layer.form_id }}">
+                                  </div>
+                                </td>
+                                <td>
+                                  <div class="fw-semibold small">{{ layer.name }}</div>
+                                  <div class="text-muted small">{{ layer.types | join(', ') }}</div>
+                                </td>
+                                <td class="small text-muted">{{ layer.entity_count }}</td>
+                                <td>
+                                  <select class="form-select form-select-sm" name="layer-{{ layer.form_id }}-category" data-testid="layer-category-{{ layer.form_id }}">
+                                    {% for value, label in dxf_categories %}
+                                      <option value="{{ value }}" {% if layer.category == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                  </select>
+                                </td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="d-grid d-sm-flex gap-2">
+                        <button class="btn btn-outline-primary btn-sm" type="submit" data-testid="layer-update-{{ file.id }}">Update mapping</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <p class="text-muted small mb-0">No DXF files have been imported yet. Upload CAD geometry to begin mapping layers.</p>
+            {% endif %}
+          </div>
+          <div class="col-xl-6">
+            <h6 class="text-uppercase text-muted mb-3">Combined preview</h6>
+            {% set cad_preview_src = dxf_preview_url %}
+            {% if cad_preview_src and dxf_preview_token %}
+              {% if '?' in cad_preview_src %}
+                {% set cad_preview_src = cad_preview_src ~ '&t=' ~ (dxf_preview_token|int) %}
+              {% else %}
+                {% set cad_preview_src = cad_preview_src ~ '?t=' ~ (dxf_preview_token|int) %}
+              {% endif %}
+            {% endif %}
+            {% if cad_preview_src %}
+              <img class="img-fluid rounded border" src="{{ cad_preview_src }}" alt="DXF preview">
+            {% elif has_dxf_selection %}
+              <p class="text-muted small">Selected layers have no drawable geometry yet. Adjust the mapping or source files.</p>
+            {% else %}
+              <p class="text-muted small">Select layers and save the mapping to generate a combined preview.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
-  <div id="log-container" class="card card-body mb-3" style="display: none;">
-    <h2 class="h5">Solver log</h2>
-    <pre id="log-area" class="bg-dark text-white p-3" style="max-height: 320px; overflow-y: auto;"></pre>
-  </div>
-  <div id="results" class="card card-body" style="display: none;">
-    <h2 class="h5">Downloads</h2>
-    <ul id="results-list" class="list-group list-group-flush"></ul>
-  </div>
+  </section>
+
+  <section id="materials-stage" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Materials &amp; regions</h5>
+            <p class="text-muted mb-0">Define the permeability palette that powers the scenario.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Scenario editor</span>
+        </div>
+        <p class="text-muted small">Each entry maps to a <code>materials</code> block inside the scenario JSON. Use descriptive names (air, rotor_steel, PM) so layer assignments and region scripts can reference them clearly.</p>
+        <div class="alert alert-info small" role="alert">
+          <div class="fw-semibold">How the palette is used</div>
+          <ul class="mb-0 ps-3">
+            <li>The first entry typically stays as air so uniform regions always resolve.</li>
+            <li>Additional entries feed the DXF layer categories &mdash; when you label a DXF layer as a <em>Material region</em>, the drop-down lists the names you define here.</li>
+            <li>Update and save the palette any time you change permeability data; the scenario JSON is rewritten automatically.</li>
+          </ul>
+        </div>
+        {% if not project_has_scenario %}
+          <div class="alert alert-info" role="alert">Upload or create a scenario before editing materials.</div>
+        {% else %}
+          <form id="materials-form" method="post" action="{{ url_for('update_materials') }}" class="mt-3">
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+            <input type="hidden" id="materials-count" name="materials-count" value="{{ materials_palette | length }}">
+            <div id="materials-rows" class="row g-3">
+              {% for material in materials_palette %}
+                <div class="col-lg-6 material-row" data-index="{{ loop.index0 }}">
+                  <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <label class="form-label mb-0">Name</label>
+                      <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-material>Remove</button>
+                    </div>
+                    <input class="form-control form-control-sm mb-3" type="text" name="material-{{ loop.index0 }}-name" value="{{ material.name }}" required>
+                    <div class="row g-2">
+                      <div class="col-sm-6">
+                        <label class="form-label small" for="material-{{ loop.index0 }}-mu">Relative permeability</label>
+                        <input class="form-control form-control-sm" type="number" step="any" name="material-{{ loop.index0 }}-mu" id="material-{{ loop.index0 }}-mu" value="{{ material.mu_r }}" required>
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small" for="material-{{ loop.index0 }}-sigma">Conductivity (S/m)</label>
+                        <input class="form-control form-control-sm" type="number" step="any" name="material-{{ loop.index0 }}-sigma" id="material-{{ loop.index0 }}-sigma" value="{{ material.sigma if material.sigma is defined }}" placeholder="Optional">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="add-material-row">Add material</button>
+              <button class="btn btn-primary btn-sm" type="submit">Save materials</button>
+            </div>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section id="windings-stage" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Windings &amp; conductor mapping</h5>
+            <p class="text-muted mb-0">Group DXF wire layers into named phases and automatically generate <code>current_region</code> sources.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Sources</span>
+        </div>
+        <p class="text-muted small">Assign the conductor layers exported from CAD to logical windings (Phase A, B, C, excitation coils, etc.). Each selected layer is rasterised into a <code>current_region</code> with the turn count and fill fraction you specify.</p>
+        <div class="alert alert-info small" role="alert">
+          <div class="fw-semibold">Winding layout tips</div>
+          <ul class="mb-0 ps-3">
+            <li>Mark DXF layers that contain copper as <strong>Conductor path</strong> in the CAD workspace. Only those layers appear in the multi-selects below.</li>
+            <li>Create one row per phase or coil group (e.g. Phase A, Phase B, Excitation). Use the orientation pickers to flip into/out of the page.</li>
+            <li>Hold Ctrl/Cmd to assign multiple layers to the same winding when you split coils across uploads.</li>
+            <li>Click <em>Apply windings</em> to rewrite the scenario's <code>sources</code> array; the File menu &ldquo;Save scenario…&rdquo; action exports the updated JSON.</li>
+          </ul>
+        </div>
+        {% if not project_has_scenario %}
+          <div class="alert alert-info" role="alert">Upload a scenario before configuring windings.</div>
+        {% elif not wire_layer_options %}
+          <div class="alert alert-warning" role="alert">Mark DXF layers as <strong>Conductor path</strong> in the CAD workspace to unlock the winding builder.</div>
+        {% else %}
+          <form id="windings-form" method="post" action="{{ url_for('update_windings') }}" class="mt-3">
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+            <input type="hidden" id="winding-count" name="winding-count" value="{{ windings_form | length }}">
+            <div id="windings-rows">
+              {% for winding in windings_form %}
+                <div class="border rounded p-3 mb-3 winding-row" data-index="{{ loop.index0 }}">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <strong>{{ winding.name or ('Winding ' ~ (loop.index0 + 1)) }}</strong>
+                    <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-winding>Remove</button>
+                  </div>
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-name">Display name</label>
+                      <input class="form-control form-control-sm" type="text" id="winding-{{ loop.index0 }}-name" name="winding-{{ loop.index0 }}-name" value="{{ winding.name }}" placeholder="Phase A">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-phase">Phase ID</label>
+                      <input class="form-control form-control-sm" type="text" id="winding-{{ loop.index0 }}-phase" name="winding-{{ loop.index0 }}-phase" value="{{ winding.phase }}" placeholder="A">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-orientation">Orientation</label>
+                      <select class="form-select form-select-sm" id="winding-{{ loop.index0 }}-orientation" name="winding-{{ loop.index0 }}-orientation">
+                        <option value="1" {% if winding.orientation|float >= 0 %}selected{% endif %}>Into page (+)</option>
+                        <option value="-1" {% if winding.orientation|float < 0 %}selected{% endif %}>Out of page (-)</option>
+                      </select>
+                    </div>
+                    <div class="col-md-1">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-turns">Turns</label>
+                      <input class="form-control form-control-sm" type="number" step="any" id="winding-{{ loop.index0 }}-turns" name="winding-{{ loop.index0 }}-turns" value="{{ winding.turns or DEFAULT_WINDING_TURNS }}">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-fill">Fill fraction</label>
+                      <input class="form-control form-control-sm" type="number" step="any" id="winding-{{ loop.index0 }}-fill" name="winding-{{ loop.index0 }}-fill" value="{{ winding.fill_fraction or DEFAULT_FILL_FRACTION }}">
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label small" for="winding-{{ loop.index0 }}-layers">Wire layers</label>
+                      <select class="form-select form-select-sm" id="winding-{{ loop.index0 }}-layers" name="winding-{{ loop.index0 }}-layers" multiple size="4">
+                        {% for option in wire_layer_options %}
+                          <option value="{{ option.value }}" {% if winding.layers and option.value in winding.layers %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                      </select>
+                      <div class="form-text">Select all conductor layers that belong to this winding (hold Ctrl/Cmd for multi-select).</div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="add-winding-row">Add winding</button>
+              <button class="btn btn-primary btn-sm" type="submit">Apply windings</button>
+            </div>
+          </form>
+          <template id="wire-layer-options-template">
+            {% for option in wire_layer_options %}
+              <option value="{{ option.value }}">{{ option.label }}</option>
+            {% endfor %}
+          </template>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section id="timeline-stage" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Stimulus &amp; timeline designer</h5>
+            <p class="text-muted mb-0">Create balanced three-phase waveforms or import custom JSON timelines.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Transient controls</span>
+        </div>
+        <p class="text-muted small">Balanced mode synthesises sinusoidal phase currents for you&mdash;just set the amplitude, frequency, and number of steps. Manual mode accepts the same JSON structure as the solver (<code>{"t": 0.0, "phase_currents": {"A": 10}}</code>).</p>
+        <div class="alert alert-info small" role="alert">
+          <div class="fw-semibold">Timeline workflow</div>
+          <ul class="mb-0 ps-3">
+            <li>Balanced mode emits evenly spaced frames with three-phase sinusoids. Adjust the sequence string (ABC, ACB, etc.) to match your winding order.</li>
+            <li>Manual mode is ideal for arbitrary drive patterns. Paste the JSON frames directly from an external script or spreadsheet.</li>
+            <li>The solver's <code>transient.dt</code> and <code>transient.n_steps</code> fields update automatically so the CLI run matches the generated timeline.</li>
+            <li>Link back to the <a href="{{ workflow_docs.iron_ring }}" target="_blank" rel="noopener">iron ring walkthrough</a> for a concrete example.</li>
+          </ul>
+        </div>
+        {% if not project_has_scenario %}
+          <div class="alert alert-info" role="alert">Upload a scenario to enable timeline editing.</div>
+        {% endif %}
+        <form id="timeline-form" method="post" action="{{ url_for('update_timeline') }}" class="mt-3">
+          {% if project %}
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+          {% endif %}
+          <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-mode">Mode</label>
+              <select class="form-select" id="timeline-mode" name="timeline-mode" {% if not project_has_scenario %}disabled{% endif %}>
+                <option value="balanced" {% if timeline_mode != 'manual' %}selected{% endif %}>Balanced three-phase</option>
+                <option value="manual" {% if timeline_mode == 'manual' %}selected{% endif %}>Manual JSON</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-amplitude">Peak current (A)</label>
+              <input class="form-control" type="number" step="any" id="timeline-amplitude" name="timeline-amplitude" value="{{ timeline_config.amplitude if timeline_config and timeline_config.amplitude is defined else 36.0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-frequency">Electrical frequency (Hz)</label>
+              <input class="form-control" type="number" step="any" id="timeline-frequency" name="timeline-frequency" value="{{ timeline_config.frequency if timeline_config and timeline_config.frequency is defined else 50.0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-steps">Steps per cycle</label>
+              <input class="form-control" type="number" min="2" id="timeline-steps" name="timeline-steps" value="{{ timeline_config.steps if timeline_config and timeline_config.steps is defined else 12 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-cycles">Cycles</label>
+              <input class="form-control" type="number" min="1" id="timeline-cycles" name="timeline-cycles" value="{{ timeline_config.cycles if timeline_config and timeline_config.cycles is defined else 1 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-phase-offset">Phase offset (deg)</label>
+              <input class="form-control" type="number" step="any" id="timeline-phase-offset" name="timeline-phase-offset" value="{{ timeline_config.phase_offset if timeline_config and timeline_config.phase_offset is defined else 0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-sequence">Sequence</label>
+              <input class="form-control" type="text" id="timeline-sequence" name="timeline-sequence" value="{{ timeline_config.sequence if timeline_config and timeline_config.sequence is defined else 'ABC' }}" {% if not project_has_scenario %}disabled{% endif %}>
+              <div class="form-text">Order of phase labels (e.g. ABC, ACB).</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="timeline-dc-offset">DC offset (A)</label>
+              <input class="form-control" type="number" step="any" id="timeline-dc-offset" name="timeline-dc-offset" value="{{ timeline_config.dc_offset if timeline_config and timeline_config.dc_offset is defined else 0 }}" {% if not project_has_scenario %}disabled{% endif %}>
+            </div>
+          </div>
+          <div id="manual-fields" class="mt-3 {% if timeline_mode != 'manual' %}d-none{% endif %}">
+            <label class="form-label" for="timeline-json">Manual timeline JSON</label>
+            <textarea class="form-control" id="timeline-json" name="timeline-json" rows="4" placeholder='[{"t": 0.0, "phase_currents": {"A": 0, "B": -10, "C": 10}}]' {% if not project_has_scenario %}disabled{% endif %}>{{ timeline_config.raw if timeline_config and timeline_config.raw is defined }}</textarea>
+            <div class="form-text">Provide an ordered list of frames. Each entry must include a time <code>t</code> (seconds) and a <code>phase_currents</code> mapping.</div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" type="submit" {% if not project_has_scenario %}disabled{% endif %}>Save timeline</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Preset library (coming soon)</button>
+            <a class="btn btn-link btn-sm" href="{{ workflow_docs.induction }}" target="_blank" rel="noopener">See induction demo</a>
+          </div>
+        </form>
+        {% if timeline_summary %}
+          <div class="alert alert-success small mt-3" role="alert">
+            <strong>{{ timeline_summary.frames }}</strong> frames • {{ '{:.4f}'.format(timeline_summary.duration) }} s total duration
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section id="geometry-preview" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Geometry preview</h5>
+            <p class="text-muted mb-0">Preview the domain layout before launching a solve.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">Server rendered</span>
+        </div>
+        {% if preview_error %}
+          <div class="alert alert-danger" role="alert">{{ preview_error }}</div>
+        {% endif %}
+        {% if preview_notice %}
+          <div class="alert alert-success" role="alert">{{ preview_notice }}</div>
+        {% endif %}
+        <p id="preview-placeholder" class="text-muted small {% if preview_url %}d-none{% endif %}">
+          Upload or reuse a scenario and choose <strong>Preview geometry</strong> to render the layout.
+        </p>
+        {% set preview_src = preview_url %}
+        {% if preview_src and preview_token %}
+          {% if '?' in preview_src %}
+            {% set preview_src = preview_src ~ '&t=' ~ (preview_token|int) %}
+          {% else %}
+            {% set preview_src = preview_src ~ '?t=' ~ (preview_token|int) %}
+          {% endif %}
+        {% endif %}
+        <img
+          id="geometry-preview-image"
+          class="img-fluid rounded border {% if not preview_src %}d-none{% endif %}"
+          src="{{ preview_src or '' }}"
+          alt="Geometry preview"
+        >
+      </div>
+      <div class="card-footer text-muted small">Use CAD workspace uploads to stage geometry before exporting a scenario.</div>
+    </div>
+  </section>
+
+  <section id="simulation-setup" class="stage-section">
+    <div class="card card-elevated">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-0">Simulation setup</h5>
+            <p class="text-muted mb-0">Upload scenarios, adjust solver settings, and manage run controls.</p>
+          </div>
+          <span class="badge rounded-pill text-bg-primary">Stage 1 core</span>
+        </div>
+        {% if error %}
+          <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+        <div class="alert alert-info" role="alert">
+          <div class="fw-semibold">Need to edit the scenario?</div>
+          Use the <strong>Materials</strong>, <strong>Windings</strong>, and <strong>Timeline</strong> sections above to compose the JSON graphically, then save or run it from here.
+        </div>
+        <form id="run-form" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" novalidate>
+          {% if project %}
+            <input type="hidden" name="project_id" value="{{ project.id }}">
+          {% endif %}
+          <div class="row g-3 align-items-end">
+            <div class="col-lg-6">
+              <label class="form-label" for="geometry-file">Scenario file (JSON)</label>
+              <input
+                class="form-control"
+                type="file"
+                id="geometry-file"
+                name="geometry_file"
+                accept=".json,.dxf"
+                {% if form_requires_file %}required{% endif %}
+                data-testid="scenario-upload"
+              >
+              <div class="form-text">Use JSON scenarios for solver runs. Manage CAD layers in the CAD workspace.</div>
+              {% if has_project %}
+                <div class="small text-muted mt-2">Current scenario: <strong>{{ project.scenario_name or project.filename }}</strong></div>
+              {% endif %}
+            </div>
+            <div class="col-lg-6">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label" for="solver">Solver</label>
+                  <select class="form-select" id="solver" name="solver">
+                    <option value="cg" {% if form_state.solver == 'cg' %}selected{% endif %}>Conjugate Gradient (CG)</option>
+                    <option value="sor" {% if form_state.solver == 'sor' %}selected{% endif %}>Successive Over-Relaxation (SOR)</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label" for="tol">Tolerance</label>
+                  <input class="form-control" type="number" step="any" id="tol" name="tol" value="{{ form_state.tol }}" required>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label" for="max-iters">Max iterations</label>
+                  <input class="form-control" type="number" id="max-iters" name="max_iters" value="{{ form_state.max_iters }}" min="1" required>
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="outputs">Requested outputs (optional)</label>
+              <input class="form-control" type="text" id="outputs" name="outputs" value="{{ form_state.outputs }}" placeholder="field_map">
+              <div class="form-text">Forwards to <code>motor_sim --outputs</code>; leave blank for scenario defaults.</div>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-4">
+            <button id="run-btn" class="btn btn-primary" name="action" value="run" type="submit" {% if running %}disabled{% endif %} data-testid="run-simulation">Run simulation</button>
+            <button id="preview-btn" class="btn btn-outline-secondary" name="action" value="preview" type="submit" formnovalidate>Preview geometry</button>
+            <button id="stop-btn" class="btn btn-warning" type="button" {% if not running %}disabled{% endif %}>Stop</button>
+            <button class="btn btn-outline-secondary" type="button" disabled>Save preset (coming soon)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section id="progress-stage" class="stage-section">
+    <div class="row g-4">
+      <div class="col-xl-6">
+        <div id="progress-container" class="card card-elevated h-100" style="display: none;" data-testid="progress-card">
+          <div class="card-body">
+            <h5 class="card-title">Progress</h5>
+            <div class="progress" style="height: 24px;">
+              <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;">0%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-6">
+        <div id="log-container" class="card card-elevated h-100" style="display: none;">
+          <div class="card-body">
+            <h5 class="card-title">Solver log</h5>
+            <pre id="log-area" class="bg-dark text-white p-3 rounded" style="max-height: 320px; overflow-y: auto;" data-testid="log-output"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="results-stage" class="stage-section">
+    <div class="row g-4">
+      <div class="col-xl-4">
+        <div id="results" class="card card-elevated h-100" style="display: none;" data-testid="downloads-card">
+          <div class="card-body">
+            <h5 class="card-title">Downloads</h5>
+            <ul id="results-list" class="list-group list-group-flush" data-testid="downloads-list"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-8">
+        <div id="visualization-panel" class="card card-elevated h-100"{% if not visualization_visible %} style="display: none;"{% endif %}>
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="card-title mb-0">Results visualisation</h5>
+                <p class="text-muted mb-0">Adjust overlays to explore the simulated field.</p>
+              </div>
+              <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Share view (coming soon)</button>
+            </div>
+            <p id="visualization-message" class="text-muted small {% if last_visualization_url %}d-none{% endif %}">
+              {{ visualization_message or 'Run a simulation to generate field visualisations.' }}
+            </p>
+            <img id="result-image" class="img-fluid rounded border {% if not last_visualization_url %}d-none{% endif %}" src="{{ last_visualization_url or '' }}" alt="Field map visualisation" data-testid="result-image">
+            <p id="visualization-caption" class="mt-2 text-muted small {% if not last_visualization_caption %}d-none{% endif %}">{{ last_visualization_caption }}</p>
+            <div
+              id="visualization-controls"
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 {% if not visualization_has_frames %}d-none{% endif %}"
+            >
+              <div class="btn-group btn-group-sm" role="group" aria-label="Visualisation playback">
+                <button id="viz-prev" type="button" class="btn btn-outline-secondary" {% if not visualization_has_frames %}disabled{% endif %}>&lsaquo;</button>
+                <button id="viz-play" type="button" class="btn btn-outline-secondary" {% if not visualization_has_frames %}disabled{% endif %}>Play</button>
+                <button id="viz-next" type="button" class="btn btn-outline-secondary" {% if not visualization_has_frames %}disabled{% endif %}>&rsaquo;</button>
+              </div>
+              <input
+                id="viz-slider"
+                class="form-range flex-grow-1"
+                type="range"
+                min="0"
+                value="0"
+                {% if not visualization_has_frames %}disabled{% endif %}
+              >
+              <span id="viz-frame-label" class="text-muted small"></span>
+            </div>
+            <form id="visualization-form" class="row g-2 mt-3" data-endpoint="{{ url_for('visualization_image') }}">
+              <div class="col-md-3">
+                <label class="form-label small" for="vector-mode">Vector scaling</label>
+                <select class="form-select form-select-sm" id="vector-mode" name="vector">
+                  <option value="linear" {% if visualization_defaults.vector_mode == 'linear' %}selected{% endif %}>Linear</option>
+                  <option value="log" {% if visualization_defaults.vector_mode == 'log' %}selected{% endif %}>Logarithmic</option>
+                  <option value="off" {% if visualization_defaults.vector_mode == 'off' %}selected{% endif %}>Hidden</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small" for="color-scale">Colour scale</label>
+                <select class="form-select form-select-sm" id="color-scale" name="scale">
+                  <option value="linear" {% if visualization_defaults.color_scale == 'linear' %}selected{% endif %}>Linear</option>
+                  <option value="log" {% if visualization_defaults.color_scale == 'log' %}selected{% endif %}>Logarithmic</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small" for="quiver-skip">Arrow skip</label>
+                <input class="form-control form-control-sm" type="number" min="1" id="quiver-skip" name="skip" value="{{ visualization_defaults.quiver_skip }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small" for="log-floor">Log floor</label>
+                <input class="form-control form-control-sm" type="number" step="any" id="log-floor" name="log_floor" value="{{ '{:.1e}'.format(DEFAULT_LOG_FLOOR) }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small" for="vector-floor">Vector floor</label>
+                <input class="form-control form-control-sm" type="number" step="any" id="vector-floor" name="vector_floor" value="{{ '{:.1e}'.format(DEFAULT_LOG_FLOOR) }}">
+              </div>
+              <div class="col-md-12">
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="checkbox" id="draw-boundaries" name="boundaries" value="1" {% if visualization_defaults.draw_boundaries %}checked{% endif %}>
+                  <label class="form-check-label small" for="draw-boundaries">Show region outlines</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="checkbox" id="streamlines" name="stream" value="1" {% if visualization_defaults.streamlines %}checked{% endif %}>
+                  <label class="form-check-label small" for="streamlines">Streamlines</label>
+                </div>
+              </div>
+              <div class="col-12 d-flex flex-wrap gap-2">
+                <button id="update-visualization" class="btn btn-primary btn-sm" type="button" {% if not last_visualization_url %}disabled{% endif %}>Update visualisation</button>
+                <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Save preset (coming soon)</button>
+              </div>
+            </form>
+            <div id="visualization-error" class="text-danger small mt-2 d-none"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 {% endblock %}
 
 {% block scripts %}
@@ -73,8 +667,486 @@
       const logArea = document.getElementById("log-area");
       const resultsContainer = document.getElementById("results");
       const resultsList = document.getElementById("results-list");
+      const visualizationPanel = document.getElementById("visualization-panel");
+      const visualizationMessage = document.getElementById("visualization-message");
+      const visualizationCaption = document.getElementById("visualization-caption");
+      const visualizationError = document.getElementById("visualization-error");
+      const resultImage = document.getElementById("result-image");
+      const updateVizBtn = document.getElementById("update-visualization");
+      const vizForm = document.getElementById("visualization-form");
+      const vizControls = document.getElementById("visualization-controls");
+      const vizPlayBtn = document.getElementById("viz-play");
+      const vizPrevBtn = document.getElementById("viz-prev");
+      const vizNextBtn = document.getElementById("viz-next");
+      const vizSlider = document.getElementById("viz-slider");
+      const vizFrameLabel = document.getElementById("viz-frame-label");
+      const materialsForm = document.getElementById("materials-form");
+      const materialsRows = document.getElementById("materials-rows");
+      const materialsCountInput = document.getElementById("materials-count");
+      const addMaterialBtn = document.getElementById("add-material-row");
+      const windingsForm = document.getElementById("windings-form");
+      const windingsRows = document.getElementById("windings-rows");
+      const windingsCountInput = document.getElementById("winding-count");
+      const addWindingBtn = document.getElementById("add-winding-row");
+      const layerOptionsTemplate = document.getElementById("wire-layer-options-template");
+      const timelineModeSelect = document.getElementById("timeline-mode");
+      const manualTimelineFields = document.getElementById("manual-fields");
       const downloadBase = "{{ url_for('download') }}";
       const isRunning = {{ 'true' if running else 'false' }};
+      const defaultTurns = {{ DEFAULT_WINDING_TURNS | tojson }};
+      const defaultFill = {{ DEFAULT_FILL_FRACTION | tojson }};
+      let currentBlobUrl = null;
+      const lastImageUrl = {{ (last_visualization_url or '') | tojson | safe }};
+      const initialFrames = {{ last_visualization_frames | tojson | safe }} || [];
+      let frameGallery = Array.isArray(initialFrames)
+        ? initialFrames.map(function (frame) {
+            return {
+              image: frame.image,
+              caption: frame.caption || '',
+              frame_index: typeof frame.frame_index === 'number' ? frame.frame_index : null,
+              field_id: frame.field_id || null,
+              sequence_index: typeof frame.sequence_index === 'number' ? frame.sequence_index : null,
+            };
+          })
+        : [];
+      frameGallery.sort(function (a, b) {
+        const left = typeof a.sequence_index === 'number' ? a.sequence_index : 0;
+        const right = typeof b.sequence_index === 'number' ? b.sequence_index : 0;
+        return left - right;
+      });
+      let activeFrameIndex = frameGallery.length ? frameGallery.length - 1 : -1;
+      let playbackTimer = null;
+      let isPlaying = false;
+
+      function renumberMaterialRows() {
+        if (!materialsRows || !materialsCountInput) {
+          return;
+        }
+        const rows = materialsRows.querySelectorAll('.material-row');
+        rows.forEach(function (row, idx) {
+          row.dataset.index = String(idx);
+          const nameInput = row.querySelector("input[name$='-name']");
+          const muInput = row.querySelector("input[name$='-mu']");
+          const sigmaInput = row.querySelector("input[name$='-sigma']");
+          const muLabel = row.querySelector("label[for^='material-'][for$='-mu']");
+          const sigmaLabel = row.querySelector("label[for^='material-'][for$='-sigma']");
+          if (nameInput) {
+            nameInput.name = 'material-' + idx + '-name';
+          }
+          if (muInput) {
+            muInput.name = 'material-' + idx + '-mu';
+            muInput.id = 'material-' + idx + '-mu';
+          }
+          if (muLabel) {
+            muLabel.setAttribute('for', 'material-' + idx + '-mu');
+          }
+          if (sigmaInput) {
+            sigmaInput.name = 'material-' + idx + '-sigma';
+            sigmaInput.id = 'material-' + idx + '-sigma';
+          }
+          if (sigmaLabel) {
+            sigmaLabel.setAttribute('for', 'material-' + idx + '-sigma');
+          }
+        });
+        materialsCountInput.value = String(rows.length);
+      }
+
+      function addMaterialRow(initial) {
+        if (!materialsRows || !materialsCountInput) {
+          return;
+        }
+        const index = parseInt(materialsCountInput.value || '0', 10);
+        const nameValue = initial && initial.name ? initial.name : 'Material ' + (index + 1);
+        const muValue = initial && typeof initial.mu !== 'undefined' ? initial.mu : 1.0;
+        const sigmaValue = initial && typeof initial.sigma !== 'undefined' ? initial.sigma : '';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'col-lg-6 material-row';
+        wrapper.dataset.index = String(index);
+        wrapper.innerHTML = `
+          <div class="border rounded p-3 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <label class="form-label mb-0">Name</label>
+              <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-material>Remove</button>
+            </div>
+            <input class="form-control form-control-sm mb-3" type="text" name="material-${index}-name" value="${nameValue}" required>
+            <div class="row g-2">
+              <div class="col-sm-6">
+                <label class="form-label small" for="material-${index}-mu">Relative permeability</label>
+                <input class="form-control form-control-sm" type="number" step="any" id="material-${index}-mu" name="material-${index}-mu" value="${muValue}" required>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label small" for="material-${index}-sigma">Conductivity (S/m)</label>
+                <input class="form-control form-control-sm" type="number" step="any" id="material-${index}-sigma" name="material-${index}-sigma" placeholder="Optional">
+              </div>
+            </div>
+          </div>`;
+        const sigmaInput = wrapper.querySelector("input[name='material-" + index + "-sigma']");
+        if (sigmaInput && sigmaValue !== '') {
+          sigmaInput.value = sigmaValue;
+        }
+        materialsRows.appendChild(wrapper);
+        materialsCountInput.value = String(index + 1);
+      }
+
+      function renumberWindingRows() {
+        if (!windingsRows || !windingsCountInput) {
+          return;
+        }
+        const rows = windingsRows.querySelectorAll('.winding-row');
+        rows.forEach(function (row, idx) {
+          row.dataset.index = String(idx);
+          const nameInput = row.querySelector("input[name$='-name']");
+          const phaseInput = row.querySelector("input[name$='-phase']");
+          const turnsInput = row.querySelector("input[name$='-turns']");
+          const fillInput = row.querySelector("input[name$='-fill']");
+          const orientationSelect = row.querySelector("select[name$='-orientation']");
+          const layersSelect = row.querySelector("select[name$='-layers']");
+          if (nameInput) {
+            nameInput.name = 'winding-' + idx + '-name';
+            nameInput.id = 'winding-' + idx + '-name';
+          }
+          if (phaseInput) {
+            phaseInput.name = 'winding-' + idx + '-phase';
+            phaseInput.id = 'winding-' + idx + '-phase';
+          }
+          if (turnsInput) {
+            turnsInput.name = 'winding-' + idx + '-turns';
+            turnsInput.id = 'winding-' + idx + '-turns';
+          }
+          if (fillInput) {
+            fillInput.name = 'winding-' + idx + '-fill';
+            fillInput.id = 'winding-' + idx + '-fill';
+          }
+          if (orientationSelect) {
+            orientationSelect.name = 'winding-' + idx + '-orientation';
+            orientationSelect.id = 'winding-' + idx + '-orientation';
+          }
+          if (layersSelect) {
+            layersSelect.name = 'winding-' + idx + '-layers';
+            layersSelect.id = 'winding-' + idx + '-layers';
+          }
+        });
+        windingsCountInput.value = String(rows.length);
+      }
+
+      function addWindingRow(initial) {
+        if (!windingsRows || !windingsCountInput) {
+          return;
+        }
+        const index = parseInt(windingsCountInput.value || '0', 10);
+        const nameValue = initial && initial.name ? initial.name : 'Winding ' + (index + 1);
+        const phaseValue = initial && initial.phase ? initial.phase : '';
+        const turnsValue = initial && typeof initial.turns !== 'undefined' ? initial.turns : defaultTurns;
+        const fillValue = initial && typeof initial.fill_fraction !== 'undefined' ? initial.fill_fraction : defaultFill;
+        const orientationValue = initial && typeof initial.orientation !== 'undefined' ? Number(initial.orientation) : 1;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'border rounded p-3 mb-3 winding-row';
+        wrapper.dataset.index = String(index);
+        const layerOptions = layerOptionsTemplate ? layerOptionsTemplate.innerHTML : '';
+        wrapper.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <strong>${nameValue}</strong>
+            <button class="btn btn-link btn-sm text-danger p-0" type="button" data-remove-winding>Remove</button>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label small" for="winding-${index}-name">Display name</label>
+              <input class="form-control form-control-sm" type="text" id="winding-${index}-name" name="winding-${index}-name" value="${nameValue}" placeholder="Phase A">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small" for="winding-${index}-phase">Phase ID</label>
+              <input class="form-control form-control-sm" type="text" id="winding-${index}-phase" name="winding-${index}-phase" value="${phaseValue}" placeholder="A">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="winding-${index}-orientation">Orientation</label>
+              <select class="form-select form-select-sm" id="winding-${index}-orientation" name="winding-${index}-orientation">
+                <option value="1" ${orientationValue >= 0 ? 'selected' : ''}>Into page (+)</option>
+                <option value="-1" ${orientationValue < 0 ? 'selected' : ''}>Out of page (-)</option>
+              </select>
+            </div>
+            <div class="col-md-1">
+              <label class="form-label small" for="winding-${index}-turns">Turns</label>
+              <input class="form-control form-control-sm" type="number" step="any" id="winding-${index}-turns" name="winding-${index}-turns" value="${turnsValue}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small" for="winding-${index}-fill">Fill fraction</label>
+              <input class="form-control form-control-sm" type="number" step="any" id="winding-${index}-fill" name="winding-${index}-fill" value="${fillValue}">
+            </div>
+            <div class="col-12">
+              <label class="form-label small" for="winding-${index}-layers">Wire layers</label>
+              <select class="form-select form-select-sm" id="winding-${index}-layers" name="winding-${index}-layers" multiple size="4">${layerOptions}</select>
+              <div class="form-text">Select all conductor layers that belong to this winding (hold Ctrl/Cmd for multi-select).</div>
+            </div>
+          </div>`;
+        if (initial && Array.isArray(initial.layers)) {
+          const selectEl = wrapper.querySelector('select');
+          if (selectEl) {
+            const values = new Set(initial.layers);
+            selectEl.querySelectorAll('option').forEach(function (option) {
+              option.selected = values.has(option.value);
+            });
+          }
+        }
+        windingsRows.appendChild(wrapper);
+        windingsCountInput.value = String(index + 1);
+      }
+
+      if (materialsRows) {
+        materialsRows.addEventListener('click', function (event) {
+          if (event.target && event.target.matches('[data-remove-material]')) {
+            const row = event.target.closest('.material-row');
+            if (row) {
+              row.remove();
+              renumberMaterialRows();
+            }
+          }
+        });
+      }
+
+      if (addMaterialBtn) {
+        addMaterialBtn.addEventListener('click', function () {
+          addMaterialRow();
+        });
+      }
+
+      if (windingsRows) {
+        windingsRows.addEventListener('click', function (event) {
+          if (event.target && event.target.matches('[data-remove-winding]')) {
+            const row = event.target.closest('.winding-row');
+            if (row) {
+              row.remove();
+              renumberWindingRows();
+            }
+          }
+        });
+      }
+
+      if (addWindingBtn) {
+        addWindingBtn.addEventListener('click', function () {
+          addWindingRow();
+        });
+      }
+
+      function syncTimelineMode() {
+        if (!timelineModeSelect || !manualTimelineFields) {
+          return;
+        }
+        if (timelineModeSelect.value === 'manual') {
+          manualTimelineFields.classList.remove('d-none');
+        } else {
+          manualTimelineFields.classList.add('d-none');
+        }
+      }
+
+      if (timelineModeSelect) {
+        timelineModeSelect.addEventListener('change', syncTimelineMode);
+        syncTimelineMode();
+      }
+
+      renumberMaterialRows();
+      renumberWindingRows();
+
+      const navLinks = document.querySelectorAll('.app-sidebar .nav-link');
+      function setActiveNav(target) {
+        if (!target) {
+          target = '#project-overview';
+        }
+        navLinks.forEach(function (link) {
+          if (link.getAttribute('href') === target) {
+            link.classList.add('active');
+          } else {
+            link.classList.remove('active');
+          }
+        });
+      }
+
+      function stopPlayback() {
+        if (playbackTimer) {
+          clearInterval(playbackTimer);
+          playbackTimer = null;
+        }
+        isPlaying = false;
+        if (vizPlayBtn) {
+          vizPlayBtn.textContent = 'Play';
+        }
+      }
+
+      function updateControlsState() {
+        if (!vizControls) {
+          return;
+        }
+        if (frameGallery.length === 0) {
+          vizControls.classList.add('d-none');
+          if (vizPrevBtn) vizPrevBtn.disabled = true;
+          if (vizNextBtn) vizNextBtn.disabled = true;
+          if (vizPlayBtn) vizPlayBtn.disabled = true;
+          if (vizSlider) {
+            vizSlider.disabled = true;
+            vizSlider.value = '0';
+            vizSlider.max = '0';
+          }
+          if (vizFrameLabel) {
+            vizFrameLabel.textContent = '';
+          }
+          return;
+        }
+
+        vizControls.classList.remove('d-none');
+        const disableNav = frameGallery.length <= 1;
+        if (vizPrevBtn) vizPrevBtn.disabled = disableNav;
+        if (vizNextBtn) vizNextBtn.disabled = disableNav;
+        if (vizPlayBtn) vizPlayBtn.disabled = disableNav;
+        if (vizSlider) {
+          vizSlider.disabled = disableNav;
+          vizSlider.max = String(frameGallery.length - 1);
+        }
+      }
+
+      function clearLiveFrames() {
+        stopPlayback();
+        frameGallery = [];
+        activeFrameIndex = -1;
+        updateControlsState();
+      }
+
+      function buildFrameLabel(frame) {
+        const labelParts = [];
+        if (typeof frame.frame_index === 'number') {
+          labelParts.push('Frame ' + frame.frame_index);
+        }
+        if (frame.field_id) {
+          labelParts.push(frame.field_id);
+        }
+        return labelParts.join(' • ');
+      }
+
+      function showFrame(index) {
+        if (!Array.isArray(frameGallery) || frameGallery.length === 0) {
+          return;
+        }
+        if (index < 0 || index >= frameGallery.length) {
+          return;
+        }
+        const frame = frameGallery[index];
+        activeFrameIndex = index;
+        stopPlayback();
+        if (currentBlobUrl) {
+          URL.revokeObjectURL(currentBlobUrl);
+          currentBlobUrl = null;
+        }
+        if (visualizationPanel) {
+          visualizationPanel.style.display = 'block';
+        }
+        const baseUrl = frame.image;
+        if (baseUrl) {
+          const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+          resultImage.src = url;
+        }
+        resultImage.classList.remove('d-none');
+        if (visualizationMessage) {
+          visualizationMessage.classList.add('d-none');
+        }
+        if (visualizationCaption) {
+          if (frame.caption) {
+            visualizationCaption.textContent = frame.caption;
+            visualizationCaption.classList.remove('d-none');
+          } else {
+            visualizationCaption.classList.add('d-none');
+          }
+        }
+        if (vizSlider) {
+          vizSlider.value = String(index);
+        }
+        if (vizFrameLabel) {
+          const label = buildFrameLabel(frame);
+          vizFrameLabel.textContent = label;
+          vizFrameLabel.classList.toggle('d-none', !label);
+        }
+      }
+
+      function registerFrame(details) {
+        if (!details || !details.image) {
+          return;
+        }
+        const frame = {
+          image: details.image,
+          caption: details.caption || '',
+          frame_index: typeof details.frame_index === 'number' ? details.frame_index : null,
+          field_id: details.field_id || null,
+          sequence_index: typeof details.sequence_index === 'number' ? details.sequence_index : null,
+        };
+        let targetIndex = -1;
+        if (typeof frame.sequence_index === 'number') {
+          targetIndex = frameGallery.findIndex(function (item) {
+            return typeof item.sequence_index === 'number' && item.sequence_index === frame.sequence_index;
+          });
+        }
+        if (targetIndex === -1) {
+          targetIndex = frameGallery.findIndex(function (item) {
+            return item.image === frame.image;
+          });
+        }
+        if (targetIndex >= 0) {
+          frameGallery[targetIndex] = frame;
+        } else {
+          frameGallery.push(frame);
+          frameGallery.sort(function (a, b) {
+            const left = typeof a.sequence_index === 'number' ? a.sequence_index : 0;
+            const right = typeof b.sequence_index === 'number' ? b.sequence_index : 0;
+            return left - right;
+          });
+          targetIndex = frameGallery.findIndex(function (item) {
+            return item.image === frame.image;
+          });
+        }
+        updateControlsState();
+        if (targetIndex >= 0) {
+          showFrame(targetIndex);
+        }
+      }
+
+      function advanceFrame(step) {
+        if (frameGallery.length === 0) {
+          return;
+        }
+        const nextIndex = (activeFrameIndex + step + frameGallery.length) % frameGallery.length;
+        showFrame(nextIndex);
+      }
+
+      function startPlayback() {
+        if (isPlaying || frameGallery.length <= 1) {
+          return;
+        }
+        isPlaying = true;
+        if (vizPlayBtn) {
+          vizPlayBtn.textContent = 'Pause';
+        }
+        playbackTimer = setInterval(function () {
+          advanceFrame(1);
+        }, 1500);
+      }
+
+      navLinks.forEach(function (link) {
+        link.addEventListener('click', function () {
+          setActiveNav(link.getAttribute('href'));
+        });
+      });
+
+      window.addEventListener('hashchange', function () {
+        setActiveNav(location.hash);
+      });
+
+      setActiveNav(location.hash);
+      updateControlsState();
+      if (frameGallery.length > 0) {
+        let initialIndex = frameGallery.findIndex(function (frame) {
+          return frame.image === lastImageUrl;
+        });
+        if (initialIndex < 0) {
+          initialIndex = frameGallery.length - 1;
+        }
+        showFrame(initialIndex);
+      }
 
       if (isRunning) {
         progressContainer.style.display = 'block';
@@ -84,7 +1156,11 @@
       }
 
       if (runForm) {
-        runForm.addEventListener("submit", function () {
+        runForm.addEventListener("submit", function (event) {
+          const submitter = event.submitter;
+          if (submitter && submitter.value === 'preview') {
+            return;
+          }
           runBtn.disabled = true;
           stopBtn.disabled = false;
           progressContainer.style.display = 'block';
@@ -95,6 +1171,57 @@
           progressBar.classList.remove('bg-danger', 'bg-success');
           progressBar.style.width = '0%';
           progressBar.textContent = '0%';
+          if (visualizationPanel) {
+            visualizationPanel.style.display = 'none';
+          }
+          if (visualizationMessage) {
+            visualizationMessage.classList.add('d-none');
+            visualizationMessage.textContent = '';
+          }
+          if (visualizationCaption) {
+            visualizationCaption.classList.add('d-none');
+            visualizationCaption.textContent = '';
+          }
+          if (visualizationError) {
+            visualizationError.classList.add('d-none');
+            visualizationError.textContent = '';
+          }
+          if (updateVizBtn) {
+            updateVizBtn.disabled = true;
+          }
+          clearLiveFrames();
+        });
+      }
+
+      if (vizPrevBtn) {
+        vizPrevBtn.addEventListener('click', function () {
+          advanceFrame(-1);
+        });
+      }
+
+      if (vizNextBtn) {
+        vizNextBtn.addEventListener('click', function () {
+          advanceFrame(1);
+        });
+      }
+
+      if (vizPlayBtn) {
+        vizPlayBtn.addEventListener('click', function () {
+          if (isPlaying) {
+            stopPlayback();
+          } else {
+            startPlayback();
+          }
+        });
+      }
+
+      if (vizSlider) {
+        vizSlider.addEventListener('input', function () {
+          const index = parseInt(vizSlider.value, 10);
+          if (!Number.isNaN(index)) {
+            stopPlayback();
+            showFrame(index);
+          }
         });
       }
 
@@ -168,8 +1295,120 @@
               resultsList.appendChild(entry);
             });
           }
+          if (payload.visualization) {
+            handleVisualization(payload.visualization);
+          }
+        } else if (payload.visualization) {
+          handleVisualization(payload.visualization);
         }
       };
+
+      function handleVisualization(details) {
+        if (!details) {
+          return;
+        }
+        if (visualizationPanel) {
+          visualizationPanel.style.display = 'block';
+        }
+        if (visualizationError) {
+          visualizationError.classList.add('d-none');
+          visualizationError.textContent = '';
+        }
+        if (details.image) {
+          const url = details.image + (details.image.includes('?') ? '&' : '?') + 't=' + Date.now();
+          resultImage.src = url;
+          resultImage.classList.remove('d-none');
+          if (visualizationMessage) {
+            visualizationMessage.classList.add('d-none');
+          }
+          if (visualizationCaption) {
+            if (details.caption) {
+              visualizationCaption.textContent = details.caption;
+              visualizationCaption.classList.remove('d-none');
+            } else {
+              visualizationCaption.classList.add('d-none');
+            }
+          }
+          if (updateVizBtn) {
+            updateVizBtn.disabled = false;
+          }
+          registerFrame(details);
+        } else if (details.message) {
+          if (visualizationMessage) {
+            visualizationMessage.textContent = details.message;
+            visualizationMessage.classList.remove('d-none');
+          }
+          resultImage.classList.add('d-none');
+          if (visualizationCaption) {
+            visualizationCaption.classList.add('d-none');
+          }
+          if (updateVizBtn) {
+            updateVizBtn.disabled = true;
+          }
+          clearLiveFrames();
+        }
+      }
+
+      if (updateVizBtn && vizForm) {
+        updateVizBtn.addEventListener('click', function () {
+          if (!vizForm.dataset.endpoint) {
+            return;
+          }
+          const formData = new FormData(vizForm);
+          if (!formData.has('boundaries')) {
+            formData.set('boundaries', document.getElementById('draw-boundaries').checked ? '1' : '0');
+          }
+          if (!formData.has('stream')) {
+            formData.set('stream', document.getElementById('streamlines').checked ? '1' : '0');
+          }
+          const params = new URLSearchParams(formData);
+          params.set('t', Date.now().toString());
+          const endpoint = vizForm.dataset.endpoint + '?' + params.toString();
+          updateVizBtn.disabled = true;
+          if (visualizationError) {
+            visualizationError.classList.add('d-none');
+            visualizationError.textContent = '';
+          }
+          fetch(endpoint)
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error('Request failed');
+              }
+              return response.blob();
+            })
+            .then(function (blob) {
+              if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+              }
+              currentBlobUrl = URL.createObjectURL(blob);
+              stopPlayback();
+              if (visualizationPanel) {
+                visualizationPanel.style.display = 'block';
+              }
+              resultImage.src = currentBlobUrl;
+              resultImage.classList.remove('d-none');
+              if (visualizationMessage) {
+                visualizationMessage.classList.add('d-none');
+              }
+              if (visualizationCaption) {
+                visualizationCaption.classList.add('d-none');
+              }
+              if (vizFrameLabel) {
+                vizFrameLabel.textContent = '';
+                vizFrameLabel.classList.add('d-none');
+              }
+            })
+            .catch(function () {
+              if (visualizationError) {
+                visualizationError.textContent = 'Unable to refresh the visualisation.';
+                visualizationError.classList.remove('d-none');
+              }
+            })
+            .finally(function () {
+              updateVizBtn.disabled = false;
+            });
+        });
+      }
     });
   </script>
 {% endblock %}
